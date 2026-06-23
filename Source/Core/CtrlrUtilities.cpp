@@ -194,6 +194,10 @@ CtrlrSysExFormulaToken indirectFromString (const String &str)
 		return (LUAToken);
 	if (str == "Formula")
 		return (FormulaToken);
+	if (str == "CCCoarseMSB")
+		return (CCCoarseMSB);
+	if (str == "CCFineLSB")
+		return (CCFineLSB);
 	return (ByteValue);
 }
 
@@ -202,42 +206,83 @@ const CtrlrMidiMessageEx midiMessageExfromString (const String &str, const int c
 	CtrlrMidiMessageEx ret;
 	StringArray tokens;
 
-	tokens.addTokens (str, ",", "\"\'");
+	tokens.addTokens(str.trim(), ",", "\"\'");
 
-	if (tokens.size() >= 5)
+	if (tokens.size() >= 3)
 	{
 		ret.indirectNumberFlag	= indirectFromString (tokens[1]);
 		ret.indirectValueFlag	= indirectFromString (tokens[2]);
-		ret.overrideNumber		= tokens[3].getIntValue();
-		ret.overrideValue		= tokens[4].getIntValue();
+		
+		// Safety check for tokens 3 and 4 before accessing getIntValue
+		ret.overrideNumber = (tokens.size() > 3) ? tokens[3].getIntValue() : -2;
+		ret.overrideValue = (tokens.size() > 4) ? tokens[4].getIntValue() : -1;
 
-		if (tokens[0] == "CC")
-			ret.m				= MidiMessage::controllerEvent (ch,number,value);
-		if (tokens[0] == "Aftertouch")
-			ret.m				= MidiMessage::aftertouchChange (ch,number,value);
-		if (tokens[0] == "NoteOn")
-			ret.m				= MidiMessage::noteOn (ch,number,(uint8)value);
-		if (tokens[0] == "NoteOff")
-			ret.m				= MidiMessage::noteOff (ch,number,(uint8)value);
-		if (tokens[0] == "ChannelPressure")
-			ret.m				= MidiMessage::channelPressureChange (ch,value);
-		if (tokens[0] == "ProgramChange")
-			ret.m				= MidiMessage::programChange(ch,value);
+		int finalNumber = number;
+		int finalValue = value;
 
-		if (tokens[0] == "SysEx")
-		{
-			return (CtrlrSysexProcessor::sysexMessageFromString(tokens[5], value, ch));
+		// 1. Resolve the Number (-2) logic
+		if (tokens.size() >= 4) {
+			if (tokens[3].contains("-2-32")) {
+				finalNumber = number - 32;
+			}
+			else if (tokens[3].getIntValue() != -2) {
+				finalNumber = tokens[3].getIntValue();
+			}
 		}
 
-		ret.setNumber(number);
-		ret.setValue(value);
+		_DBG("midiMessageExfromString tokens[2]='" + tokens[2] + "' size=" + String(tokens.size()));
+
+		if (tokens[2] == "CCCoarseMSB") {
+			finalValue = (value >> 1);
+			_DBG("CCCoarseMSB: input=" + String(value) + " output=" + String(finalValue));
+		}
+		else if (tokens[2] == "CCFineLSB") {
+			if (number > 31)
+			{
+				// CC 8-bit pairing is only valid for CC 0-31 (coarse) / CC 32-63 (fine)
+				// If the user has set a CC number above 31, the fine message would land
+				// outside the paired range (32-63), so we skip it entirely.
+				_WRN("CCFineLSB: coarse CC number " + String(number) + " is out of range (must be 0-31). Fine message suppressed.");
+				return CtrlrMidiMessageEx(); // return empty, caller should discard
+			}
+			finalNumber = number + 32;
+			finalValue = (value & 1) << 6;
+			_DBG("CCFineLSB: coarse=" + String(number) + " fine=" + String(finalNumber) + " input=" + String(value) + " output=" + String(finalValue));
+		}
+		
+		// Added v5.6.35. Fixed NRPN Number missing in token set. Thanks to @dnaldoog
+		else if (ret.overrideValue == -2) {
+			finalValue = number;   // -2 means "use component MIDI number"
+		}
+		else if (ret.overrideValue == -1) {
+			finalValue = value;    // -1 means "use component value" (default)
+		}
+		else {
+			finalValue = ret.overrideValue;  // literal override
+		}
+		
+		// 3. Create the MIDI message using the FINAL values
+		if (tokens[0] == "CC")
+			ret.m = MidiMessage::controllerEvent(ch, finalNumber, finalValue);
+		else if (tokens[0] == "Aftertouch")
+			ret.m = MidiMessage::aftertouchChange(ch, finalNumber, finalValue);
+		else if (tokens[0] == "NoteOn")
+			ret.m = MidiMessage::noteOn(ch, finalNumber, (uint8)finalValue);
+		else if (tokens[0] == "NoteOff")
+			ret.m = MidiMessage::noteOff(ch, finalNumber, (uint8)finalValue);
+		else if (tokens[0] == "ChannelPressure")
+			ret.m = MidiMessage::channelPressureChange(ch, finalValue);
+		else if (tokens[0] == "ProgramChange")
+			ret.m = MidiMessage::programChange(ch, finalValue);
+		else if (tokens[0] == "SysEx")
+			return (CtrlrSysexProcessor::sysexMessageFromString(tokens[5], finalValue, ch));
+
+		ret.setNumber(finalNumber);
+		ret.setValue(finalValue);
 		return (ret);
 	}
-	else
-	{
-	    jassertfalse; // Looks like there is not enough tokens to create a CtrlrMidiMessageEx object
-		return (CtrlrMidiMessageEx());
-	}
+
+	return (CtrlrMidiMessageEx());
 }
 
 const String extractVendorId (const CtrlrMidiMessage &message)

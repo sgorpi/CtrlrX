@@ -355,7 +355,11 @@ namespace Ids
     DECLARE_ID (uiImageSliderResourceFrameWidth);
     DECLARE_ID (uiImageSliderResourceFrameHeight);
     DECLARE_ID (uiImageResource);
-    
+
+    DECLARE_ID (uiComboSearch);
+    DECLARE_ID (uiComboSearchFont);
+    DECLARE_ID (uiComboSearchTextColour);
+    DECLARE_ID (uiComboSearchBgColour);
     DECLARE_ID (uiComboArrowColour);
     DECLARE_ID (uiComboOutlineColour);
     DECLARE_ID (uiComboTextColour);
@@ -547,7 +551,7 @@ namespace Ids
     DECLARE_ID (uiArrowHeadHeight);
     DECLARE_ID (uiArrowOrientation);
     DECLARE_ID (uiArrowRotation);
-    DECLARE_ID (uiArrowStokeThickness);
+    DECLARE_ID (uiArrowStrokeThickness); // Updated v5.6.35. TYPO
     
     DECLARE_ID (uiCustomResizedCallback);
     DECLARE_ID (uiCustomPaintCallback);
@@ -724,6 +728,8 @@ namespace Ids
     
     DECLARE_ID (modulatorReference);
     DECLARE_ID (midiMessageCtrlrNumber);
+    DECLARE_ID (midiMessageCtrlrNumberSize); // Added v5.6.35. Thanks to @dnaldoog
+    DECLARE_ID (midiMessageLatchAndStream); // Added v5.6.35. Thanks to @dnaldoog
     DECLARE_ID (midiMessageChannel);
     DECLARE_ID (midiMessageCtrlrValue);
     DECLARE_ID (midiMessageType);
@@ -792,6 +798,7 @@ namespace Ids
     DECLARE_ID (ctrlrVersionCompressed);
     DECLARE_ID (ctrlrMidiMonInputBufferSize);
     DECLARE_ID (ctrlrMidiMonOutputBufferSize);
+    DECLARE_ID (ctrlrMidiFilters); // Added v5.6.35
     DECLARE_ID (ctrlrLogMidiInput);
     DECLARE_ID (ctrlrLogMidiOutput);
     DECLARE_ID (ctrlrLogOptions);
@@ -844,7 +851,9 @@ namespace Ids
     DECLARE_ID (luaMethodEditorBgColour);
     DECLARE_ID (luaMethodEditorLineNumbersBgColour); // Added v5.6.31
     DECLARE_ID (luaMethodEditorLineNumbersColour); // Added v5.6.31
-	DECLARE_ID (luaMethodEditorFontColour); // Added v5.6.34. Editor font colour
+    DECLARE_ID (luaMethodEditorFontColour); // Added v5.6.34. Editor font colour
+    DECLARE_ID (luaMethodEditorAutoComplete); // Added v5.6.35.
+	DECLARE_ID(luaMethodEditorAutoCompleteOpt); // Added v5.6.35. Options for auto complete full/light
     DECLARE_ID (luaMethodGroup);
     DECLARE_ID (luaMethodCode);
     DECLARE_ID (luaMethodSource);

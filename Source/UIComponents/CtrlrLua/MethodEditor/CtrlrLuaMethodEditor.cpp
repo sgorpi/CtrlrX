@@ -40,7 +40,7 @@ CtrlrLuaMethodEditor::CtrlrLuaMethodEditor (CtrlrPanel &_owner)
 
     addKeyListener (this);
     componentTree.addListener (this);
-    setSize (900, 600); // Update v5.6.31. Note : follows container size 800x500
+    setSize (900, 700); // Updated v5.6.35
 }
 
 CtrlrLuaMethodEditor::~CtrlrLuaMethodEditor()
@@ -87,8 +87,6 @@ void CtrlrLuaMethodEditor::valueTreePropertyChanged (ValueTree &treeWhosePropert
                 ed->getCodeComponent()->setColour(CodeEditorComponent::lineNumberBackgroundId, VAR2COLOUR(componentTree.getProperty(Ids::luaMethodEditorLineNumbersBgColour)));
 				
                 ed->getCodeComponent()->setColour(CodeEditorComponent::defaultTextColourId, VAR2COLOUR(componentTree.getProperty(Ids::luaMethodEditorFontColour)));
-				
-                //ed->getCodeComponent()->setColour(0x1000440, VAR2COLOUR(componentTree.getProperty(Ids::luaMethodEditorFontColour)));
             }
         }
     }
@@ -161,6 +159,11 @@ bool CtrlrLuaMethodEditor::keyPressed (const KeyPress& key, Component* originati
             _DBG("Attempting to map Cmd+F to editSearch.");
             commandID = LuaMethodEditorCommandIDs::editSearch;
         }
+		else if (key.getKeyCode() == 'R' && !modifiers.isShiftDown())
+		{
+			_DBG("Attempting to map Cmd+R to editFindAndReplace.");
+			commandID = LuaMethodEditorCommandIDs::editFindAndReplace;
+		}
         else if (key.getKeyCode() == 'F' && modifiers.isShiftDown())
         {
             _DBG("Attempting to map Cmd+Shift+F to editFindAndReplace.");
@@ -243,7 +246,7 @@ CtrlrLuaMethod *CtrlrLuaMethodEditor::setEditedMethod (const Uuid &methodUuid)
     {
         if (method->getCodeEditor() == nullptr)
         {
-            /* the method is not yest beeing edited */
+            /* the method is not yest being edited */
             createNewTab (method);
         }
         else

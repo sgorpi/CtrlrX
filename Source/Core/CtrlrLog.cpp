@@ -64,6 +64,25 @@ void CtrlrLog::setLogToFile (const bool _logToFile)
 	}
 }
 
+void CtrlrLog::logMessage(const String& message, const LogLevel level, const MidiMessage& midiData)  /* overload for filtering midi messages*/
+
+
+{
+	Logger::outputDebugString(message);
+	CtrlrLogMessage m;
+	m.level = level;
+	m.message = message.trim();
+	m.time = Time::getCurrentTime();
+	m.midiData = midiData;        // Store the MIDI message
+	m.hasMidiData = true;          // Flag that we have MIDI data
+	if (fileLogger)
+	{
+		fileLogger->logMessage(formatMessage(m).trim());
+	}
+	pendingQueue.add(m);
+	triggerAsyncUpdate();
+}
+
 void CtrlrLog::logMessage(CtrlrLog::LogLevel, char *format, ...)
 {
     char buffer[512];
@@ -112,12 +131,14 @@ void CtrlrLog::logMessage (const String &device, const MidiMessage &message, con
 {
 	if (getBitOption(midiLogOptions.get(), midiLogInput) && level == MidiIn)
 	{
-		logMessage ((getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:["+device+"]") : "")+ formatMidiMessage(message), level);
+		String formattedMsg = (getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:[" + device + "]") : "") + formatMidiMessage(message);
+		logMessage(formattedMsg, level, message);  // <-- Use the NEW 3-parameter overload
 	}
-
+	
 	if (getBitOption(midiLogOptions.get(), midiLogOutput) && level == MidiOut)
 	{
-		logMessage ((getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:["+device+"]") : "")+ formatMidiMessage(message), level);
+		String formattedMsg = (getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:[" + device + "]") : "") + formatMidiMessage(message);
+		logMessage(formattedMsg, level, message);  // <-- Use the NEW 3-parameter overload
 	}
 }
 
@@ -125,12 +146,14 @@ void CtrlrLog::logMessage (const String &device, const MidiMessage &message, con
 {
 	if (getBitOption(midiLogOptions.get(), midiLogInput) && level == MidiIn)
 	{
-		logMessage ((getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:["+device+"]") : "")+ formatMidiMessage(message, time), level);
+		String formattedMsg = (getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:[" + device + "]") : "") + formatMidiMessage(message, time);
+		logMessage(formattedMsg, level, message);  // <-- Use the NEW 3-parameter overload
 	}
-
+	
 	if (getBitOption(midiLogOptions.get(), midiLogOutput) && level == MidiOut)
 	{
-		logMessage ((getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:["+device+"]") : "")+ formatMidiMessage(message, time), level);
+		String formattedMsg = (getBitOption(midiLogOptions.get(), midiLogDevice) ? (" Dev:[" + device + "]") : "") + formatMidiMessage(message, time);
+		logMessage(formattedMsg, level, message);  // <-- Use the NEW 3-parameter overload
 	}
 }
 

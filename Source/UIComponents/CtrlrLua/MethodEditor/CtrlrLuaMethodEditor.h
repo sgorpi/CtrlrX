@@ -7,12 +7,13 @@
 #include "CtrlrLuaMethodEditArea.h"
 #include "CtrlrValueTreeEditor.h"
 #include "CtrlrLua/MethodEditor/CtrlrLuaMethodEditorCommandIDs.h" // Added v5.6.34.
-
+#include "CtrlrLuaMethodAutoCompleteManager.h" // Added v5.6.35.
 
 class CtrlrManager;
 class CtrlrLookAndFeel;
 class CtrlrLuaMethodManager;
 class CtrlrLuaMethodCodeEditor;
+class LuaAutocompleteManager; // Added v5.6.35.
 
 #define METHOD_NEW              "Add new method"
 #define METHOD_DEL              "Delete method"
@@ -125,7 +126,10 @@ class CtrlrLuaMethodEditor  : public CtrlrChildWindowContent,
         bool caseCansitive, findDialogActive;
         String lookInString, searchInString, currentSearchString;
 	
-		/** Returns the current GenericCodeEditorComponent, or nullptr if not available. */
+        /** Autocomplete typing feature. */
+        CtrlrLuaMethodAutoCompleteManager& getAutocompleteManager() { return autocompleteManager; };
+	
+        /** Returns the current GenericCodeEditorComponent, or nullptr if not available. */
         GenericCodeEditorComponent* getEditorComponent()
         {
             return editorComponent;
@@ -144,6 +148,7 @@ private:
         StretchableLayoutResizerBar *resizer;
         CtrlrPanel &owner;
         CtrlrLuaMethodEditArea *methodEditArea;
+        CtrlrLuaMethodAutoCompleteManager autocompleteManager; // Added v5.6.35. Autocomplete typing feature.
         GenericCodeEditorComponent* editorComponent;
 };
 
@@ -152,12 +157,22 @@ class SharedValues
 public:
     static Value& getSearchTabsValue()
     {
-        static Value searchTabsValue(true); // default to true
+        static Value searchTabsValue(var(true)); // default to true
         return searchTabsValue;
     }
     static const String& getSearchTabsLabel()
     {
         static const String label("Keep methods opened after a match");
+        return label;
+    }
+    static const String& getAutoCompleteLabel()
+    {
+        static const String label("Autocomplete lua methods");
+        return label;
+    }
+    static const String& getAutoCompleteOptionsLabel()
+    {
+        static const String label("Autocomplete Full (on)/Light (off)");
         return label;
     }
 };

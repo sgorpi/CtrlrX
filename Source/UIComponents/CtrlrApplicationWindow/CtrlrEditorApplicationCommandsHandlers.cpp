@@ -206,15 +206,28 @@ bool CtrlrEditor::perform (const InvocationInfo &info) // Updated v5.6.34. Will 
             break;
 
         case CtrlrEditor::showGlobalSettingsDialog:
-            owner.getWindowManager().showModalDialog ("CtrlrX/Settings", ScopedPointer <CtrlrSettings> (new CtrlrSettings(owner)), true, this); // Updated v5.6.34. Was "Ctrlr/"
+            #if JUCE_LINUX
+                // Use toggle() on all Linux to avoid Wayland/compositor issues
+                owner.getWindowManager().toggle(CtrlrManagerWindowManager::GlobalSettings, true);
+            #else
+                // Modal dialog on Windows/macOS where it's stable
+                owner.getWindowManager().showModalDialog ("CtrlrX/Settings",
+                    ScopedPointer <CtrlrSettings> (new CtrlrSettings(owner)), true, this);
+            #endif
             break;
 
         case CtrlrEditor::showAboutDialog:
-        {
-            CtrlrAbout* aboutWindow = new CtrlrAbout(owner);
-            owner.getWindowManager().showModalDialog ("CtrlrX/About", aboutWindow, false, this); // Updated v5.6.34. Was "Ctrlr/"
-        }
-        break;
+            #if JUCE_LINUX
+                // Use toggle() on all Linux to avoid Wayland/compositor issues
+                owner.getWindowManager().toggle(CtrlrManagerWindowManager::AboutWindow, true);
+            #else
+                // Non-modal dialog on Windows/macOS
+                {
+                    CtrlrAbout* aboutWindow = new CtrlrAbout(owner);
+                    owner.getWindowManager().showModalDialog ("CtrlrX/About", aboutWindow, false, this);
+                }
+            #endif
+            break;
 
         case CtrlrEditor::doZoomIn:
             if (getActivePanelEditor())
@@ -411,8 +424,34 @@ void CtrlrEditor::performRecentFileOpen(const int menuItemID)
 
 void CtrlrEditor::performShowKeyboardMappingDialog(const int menuItemID)
 {
-	ScopedPointer <KeyMappingEditorComponent> keys (new KeyMappingEditorComponent (*owner.getCommandManager().getKeyMappings(), true));
-	owner.getWindowManager().showModalDialog ("Keyboard mapping", keys, true, this);
+#if JUCE_LINUX
+	// Non-modal on Linux to avoid Wayland crashes
+	auto* keys = new KeyMappingEditorComponent(*owner.getCommandManager().getKeyMappings(), true);
+	keys->setSize(600, 400); // Set an initial size for the component
+	DialogWindow::LaunchOptions options;
+	options.content.setOwned(keys);
+	options.dialogTitle = "Keyboard mapping";
+	options.resizable = true;
+	options.useNativeTitleBar = true;
+	options.dialogBackgroundColour = Colours::lightgrey;
+	options.escapeKeyTriggersCloseButton = true;
+	options.componentToCentreAround = this;
+	
+	options.launchAsync();
+	
+	// Save the key mappings when dialog closes
+	MessageManager::callAsync([this]() {
+		ScopedPointer<XmlElement> keysXml(owner.getCommandManager().getKeyMappings()->createXml(true).release());
+		
+		if (keysXml)
+		{
+			owner.setProperty(Ids::ctrlrKeyboardMapping, keysXml->createDocument(""));
+		}
+	});
+#else
+	// Modal on other platforms (original code)
+	ScopedPointer<KeyMappingEditorComponent> keys(new KeyMappingEditorComponent(*owner.getCommandManager().getKeyMappings(), true));
+	owner.getWindowManager().showModalDialog("Keyboard mapping", keys, true, this);
 
 	ScopedPointer <XmlElement> keysXml (owner.getCommandManager().getKeyMappings()->createXml (true).release());
 
@@ -420,6 +459,7 @@ void CtrlrEditor::performShowKeyboardMappingDialog(const int menuItemID)
 	{
 		owner.setProperty (Ids::ctrlrKeyboardMapping, keysXml->createDocument(""));
 	}
+#endif
 }
 
 void CtrlrEditor::performMidiChannelChange(const int menuItemID)

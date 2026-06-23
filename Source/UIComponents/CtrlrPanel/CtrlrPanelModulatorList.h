@@ -17,7 +17,8 @@ class CtrlrModulatorListSorter
 
 class CtrlrPanelModulatorList  : public CtrlrChildWindowContent,
                                  public TableListBoxModel,
-								 public CtrlrPanel::Listener
+								 public CtrlrPanel::Listener,
+								 public juce::Timer
 {
 	public:
 		CtrlrPanelModulatorList (CtrlrPanel &_owner);
@@ -34,6 +35,7 @@ class CtrlrPanelModulatorList  : public CtrlrChildWindowContent,
 		};
 
 		void copyModulatorList();
+		void timerCallback() override;
 		int getNumRows();
 		void paintRowBackground (Graphics& g, int rowNumber, int width, int height, bool rowIsSelected);
 		void paintCell (Graphics& g, int rowNumber, int columnId, int width, int height, bool rowIsSelected) {}
@@ -54,7 +56,8 @@ class CtrlrPanelModulatorList  : public CtrlrChildWindowContent,
 		const Identifier getColumnCtrlrId(const int columnId);
 		static const String getValueStringForColumn (CtrlrModulator *m, const Identifier columnName);
 		static Value getValueForColumn (CtrlrModulator *m, const Identifier columnName);
-		void modulatorChanged (CtrlrModulator *modulatorThatChanged);
+
+		void modulatorChanged (CtrlrModulator *modulatorThatChanged) override;
 		void modulatorAdded (CtrlrModulator *modulatorThatWasAdded);
 		void modulatorRemoved (CtrlrModulator *modulatorRemoved);
 		void restoreColumns(const String &columnState);

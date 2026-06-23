@@ -1,4 +1,4 @@
-![alt text](/Source/Resources/Icons/CtrlrX-README-250x315.png?raw=true "CtrlrX")
+![alt text](/Source/Resources/Icons/CtrlrX-README-250x315-02.png?raw=true "CtrlrX")
 
 
 
@@ -60,7 +60,7 @@ Ctrlr allows you to control any MIDI-enabled hardware: synthesizers, drum machin
 
 Development and maintenance of [CtrlrX](https://github.com/damiensellier/CtrlrX) are supported by the community. If you find this project useful and would like to support [Damien Sellier](https://github.com/DamienSellier/), the main person behind [CtrlrX](https://github.com/damiensellier/CtrlrX), any donations are greatly appreciated.
 
-You can donate via PayPal using this link: **[paypal.me/damiensellier/10](https://paypal.me/damiensellier/10)**
+You can donate via ko-fi using this link: **[https://ko-fi.com/damiensellier](https://ko-fi.com/damiensellier)**
 
 ---
 
@@ -485,6 +485,35 @@ Tuturial coming soon.
 ---
 
 ## Changelog
+
+#### Version 5.6.35 | 2026.04.20
+
+* **UPDATED** ctrlrAutoSave & ctrlrAutoSaveInterval properties in Preferences only if isStandaloneApp. `CtrlrManager.cpp`, `CtrlrManagerInstance.cpp`, `CtrlrSettings.cpp`
+* **UPDATED** flag IS_MIDI_EFFECT FALSE. `CMakeLists.txt`
+* **UPDATED** Projucer files without useless linux libs. `CtrlrX 5.6.35.jucer, `CtrlrX 5.6.35 [Without AAX].jucer`, `CtrlrX 5.6.35 [Without AAX & VST].jucer`
+* **UPDATED** Get/Set modValue As/From Data with getModulatorValuesAsData() & setModulatorValuesFromData(). Thanks to [John Goodland](https://github.com/dnaldoog) `CtrlrLuaManager.cpp`, `CtrlrMacros.h`, `CtrlrPanel.cpp`
+* **FIXED** saving uiSlider positions on uiTabs. Thanks to [John Goodland](https://github.com/dnaldoog) `CtrlrTabsComponents.cpp`
+* **FIXED** MemoryBlock(int) faulty constructor returning actual size x2. Thanks to [John Goodland](https://github.com/dnaldoog) `LMemory.cpp`
+* **ADDED** GH action to create UML diagrams using clang-uml. Thanks to [Sgorpi](https://github.com/sgorpi). `clang_uml_diagrams.yml`, `.clang-uml`
+* **FIXED** Linux Gnome Wayland modal Dialog Windows. Thanks to [John Goodland](https://github.com/dnaldoog) 
+* **FIXED** memory issues identified with Valgrind. Thanks to [Sgorpi](https://github.com/sgorpi).
+* **FIXED** XML file reading. Thanks to [John Goodland](https://github.com/dnaldoog) `LCore.cpp`
+* **FIXED** Highlight Background & Text for FileListBox Component. Thanks to [Dominique Bonptemps](https://github.com/dobo365) `CtrlrFileListBox.cpp`
+* **UPDATED** CtrlrLuaMethodEditor with IDE-like autocomplete on typing. `CtrlrLuaMethodAutoCompleteManager.cpp` & `.h`, `CtrlrLuaMethodCodeEditor.cpp` & `.h`, `CtrlrLuaMethodEditor.h`
+* **UPDATED** sendMidiMessageNow() compatibility with the old syntax and support table content as message. `CtrlrLuaMethodAutoCompleteManager.cpp` & `.h`
+* **ADDED** MIDI Monitor Message Type filtering (Note On, Note Off, Aftertouch, Clock, SYSEX, etc). Thanks to [John Goodland](https://github.com/dnaldoog). `CtrlrIDs.h`, `CtrlrLog.cpp` & `.h`, `CtrlrMacros.h`, `CtrlrMIDIMon.cpp` & `.h`
+* **FIXED** AudioUnit type is set to "Virtual Instrument" not "Audio FX" anymore. Thanks to [Chuck Zwicky](https://github.com/zmixnyc) `cmakelists.txt`
+* **UPDATED** X11 scaling for HiDPI in Linux. Thanks to [Andrej Radović](https://github.com/randrej)
+* **FIXED** parameter index to host interface for AudioUnit. Thanks to [Chuck Zwicky](https://github.com/zmixnyc) `CtrlrProcessor.cpp`
+* **UPDATED** comboBox Fuzzy Search with [RapidFuzz CPP](https://github.com/rapidfuzz/rapidfuzz-cpp). `CtrlrCombo.cpp` & `.h`, `CtrlrIDs.xml` & `.h`, `Source/Misc/rapidfuzz`, `CMakeLists.txt`
+* **UPDATED** CtrlrPanelLayerList & selected item highlight. Thanks to [John Goodland](https://github.com/dnaldoog). `CtrlrPanelLayerList.cpp`, `CtrlrPanelLayerListItem.cpp` & `.h`
+* **UPDATED** CtrlrAbout Window with new donation links & resources to ko-fi. `CtrlrAbout.cpp` & `.h`
+* **UPDATED** Windows export panel fileChooser default target folders. `CtrlrWindows.cpp`
+* **ADDED** Windows script for faster compilation via NINJA. Thanks to [John Goodland](https://github.com/dnaldoog). `autobuild_win.bat`
+* **UPDATED** CtrlrTabsComponents.cpp saving uiSlider positions on uiTabs. `CtrlrTabsComponent.cpp`
+* **FIXED** CtrlrLuaMethodAutoCompleteManager crash when self-referencing a custom variable followed with LUA concatenation dot dot. (i.e. myVariable = myVvariable.."abc"). `CtrlrLuaMethodAutoCompleteManager.cpp`, `CtrlrLuaMethodCodeEditor.cpp`
+* **ADDED** MIDI Message tokens for Novation Bass Station II with 8-bit Values over 2 CCs. Thanks to [John Goodland](https://github.com/dnaldoog).
+* **ADDED** MIDI Message Latch & Stream option to MIDI messages to allow NRPN header just being sent once only when MIDI data changes. Thanks to [John Goodland](https://github.com/dnaldoog). `CtrlrPanel.cpp` & `.h` , `CtrlrMidiMessage.cpp`, `CtrlrIDs.xml`, `CtrlrIDs.h` , `CtrlrSysexProcessor.cpp` 
 
 #### Version 5.6.34 | 2025.11.07
 

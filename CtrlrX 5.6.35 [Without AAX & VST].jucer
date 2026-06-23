@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="hrcYoO" name="CtrlrX" reportAppUsage="1" projectType="audioplug"
-              version="5.6.34" bundleIdentifier="com.CtrlrX.CtrlrX" includeBinaryInAppConfig="1"
+              version="5.6.35" bundleIdentifier="com.CtrlrX.CtrlrX" includeBinaryInAppConfig="1"
               buildVST="0" buildVST3="1" buildAU="1" buildAUv3="0" buildRTAS="0"
               buildAAX="0" buildStandalone="1" enableIAA="0" pluginName="CtrlrX                          "
               pluginManufacturer="CtrlrX Project                  " pluginManufacturerCode="cTrX"
@@ -187,11 +187,9 @@
           <FILE id="S3Qhqe" name="README.md" compile="0" resource="1" file="Source/Misc/luabind/README.md"/>
         </GROUP>
         <GROUP id="{1C4788E8-DEC6-8DD4-1530-75A1A430E869}" name="include">
-          <FILE id="CkCjmf" name="inttypes.h" compile="0" resource="0" file="Source/Misc/include/inttypes.h"/>
           <FILE id="st1G2O" name="juce_PluginHostType.h" compile="0" resource="0"
                 file="Source/Misc/include/juce_PluginHostType.h"/>
           <FILE id="C78Zt7" name="keys.h" compile="0" resource="0" file="Source/Misc/include/keys.h"/>
-          <FILE id="vNQ91N" name="libr.h" compile="0" resource="0" file="Source/Misc/include/libr.h"/>
         </GROUP>
         <GROUP id="{8D0EB2C1-4C15-CD48-4227-1E4C48BAA894}" name="libusb">
           <GROUP id="{541D1253-AA52-A340-641E-A93E9B43A0E5}" name="include">
@@ -252,8 +250,6 @@
           </GROUP>
         </GROUP>
         <FILE id="ba8H2u" name="keys.cpp" compile="1" resource="0" file="Source/Misc/keys.cpp"/>
-        <FILE id="N35AKi" name="libr-bfd.c" compile="1" resource="0" file="Source/Misc/libr-bfd.c"/>
-        <FILE id="u4JZiN" name="libr.c" compile="1" resource="0" file="Source/Misc/libr.c"/>
       </GROUP>
       <GROUP id="{1F581EC7-DF90-90BB-9490-7707A3326EA3}" name="Core">
         <GROUP id="{D43D8BB9-ABDE-2422-2D6D-93DD2D24C15D}" name="CtrlrManager">
@@ -638,6 +634,7 @@
           <FILE id="OOpHQ2" name="FONT_ZX81.ttf" compile="0" resource="1" file="Source/Resources/Fonts/FONT_ZX81.ttf"/>
         </GROUP>
         <GROUP id="{57CA4634-99B0-23FB-F19C-154181EAAE85}" name="Icons">
+          <FILE id="d8Ox7r" name="kofi.svg" compile="0" resource="1" file="Source/Resources/Icons/kofi.svg"/>
           <FILE id="hvQjEJ" name="github_line.svg" compile="0" resource="1" file="Source/Resources/Icons/github_line.svg"/>
           <FILE id="tsirkk" name="paypal_colour.svg" compile="0" resource="1"
                 file="Source/Resources/Icons/paypal_colour.svg"/>
@@ -736,6 +733,7 @@
           <FILE id="NdGwMn" name="RSRC.zip" compile="0" resource="1" file="Source/Resources/Misc/RSRC.zip"/>
         </GROUP>
         <GROUP id="{3E28051A-C67A-EB61-FFEC-E15E9C2440B2}" name="XML">
+          <FILE id="apYczx" name="LuaAPI.xml" compile="0" resource="1" file="Source/Resources/XML/LuaAPI.xml"/>
           <FILE id="sfPVqB" name="CtrlrIDs.xml" compile="0" resource="1" file="Source/Resources/XML/CtrlrIDs.xml"/>
           <FILE id="c2a7q2" name="CtrlrLuaClassTemplates.xml" compile="0" resource="1"
                 file="Source/Resources/XML/CtrlrLuaClassTemplates.xml"/>
@@ -886,6 +884,10 @@
                   file="Source/UIComponents/CtrlrLua/MethodEditor/CtrlrLuaCodeTokeniser.h"/>
             <FILE id="YPDQdL" name="CtrlrLuaCodeTokeniserFunctions.h" compile="0"
                   resource="0" file="Source/UIComponents/CtrlrLua/MethodEditor/CtrlrLuaCodeTokeniserFunctions.h"/>
+            <FILE id="gpXl6W" name="CtrlrLuaMethodAutoCompleteManager.cpp" compile="1"
+                  resource="0" file="Source/UIComponents/CtrlrLua/MethodEditor/CtrlrLuaMethodAutoCompleteManager.cpp"/>
+            <FILE id="Qy95en" name="CtrlrLuaMethodAutoCompleteManager.h" compile="0"
+                  resource="0" file="Source/UIComponents/CtrlrLua/MethodEditor/CtrlrLuaMethodAutoCompleteManager.h"/>
             <FILE id="gZgxEW" name="CtrlrLuaMethodCodeEditor.cpp" compile="1" resource="0"
                   file="Source/UIComponents/CtrlrLua/MethodEditor/CtrlrLuaMethodCodeEditor.cpp"/>
             <FILE id="Xumynu" name="CtrlrLuaMethodCodeEditor.h" compile="0" resource="0"
@@ -1047,6 +1049,8 @@
                 file="Source/UIComponents/CtrlrPropertyEditors/CtrlrPropertyComponent.h"/>
         </GROUP>
         <GROUP id="{B01F1BE8-BD6C-CC8D-6AFE-E508BFBBDC7F}" name="CtrlrWindowManagers">
+          <FILE id="sLaKA8" name="CtrlrAboutContent.h" compile="0" resource="0"
+                file="Source/UIComponents/CtrlrWindowManagers/CtrlrAboutContent.h"/>
           <FILE id="MXMqnG" name="CtrlrChildWindow.cpp" compile="1" resource="0"
                 file="Source/UIComponents/CtrlrWindowManagers/CtrlrChildWindow.cpp"/>
           <FILE id="I8i09a" name="CtrlrChildWindow.h" compile="0" resource="0"
@@ -1071,6 +1075,8 @@
                 file="Source/UIComponents/CtrlrWindowManagers/CtrlrPanelWindowManager.cpp"/>
           <FILE id="rrTHIh" name="CtrlrPanelWindowManager.h" compile="0" resource="0"
                 file="Source/UIComponents/CtrlrWindowManagers/CtrlrPanelWindowManager.h"/>
+          <FILE id="OtSH87" name="CtrlrSettingsContent.h" compile="0" resource="0"
+                file="Source/UIComponents/CtrlrWindowManagers/CtrlrSettingsContent.h"/>
         </GROUP>
         <FILE id="Pd2NHo" name="CtrlrAbout.cpp" compile="1" resource="0" file="Source/UIComponents/CtrlrAbout.cpp"/>
         <FILE id="TkpXbV" name="CtrlrAbout.h" compile="0" resource="0" file="Source/UIComponents/CtrlrAbout.h"/>
@@ -1205,7 +1211,7 @@
         <MODULEPATH id="juce_product_unlocking" path="JUCE/modules"/>
       </MODULEPATHS>
     </CODEBLOCKS_LINUX>
-    <LINUX_MAKE targetFolder="Builds/LinuxMakefile" enableGNUExtensions="1" externalLibraries="udev&#10;:libbfd.a&#10;iberty&#10;z&#10;X11&#10;sframe&#10;zstd"
+    <LINUX_MAKE targetFolder="Builds/LinuxMakefile" enableGNUExtensions="1" externalLibraries="udev&#10;z&#10;X11"
                 vstLegacyFolder="Source/Misc/vst2sdk" extraCompilerFlags="-w"
                 smallIcon="eqFQC1" bigIcon="eqFQC1" extraDefs="JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1 BOOST_BIND_GLOBAL_PLACEHOLDERS=1">
       <CONFIGURATIONS>

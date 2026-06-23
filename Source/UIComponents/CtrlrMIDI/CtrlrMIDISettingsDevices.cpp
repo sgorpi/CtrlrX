@@ -260,6 +260,10 @@ CtrlrMIDISettingsDevices::CtrlrMIDISettingsDevices (CtrlrPanel &_owner)
     addAndMakeVisible (pluginInput = new ToggleButton ("new toggle button"));
     pluginInput->setButtonText (TRANS("Enable input from plugin host"));
     pluginInput->addListener (this);
+	
+    addAndMakeVisible (pluginInputToHostComp = new ToggleButton ("new toggle button"));
+    pluginInputToHostComp->setButtonText (TRANS("Enable input from host to comparator"));
+    pluginInputToHostComp->addListener (this);
 
     addAndMakeVisible (pluginInputChannel = new ComboBox (String()));
     pluginInputChannel->setEditableText (false);
@@ -311,6 +315,7 @@ CtrlrMIDISettingsDevices::CtrlrMIDISettingsDevices (CtrlrPanel &_owner)
     pluginInputChannel->setText (owner.getProperty(Ids::panelMidiInputChannelHost), dontSendNotification);
     pluginOutput->setToggleState (owner.getProperty(Ids::panelMidiOutputToHost), dontSendNotification);
     pluginInput->setToggleState (owner.getProperty(Ids::panelMidiInputFromHost), dontSendNotification);
+    pluginInputToHostComp->setToggleState (owner.getProperty(Ids::panelMidiInputFromHostCompare), dontSendNotification); // Added v5.6.35
     //[/Constructor]
 }
 
@@ -340,6 +345,7 @@ CtrlrMIDISettingsDevices::~CtrlrMIDISettingsDevices()
     pluginOutput = nullptr;
     label9 = nullptr;
     pluginInput = nullptr;
+	pluginInputToHostComp = nullptr; // Added v5.6.35
     pluginInputChannel = nullptr;
 
 
@@ -383,6 +389,7 @@ void CtrlrMIDISettingsDevices::resized()
     pluginOutput->setBounds (proportionOfWidth (0.0803f), proportionOfHeight (0.4968f), proportionOfWidth (0.6004f), proportionOfHeight (0.0597f));
     label9->setBounds (proportionOfWidth (0.7209f), proportionOfHeight (0.0490f), proportionOfWidth (0.2410f), proportionOfHeight (0.0597f));
     pluginInput->setBounds (proportionOfWidth (0.0803f), proportionOfHeight (0.6226f), proportionOfWidth (0.6004f), proportionOfHeight (0.0597f));
+	pluginInputToHostComp->setBounds (proportionOfWidth (0.0803f), proportionOfHeight (0.5597f), proportionOfWidth (0.6004f), proportionOfHeight (0.0597f)); // Added v5.6.35
     pluginInputChannel->setBounds (proportionOfWidth (0.7410f), proportionOfHeight (0.6226f), proportionOfWidth (0.2008f), proportionOfHeight (0.0597f));
     //[UserResized] Add your own custom resize handling here..
     //[/UserResized]
@@ -489,6 +496,12 @@ void CtrlrMIDISettingsDevices::buttonClicked (Button* buttonThatWasClicked)
     {
         //[UserButtonCode_pluginInput] -- add your button handler code here..
         owner.setProperty(Ids::panelMidiInputFromHost, pluginInput->getToggleState());
+        //[/UserButtonCode_pluginInput]
+    }
+    else if (buttonThatWasClicked == pluginInputToHostComp) // Added v5.6.35
+    {
+        //[UserButtonCode_pluginInput] -- add your button handler code here..
+        owner.setProperty(Ids::panelMidiInputFromHostCompare, pluginInput->getToggleState());
         //[/UserButtonCode_pluginInput]
     }
 

@@ -115,8 +115,8 @@ void LFile::wrapForLua (lua_State *L)
         .def("containsSubDirectories", &File::containsSubDirectories)
         .def("loadFileAsString", &File::loadFileAsString)
         .def("appendData", &LFile::appendData)
-        .def("replaceWithData", &File::replaceWithData)
-        .def("replaceWithData", &LFile::replaceWithData)
+        // .def("replaceWithData", &File::replaceWithData) // Removed v5.6.35. Low-level C++ API, difficult to use from Lua.
+        .def("replaceWithData", &LFile::replaceWithData) // High-level Lua-friendly wrapper that accepts LMemoryBlock objects directly
         .def("appendText", &File::appendText)
         .def("replaceWithText", &File::replaceWithText)
         .def("hasIdenticalContentTo", &File::hasIdenticalContentTo)
@@ -960,7 +960,21 @@ namespace LXmlJuce6Factories // Added v5.6.34. Thanks to @dnaldoog
 		return element ? element.release() : nullptr;
 	}
 }
+// Helper to handle the unique_ptr conversion
+static XmlElement* getDocumentElementWrapper(XmlDocument* doc, bool onlyReadOuter)
+{
+	// .release() takes the pointer out of the unique_ptr without deleting the object
 
+	/*
+	 The error C2280 occurs because std::unique_ptr is a move-only type. Its copy constructor is explicitly deleted.
+	 When you bind XmlDocument::getDocumentElement directly via .def(),
+	 Luabind attempts to create a wrapper that copies the
+	 return value of the function into a Lua-managed object.
+	 Since it can't copy a unique_ptr, the compiler throws an error.
+	*/
+	
+	return doc->getDocumentElement(onlyReadOuter).release();
+}
 void LXmlElement::wrapForLua (lua_State *L)
 {
 	using namespace luabind;
@@ -1027,7 +1041,7 @@ void LXmlElement::wrapForLua (lua_State *L)
         class_<XmlDocument>("XmlDocument")
             .def(constructor<const String &>())
             .def(constructor<const File &>())
-            //.def("getDocumentElement", &XmlDocument::getDocumentElement)
+            .def("getDocumentElement", &getDocumentElementWrapper, adopt(result)) // was commented out?? https://github.com/damiensellier/CtrlrX/issues/206
             .def("getLastParseError", &XmlDocument::getLastParseError)
             .def("setInputSource", &XmlDocument::setInputSource)
             .def("setEmptyTextElementsIgnored", &XmlDocument::setEmptyTextElementsIgnored)

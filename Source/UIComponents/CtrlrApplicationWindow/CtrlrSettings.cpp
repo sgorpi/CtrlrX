@@ -28,8 +28,12 @@ CtrlrSettings::CtrlrSettings (CtrlrManager &_owner) : Component ("Global Propert
     // Ctrlr Behaviour section
     globalProperties.add(owner.getIDManager().createComponentForProperty(Identifier("ctrlrVersionSeparator"), owner.getManagerTree(), nullptr));
     globalProperties.add(owner.getIDManager().createComponentForProperty(Identifier("ctrlrVersionCompressed"), owner.getManagerTree(), nullptr));
-    globalProperties.add(owner.getIDManager().createComponentForProperty(Identifier("ctrlrAutoSave"), owner.getManagerTree(), nullptr));
-    globalProperties.add(owner.getIDManager().createComponentForProperty(Identifier("ctrlrAutoSaveInterval"), owner.getManagerTree(), nullptr));
+
+    if (JUCEApplication::isStandaloneApp()) // Added v5.6.35
+    {
+        globalProperties.add(owner.getIDManager().createComponentForProperty(Identifier("ctrlrAutoSave"), owner.getManagerTree(), nullptr));
+        globalProperties.add(owner.getIDManager().createComponentForProperty(Identifier("ctrlrAutoSaveInterval"), owner.getManagerTree(), nullptr));
+    }
 
     // Useless because ctrlrShutdownDelay is overriden in ctrlrProcessor.cpp to 512
     // #ifdef JUCE_MAC

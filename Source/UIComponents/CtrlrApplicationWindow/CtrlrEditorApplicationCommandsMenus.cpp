@@ -111,7 +111,7 @@ PopupMenu CtrlrEditor::getMenuForIndex(int topLevelMenuIndex, const String &menu
 			menu.addCommandItem (commandManager, doNewPanel);
 			menu.addSeparator();
 			menu.addCommandItem (commandManager, doOpenPanel);
-			menu.addSubMenu ("Open recent", getRecentOpenedFilesMenu(), getRecentOpenedFilesMenu().getNumItems() ? true : false);
+			menu.addSubMenu ("Open Recent", getRecentOpenedFilesMenu(), getRecentOpenedFilesMenu().getNumItems() ? true : false);
 			menu.addSeparator();
 			menu.addCommandItem (commandManager, doSave);
 			menu.addCommandItem (commandManager, doSaveAs);

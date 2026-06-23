@@ -17,6 +17,7 @@ class LMemoryBlock : public MemoryBlock
 		LMemoryBlock (const void *dataToInitialiseFrom, size_t sizeInBytes);
 		LMemoryBlock(const String &hexData);
 		LMemoryBlock(luabind::object const& table);
+		void init(int size); // Added v5.6.35. Thanks to @dnaldoog
 		char operator[] (const int offset) const noexcept;
 		void insertIntoTable(luabind::object const& table);
 		void createFromTable(luabind::object const &table);
@@ -36,6 +37,7 @@ class LMemoryBlock : public MemoryBlock
 		double getSize() const noexcept;
 		void toLuaTable (luabind::object tableToWriteTo);
 		static LMemoryBlock fromLuaTable (luabind::object const& table);
+		static LMemoryBlock createWithSize(int size); // Added v5.6.35. Thanks to @dnaldoog
 		static void wrapForLua (lua_State *L);
 		LMemoryBlock compressZlib();
 		LMemoryBlock decompressZlib();

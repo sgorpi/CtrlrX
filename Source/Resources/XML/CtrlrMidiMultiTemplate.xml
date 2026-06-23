@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <templates>
+<!--
+  <template name="CC">
+    <message>CC,-2,-1</message>
+  </template>
+
+  <template name="Program Change">
+    <message>ProgramChange,-1</message>
+  </template>
+
+  <template name="SysEx">
+    <message>SysEx,F0,Direct,F7</message>
+  </template>
+
   <template name="RPN">
     <message>
       CC,ByteValue,MSB7bitValue,101,-2:CC,ByteValue,LSB7bitValue,100,-2:CC,ByteValue,MSB7bitValue,6,-1:CC,ByteValue,LSB7bitValue,38,-1
@@ -17,4 +30,5 @@
       CC,ByteValue,MSB7bitValue,99,-2:CC,ByteValue,LSB7bitValue,98,-2:CC,ByteValue,LSB7bitValue,6,-1
     </message>
   </template>
+  -->
 </templates>
