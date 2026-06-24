@@ -6,6 +6,8 @@
 
 #include "JuceHeader.h"
 #include <CtrlrProcessor.h>
+#include <CtrlrManager.h>
+#include <CtrlrMIDIDeviceManager.h>
 
 #include "mock_MidiDevice.h"
 
@@ -29,6 +31,19 @@ protected:
         MessageManager::getInstance()->setCurrentThreadAsMessageThread();
 
         processor = std::make_shared<CtrlrProcessor>();
+
+        // JUCE 8 enumerates MIDI devices asynchronously: the device cache is only populated once
+        // the (mocked) ALSA sequencer thread delivers a port-change event and the resulting
+        // AsyncUpdater is dispatched on the message thread. CtrlrProcessor's constructor already
+        // ran refreshDevices() against an empty cache, so pump the message loop until the mock
+        // devices appear, then refresh CtrlrX's device list again.
+        if (midi_mock.hasSubsystemMock())
+        {
+            for (int i = 0; i < 40 && juce::MidiOutput::getAvailableDevices().isEmpty(); ++i)
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(25);
+
+            processor->getManager().getCtrlrMIDIDeviceManager().refreshDevices();
+        }
 
         // initialize buffer with non-zero 'audio'
         for (int i = 0; i < BLOCK_SIZE; i++)

@@ -433,17 +433,6 @@ void CtrlrProcessor::addMidiToOutputQueue (const MidiMessage &m)
 	midiCollector.addMessageToQueue (m);
 }
 
-//void CtrlrProcessor::addMidiToOutputQueue (const MidiBuffer &buffer)
-//{
-//	MidiBuffer::Iterator i(buffer);
-//	MidiMessage m;
-//	int time;
-//
-//	while (i.getNextEvent (m, time))
-//	{
-//		midiCollector.addMessageToQueue (m);
-//	}
-//}
 
 void CtrlrProcessor::addMidiToOutputQueue (const MidiBuffer &buffer) // Updated v5.6.34
 {
@@ -467,8 +456,8 @@ void CtrlrProcessor::addMidiToOutputQueue (const MidiBuffer &buffer) // Updated 
 //==============================================================================
 
 /**
- * Pass the MIDI messages from the Host to all panels
- * \post {midiMessages contains the left-overs not processed by the last panel.}
+ * Pass the MIDI messages from the Host to all panels.
+ * \param[inout] midiMessages The MIDI messages to be processed. Upon return midiMessages contains the left-overs not processed by the last panel.}
 */
 void CtrlrProcessor::processPanels(MidiBuffer &midiMessages, const AudioPlayHead::CurrentPositionInfo &positionInfo)
 {

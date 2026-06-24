@@ -4,6 +4,8 @@
 
 #include <JuceHeader.h>
 #include <deque>
+#include <mutex>
+#include <functional>
 #include "gmock/gmock.h"
 
 using ::testing::Return;
@@ -39,10 +41,35 @@ class MockMidi {
         }
         bool hasSubsystemMock() { return (getInstance() != nullptr) && MockMidi::hasSubsystemMockRegistered; }
 
+        /**
+         * Queue a MIDI message as if it arrived from a hardware device, and wake up the
+         * subsystem's input thread (e.g. the ALSA SequencerThread blocked on poll()).
+         * Thread-safe: the input thread reads waitingMidiInput concurrently.
+         */
+        void injectMidiInput(const juce::MidiMessage& message) {
+            {
+                std::lock_guard<std::mutex> lock(inputMutex);
+                waitingMidiInput.push_back(message);
+            }
+            if (subsystemInputNotifier)
+                subsystemInputNotifier();
+        }
+
+        /**
+         * Lets a subsystem mock register a callback that wakes its input thread when new
+         * input is injected, without MockMidi needing to know about fds/pipes. Static, so it
+         * survives across the per-test MockMidi instances (the subsystem is registered once).
+         */
+        static void setSubsystemInputNotifier(std::function<void()> notifier) { subsystemInputNotifier = std::move(notifier); }
+
+        // The subsystem mock's input thread accesses waitingMidiInput from another thread, so
+        // callers (and the mock) must hold inputMutex while touching it.
         std::deque<juce::MidiMessage> waitingMidiInput;
+        std::mutex inputMutex;
     protected:
         static MockMidi* latestInstance;
         static bool hasSubsystemMockRegistered;
+        static std::function<void()> subsystemInputNotifier;
         friend InformMockMidiOfSubsystem;
 };
 

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.31.0") 
   cmake_policy(SET CMP0175 NEW)
 endif()
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # for using sccache with MSVC in windows
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.25.0")
     cmake_policy(SET CMP0141 NEW)

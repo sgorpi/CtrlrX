@@ -45,7 +45,7 @@ CtrlrPanelCanvas::~CtrlrPanelCanvas()
 		}
 	}
 
-	getOwner().getPanelEditorTree().removeListener (this); // this is accessing free'd memory. Canvas has to be deleted before valueTree, but not sure where...
+	//getOwner().getPanelEditorTree().removeListener (this); // this is accessing free'd memory. Canvas has to be deleted before valueTree...
     deleteAndZero (ctrlrPanelCanvasResizableBorder);
     setLookAndFeel (nullptr);
 }
