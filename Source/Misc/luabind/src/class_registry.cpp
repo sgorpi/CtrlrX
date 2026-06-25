@@ -89,6 +89,27 @@ namespace luabind { namespace detail {
 
     class class_rep;
 
+#ifdef LUABIND_NOT_THREADSAFE
+
+    namespace {
+
+        // If we don't have to be thread safe, we can keep a cache of the
+        // class_registry pointer without the need of a mutex.
+        //
+        // These live at file scope (not as get_registry() function statics) so
+        // that ~class_registry() can invalidate them. A class_registry is owned
+        // by a lua_State and freed when that state is closed (lua_close). Since
+        // the allocator readily reuses a freed lua_State address for a new
+        // state, a "cache_key == L" hit must never return a registry belonging
+        // to a state that has been closed -- doing so returns a dangling
+        // pointer and corrupts the heap on the next add_class().
+        lua_State* g_registry_cache_key = 0;
+        class_registry* g_registry_cache = 0;
+
+    } // namespace unnamed
+
+#endif
+
     class_registry::class_registry(lua_State* L)
         : m_cpp_class_metatable(create_cpp_class_metatable(L))
         , m_lua_class_metatable(create_lua_class_metatable(L))
@@ -97,17 +118,26 @@ namespace luabind { namespace detail {
         m_instance_metatable = luaL_ref(L, LUA_REGISTRYINDEX);
     }
 
+    class_registry::~class_registry()
+    {
+#ifdef LUABIND_NOT_THREADSAFE
+        // Invalidate the cache if it points at us, otherwise a future
+        // get_registry() for a reused lua_State address would hand back this
+        // now-destroyed registry.
+        if (g_registry_cache == this)
+        {
+            g_registry_cache_key = 0;
+            g_registry_cache = 0;
+        }
+#endif
+    }
+
     class_registry* class_registry::get_registry(lua_State* L)
     {
 
 #ifdef LUABIND_NOT_THREADSAFE
 
-        // if we don't have to be thread safe, we can keep a
-        // chache of the class_registry pointer without the
-        // need of a mutex
-        static lua_State* cache_key = 0;
-        static class_registry* registry_cache = 0;
-        if (cache_key == L) return registry_cache;
+        if (g_registry_cache_key == L) return g_registry_cache;
 
 #endif
 
@@ -117,8 +147,8 @@ namespace luabind { namespace detail {
 
 #ifdef LUABIND_NOT_THREADSAFE
 
-        cache_key = L;
-        registry_cache = p;
+        g_registry_cache_key = L;
+        g_registry_cache = p;
 
 #endif
 

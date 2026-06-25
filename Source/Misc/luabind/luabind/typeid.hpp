@@ -71,7 +71,7 @@ public:
 
     bool operator<(type_id const& other) const
     {
-        if (!m_id) // there are still situations where "this" is a bad pointer, looks like its getting memory location values in the ASCII range...
+        if (!m_id)
             return false;
         if (!other.m_id)
             return true;

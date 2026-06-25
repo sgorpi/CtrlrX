@@ -39,6 +39,7 @@ namespace luabind { namespace detail
     struct LUABIND_API class_registry
     {
         class_registry(lua_State* L);
+        ~class_registry();
 
         static class_registry* get_registry(lua_State* L);
 
