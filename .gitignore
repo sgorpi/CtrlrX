@@ -25,7 +25,8 @@ Desktop.ini               # Windows custom folder settings
 # IMPORTANT: These should NOT contain your source code or essential project definitions.
 # If your project definitions (e.g., .xcodeproj) are INSIDE these,
 # you'll need explicit exceptions later.
-build/                    # Common build output directory (e.g., CMake out-of-source builds)
+build*/                   # Common build output directory (e.g., CMake out-of-source builds)
+.cache/                   # clangd cache
 bin/                      # Compiled binaries directory
 obj/                      # Object files directory
 *.o                       # Object files (Unix/MinGW)
