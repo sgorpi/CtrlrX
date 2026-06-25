@@ -12,8 +12,12 @@ FetchContent_MakeAvailable(googletest)
 message(STATUS "Tests enabled")
 
 # Copy the test panel to the build directory
-configure_file("test.panel" "test.panel" COPYONLY)
-configure_file("test2.panel" "test2.panel" COPYONLY)
+configure_file("fixture_host2host_cc.panel" "fixture_host2host_cc.panel" COPYONLY)
+configure_file("fixture_host2device_cc.panel" "fixture_host2device_cc.panel" COPYONLY)
+configure_file("fixture_device_input_cc.panel" "fixture_device_input_cc.panel" COPYONLY)
+configure_file("fixture_nrpn_stream.panel" "fixture_nrpn_stream.panel" COPYONLY)
+configure_file("fixture_sysex_token.panel" "fixture_sysex_token.panel" COPYONLY)
+configure_file("fixture_program_change.panel" "fixture_program_change.panel" COPYONLY)
 
 # find all test sources
 file(GLOB_RECURSE MockFiles CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mock*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/mock*.h")

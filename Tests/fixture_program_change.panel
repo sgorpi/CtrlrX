@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<panel name="Test Panel" panelShowDialogs="1" panelMessageTime="2000.0"
+<panel name="Program Change" panelShowDialogs="1" panelMessageTime="2000.0"
        panelAuthorName="Sgorpi" panelAuthorEmail="" panelAuthorDonateUrl=""
        panelAuthorUrl="" panelAuthorDesc="" panelVersionMajor="1" panelVersionMinor="0"
        panelVersionName="1" panelVendor="test" panelDevice="test" panelCertificateWinSelectPath=""

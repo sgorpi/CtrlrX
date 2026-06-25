@@ -10,3 +10,13 @@
 
 TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_notes/1
 TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_cc_as_defined_in_panel/1
+
+# Specification tests for the suspected duplicate-output bug (acceptance criteria for the MIDI
+# rework -- remove each entry once it passes):
+#
+# Host CC fans out to the host twice: the unconditional echo at CtrlrProcessor.cpp:179 plus
+# CtrlrPanel::sendMidi's host queueing (CtrlrPanel.cpp:1681-1708) on the H2D path. Desired: once.
+MidiRouting.h2d_host_cc_reaches_device_once_and_host_once
+# The unconditional echo at CtrlrProcessor.cpp:179 ignores panelMidiPauseIn, so host input is still
+# echoed back to the host while input is paused. Desired: no echo while paused-in.
+MidiRouting.pause_in_blocks_host_echo

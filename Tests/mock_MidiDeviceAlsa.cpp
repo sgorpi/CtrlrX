@@ -43,7 +43,12 @@ struct FakeSndSeqState
 
     int device_number = -1;
     int device_port_number = -1;
-    unsigned char application_port_number = 16;
+    // JUCE 6's input router dispatches by ports[event->dest.port], where the index is the portId
+    // returned by snd_seq_create_simple_port and JUCE's OwnedArray::set() *appends* when the id is
+    // past the end. So the app port ids must start at 0 and increment in lockstep with JUCE's port
+    // array, or incoming events get an out-of-range dest.port and are dropped. (Real ALSA hands an
+    // app its first port id 0 as well.)
+    unsigned char application_port_number = 0;
     std::map<unsigned char, std::tuple<int, int>> application_to_device_port_map{};
 
     // Async-enumeration / input plumbing:
@@ -52,7 +57,7 @@ struct FakeSndSeqState
     int queueId = 0;                   // fake sequencer queue id
     snd_seq_real_time_t queueStartReal{0, 0};  // queue real-time base (startTimeNative for JUCE)
     juce::uint32 queueStartMillis = 0; // wall clock captured when the queue starts (~JUCE's startTimeMillis)
-    unsigned char inputAppPort = 16;   // app port id last used to subscribe an input (device->host)
+    unsigned char inputAppPort = 0;    // app port id last used to subscribe an input (device->host)
 };
 
 static FakeSndSeqState fakeHandle;
@@ -102,9 +107,16 @@ int snd_seq_event_output_direct(snd_seq_t *handle, snd_seq_event_t *ev)
     if (mapIter == fakeHandle.application_to_device_port_map.end())
         return 0; // not a routed application port (e.g. the announce port), ignore
 
+    // JUCE's MidiOutput flushes queued messages on a background thread that can outlive the test
+    // (and its per-test StrictMock). If there's no current mock, there's nothing to record -- drop
+    // the late send rather than dereferencing a null instance (a source of teardown segfaults).
+    MockMidi *mock = MockMidi::getInstance();
+    if (mock == nullptr)
+        return 0;
+
     int event_device_number = std::get<0>(mapIter->second);
     int event_device_port_number = std::get<1>(mapIter->second);
-    MockMidi::getInstance()->sendMidiEvent(
+    mock->sendMidiEvent(
         event_device_number,
         event_device_port_number,
         *lastEncodedMidiMessage);
@@ -164,7 +176,11 @@ int snd_seq_ump_event_output_direct(snd_seq_t *seq, snd_seq_ump_event_t *ev)
     if (!umpWordToMidiMessage(ev->ump[0], message))
         return 0; // sysex / MIDI 2.0 not handled by this mock
 
-    MockMidi::getInstance()->sendMidiEvent(
+    MockMidi *mock = MockMidi::getInstance();
+    if (mock == nullptr)
+        return 0; // background-thread flush after the test's mock was destroyed; drop it (see above)
+
+    mock->sendMidiEvent(
         std::get<0>(mapIter->second),
         std::get<1>(mapIter->second),
         message);
@@ -322,6 +338,15 @@ int snd_seq_open(snd_seq_t **handle, const char *name, int streams, int mode)
     // assert name == "default"
     // assert streams = SND_SEQ_OPEN_DUPLEX
     // assert mode = 0
+
+    // A fresh client (JUCE's AlsaClient singleton is destroyed/recreated between tests) starts its
+    // port numbering at 0 and has an empty port table. Reset here so the app port ids the mock hands
+    // out stay aligned with JUCE's freshly-rebuilt ports[] array (it dispatches input by portId, see
+    // application_port_number above); otherwise incoming events get an out-of-range dest.port.
+    fakeHandle.application_port_number = 0;
+    fakeHandle.inputAppPort = 0;
+    fakeHandle.application_to_device_port_map.clear();
+
     if (fakeHandle.eventfd < 0)
         fakeHandle.eventfd = ::eventfd(0, EFD_NONBLOCK);
     // Trigger one initial port-change so JUCE performs its (async) device enumeration.
@@ -473,8 +498,11 @@ int snd_seq_unsubscribe_port(snd_seq_t *seq, snd_seq_port_subscribe_t *sub) { re
 // from seqmid.h
 int snd_seq_connect_from(snd_seq_t *seq, int my_port, int src_client, int src_port)
 {
-    // In JUCE 8 this is used for the system 'announce' port; ignore that (it's not a device).
-    if (src_client == SND_SEQ_CLIENT_SYSTEM)
+    // JUCE 8 subscribes the system 'announce' port (client 0, port 1) this way; ignore only that.
+    // NB: don't guard on src_client alone -- JUCE 6's MidiInput::openDevice subscribes real device
+    // input through snd_seq_connect_from, and the mock enumerates its (only) device as client 0,
+    // which would otherwise collide with SND_SEQ_CLIENT_SYSTEM and never open the input.
+    if (src_client == SND_SEQ_CLIENT_SYSTEM && src_port == SND_SEQ_PORT_SYSTEM_ANNOUNCE)
         return 0;
 
     // (Legacy / JUCE 6) the 'src' is the input device.

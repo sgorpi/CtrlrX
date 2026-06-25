@@ -59,7 +59,7 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_loads_ok)
     }
 
     std::string filename = std::get<0>(GetParam());
-    if (std::strcmp(filename.c_str(), "test.panel") == 0)
+    if (std::strcmp(filename.c_str(), "fixture_host2host_cc.panel") == 0)
     {
         CtrlrModulator* modulator = panel->getModulator("test-modulator-1");
         ASSERT_NE(modulator, nullptr) << "CtrlrX can't find the modulator 'test-modulator-1'";
@@ -175,9 +175,9 @@ INSTANTIATE_TEST_SUITE_P(
     ProcessorInstanceWithPanel,
     ::testing::Values(
         /* parameters:   filename,     panel name */
-        std::make_tuple("test.panel", "Test Panel"),
-        std::make_tuple("test2.panel","Test Panel Host2Device")
-        //std::make_tuple("test2.bpanelz", "Jomox_Airbase99"),
-        //std::make_tuple("test3.panel", "Jomox_Airbase99")
+        std::make_tuple("fixture_host2host_cc.panel", "Host2Host CC"),
+        std::make_tuple("fixture_host2device_cc.panel","Host2Device CC")
+        //std::make_tuple("jomox_airbase99.bpanelz", "Jomox_Airbase99"),
+        //std::make_tuple("jomox_airbase99.panel", "Jomox_Airbase99")
     )
 );
