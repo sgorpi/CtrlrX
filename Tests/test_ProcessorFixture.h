@@ -1,6 +1,11 @@
 #include <iostream>
 #include <tuple>
 #include <string>
+#include <vector>
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <functional>
 
 #include "gtest/gtest.h"
 
@@ -11,7 +16,20 @@
 
 #include "mock_MidiDevice.h"
 
+class CtrlrPanel;
+
 #define BLOCK_SIZE 1024
+
+// byte-wise MidiMessage equality, used throughout the MIDI test suites.
+namespace juce {
+    inline bool operator==(const MidiMessage& lhs, const MidiMessage& rhs)
+    {
+        bool equal_data = true;
+        for (size_t idx = 0; idx < (size_t) lhs.getRawDataSize() && idx < (size_t) rhs.getRawDataSize(); idx++)
+            equal_data &= (lhs.getRawData()[idx] == rhs.getRawData()[idx]);
+        return (lhs.getRawDataSize() == rhs.getRawDataSize()) && equal_data;
+    }
+}
 
 
 class ProcessorInstance : public testing::Test {
@@ -60,16 +78,130 @@ protected:
         midiMessages.clear();
     }
 
-    void expect_no_midi_messages_in_buffer(std::string message);
+    void expectNoMidiMessagesInBuffer(std::string message);
 
-    void test_midi_block_processing(
+    void testMidiBlockProcessing(
         const juce::MidiBuffer messages_to_send, 
         const std::function <void (std::string)>& function_to_call_after_idle_processing = nullptr,
         int num_iterations_to_idle = 3);
-    void process_block_without_midi_messages(
-        std::string message = "", 
+    void processBlockWithoutMidiMessages(
+        std::string message = "",
         const std::function <void (std::string)>& function_to_call_after_processing = nullptr);
+
+    // ---- Shared MIDI test helpers (used across the MIDI routing / sysex / lua suites) ----
+    //
+    // Device output recorded from the StrictMock so tests can count/inspect it freely.
+    // sendMidiEvent fires on JUCE's MidiOutput background thread, so the vector is guarded.
+    std::mutex sendsMutex;
+    std::vector<juce::MidiMessage> deviceSends; // guarded by sendsMutex (written from MIDI out thread)
+    int openInputCalls = 0;
+
+    // Permit (and record) any number of device sends / opens. Use when a test asserts on the
+    // recorded vector rather than on exact EXPECT_CALL counts. Expectations must be installed
+    // before loadPanel(), which opens the devices.
+    void allowAndRecordDeviceSends()
+    {
+        if (midi_mock.hasSubsystemMock())
+        {
+            EXPECT_CALL(midi_mock, openOutput(::testing::_, ::testing::_)).Times(::testing::AnyNumber());
+            EXPECT_CALL(midi_mock, openInput(::testing::_, ::testing::_))
+                .Times(::testing::AnyNumber())
+                .WillRepeatedly(::testing::Invoke([this](int, int) { openInputCalls++; }));
+            EXPECT_CALL(midi_mock, sendMidiEvent(::testing::_, ::testing::_, ::testing::_))
+                .Times(::testing::AnyNumber())
+                .WillRepeatedly(::testing::Invoke([this](int, int, juce::MidiMessage m) {
+                    std::lock_guard<std::mutex> l(sendsMutex);
+                    deviceSends.push_back(m);
+                }));
+        }
+    }
+
+    int countDeviceSends(const juce::MidiMessage& needle)
+    {
+        std::lock_guard<std::mutex> l(sendsMutex);
+        int n = 0;
+        for (const auto& m : deviceSends)
+            if (m == needle)
+                n++;
+        return n;
+    }
+
+    // Give JUCE's MidiOutput background thread time to flush queued messages, then take & clear
+    // the recorded device sends.
+    std::vector<juce::MidiMessage> takeSendsAfterDelivery(int waitMs = 250)
+    {
+        for (int waited = 0; waited < waitMs; waited += 20)
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        std::lock_guard<std::mutex> l(sendsMutex);
+        auto copy = deviceSends;
+        deviceSends.clear();
+        return copy;
+    }
+
+    // Pump both the JUCE message loop (delivers injected device input to handleMIDIFromDevice) and
+    // give the per-panel input thread time to run its process() loop (comparator + D2H/D2D).
+    void pumpInputThreads(int milliseconds = 600)
+    {
+        const int step = 25;
+        for (int waited = 0; waited < milliseconds; waited += step)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(step);
+    }
+
+    // Run one processBlock carrying `input`, then `idleBlocks` empty blocks (each after a ~one-block
+    // sleep so the MidiMessageCollector flushes), collecting every host-output message produced.
+    std::vector<juce::MidiMessage> runHostBlocks(const juce::MidiBuffer& input, int idleBlocks = 4)
+    {
+        std::vector<juce::MidiMessage> out;
+
+        processor->prepareToPlay(44100, BLOCK_SIZE);
+
+        midiMessages.clear();
+        for (const auto meta : input)
+            midiMessages.addEvent(meta.getMessage(), meta.samplePosition);
+
+        processor->processBlock(buffer, midiMessages);
+        for (const auto meta : midiMessages)
+            out.push_back(meta.getMessage());
+
+        for (int i = 0; i < idleBlocks; i++)
+        {
+            midiMessages.clear();
+            std::this_thread::sleep_for(std::chrono::milliseconds(23));
+            processor->processBlock(buffer, midiMessages);
+            for (const auto meta : midiMessages)
+                out.push_back(meta.getMessage());
+        }
+        return out;
+    }
+
+    // Load a panel from the build dir (where fixtures are copied) and return the newest panel.
+    CtrlrPanel* loadPanel(const std::string& file)
+    {
+        EXPECT_NO_THROW(processor->openFileFromCli(
+            juce::File::getCurrentWorkingDirectory().getChildFile(file)));
+        const int n = processor->getManager().getNumPanels();
+        return n > 0 ? processor->getManager().getPanel(n - 1) : nullptr;
+    }
+
+    static std::vector<int> controllerNumbers(const std::vector<juce::MidiMessage>& msgs)
+    {
+        std::vector<int> cc;
+        for (const auto& m : msgs)
+            if (m.isController())
+                cc.push_back(m.getControllerNumber());
+        return cc;
+    }
 };
+
+// Count how many messages in `haystack` byte-equal `needle` (uses the juce::operator== below).
+inline int count_equal(const std::vector<juce::MidiMessage>& haystack, const juce::MidiMessage& needle)
+{
+    int n = 0;
+    for (const auto& m : haystack)
+        if (m == needle)
+            n++;
+    return n;
+}
 
 /**
  * parameterized ProcessorInstance, parameters:
@@ -81,17 +213,6 @@ class ProcessorInstanceWithPanel
     , public testing::WithParamInterface<std::tuple<std::string, std::string>> 
 {
     public:
-        void load_test_panel();
+        void loadTestPanel();
 
 };
-
-// outside operator overloading
-namespace juce {
-    inline bool operator==(const MidiMessage& lhs, const MidiMessage& rhs)
-    {
-        bool equal_data = true;
-        for (size_t idx = 0; idx < lhs.getRawDataSize() && idx < rhs.getRawDataSize(); idx++)
-            equal_data &= (lhs.getRawData()[idx] == rhs.getRawData()[idx]);
-        return (lhs.getRawDataSize() == rhs.getRawDataSize()) && equal_data;
-    }
-}

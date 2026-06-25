@@ -16,7 +16,7 @@ TEST_F(ProcessorInstance, midi_io_capabilities)
     EXPECT_FALSE(processor->isMidiEffect());
 }
 
-void ProcessorInstance::expect_no_midi_messages_in_buffer(std::string message) {
+void ProcessorInstance::expectNoMidiMessagesInBuffer(std::string message) {
     EXPECT_EQ(midiMessages.getNumEvents(), 0) << "Unexpected midi events " << message;
     // print, to help to debug:
     for (auto it = midiMessages.begin(); it != midiMessages.end(); it++) {
@@ -33,7 +33,7 @@ void ProcessorInstance::expect_no_midi_messages_in_buffer(std::string message) {
  * 
  * The client of this function can indicate how many 'idle' processBlocks can be called and what to check then.
  */
-void ProcessorInstance::test_midi_block_processing(
+void ProcessorInstance::testMidiBlockProcessing(
     const juce::MidiBuffer messages_to_send, 
     const std::function <void (std::string)>& function_to_call_after_idle_processing,
     int num_iterations_to_idle)
@@ -111,7 +111,7 @@ void ProcessorInstance::test_midi_block_processing(
     ///////////// Round 3 -- 3+num_iterations_to_wait ////////////////////
     // no more host messages, see what processing does
     for (int i = 0; i < num_iterations_to_idle; i++) {
-        process_block_without_midi_messages("in idle round " + std::to_string(i), function_to_call_after_idle_processing);
+        processBlockWithoutMidiMessages("in idle round " + std::to_string(i), function_to_call_after_idle_processing);
     }
 }
 
@@ -119,7 +119,7 @@ void ProcessorInstance::test_midi_block_processing(
  * This test will check that calling processBlock after a 23.22ms wait some expectations hold.
  * (note: output to devices is checked by having a StrictMock)
  */
-void ProcessorInstance::process_block_without_midi_messages(
+void ProcessorInstance::processBlockWithoutMidiMessages(
     std::string message,
     const std::function <void (std::string)>& function_to_call_after_processing)
 {
@@ -142,8 +142,8 @@ TEST_F(ProcessorInstance, midi_block_processing_without_panel)
     juce::MidiBuffer messages_to_send;
     messages_to_send.addEvent(juce::MidiMessage::noteOn(1, 2, 1.0f), 0);
     messages_to_send.addEvent(juce::MidiMessage::noteOff(2, 3, 0.5f), BLOCK_SIZE / 2);
-    test_midi_block_processing(messages_to_send, [=](std::string msg) {
-        this->expect_no_midi_messages_in_buffer(msg);
+    testMidiBlockProcessing(messages_to_send, [=](std::string msg) {
+        this->expectNoMidiMessagesInBuffer(msg);
     });
 }
 

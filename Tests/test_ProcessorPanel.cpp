@@ -23,7 +23,7 @@ class PrintToStdOutListener : public CtrlrLog::Listener {
 };
 
 
-void ProcessorInstanceWithPanel::load_test_panel()
+void ProcessorInstanceWithPanel::loadTestPanel()
 {
     const std::string test_panel = std::get<0>(GetParam());
     ASSERT_TRUE(file_exists(test_panel));
@@ -46,7 +46,7 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_loads_ok)
     }
     
     // then act:
-    load_test_panel();
+    loadTestPanel();
 
     EXPECT_EQ(processor->getName().toStdString(), "CtrlrX");
     
@@ -78,7 +78,7 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_midi_block_processing_with_notes)
         EXPECT_CALL(midi_mock, openOutput(0, 1));
     }
     // then act:
-    load_test_panel();
+    loadTestPanel();
 
     CtrlrPanel* panel = processor->getManager().getPanel(std::get<1>(GetParam()));
     
@@ -96,8 +96,8 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_midi_block_processing_with_notes)
     juce::MidiBuffer messages_to_send;
     messages_to_send.addEvent(juce::MidiMessage::noteOn(1, 2, 1.0f), 0);
     messages_to_send.addEvent(juce::MidiMessage::noteOff(2, 3, 0.5f), BLOCK_SIZE / 2);
-    test_midi_block_processing(messages_to_send, [=](std::string msg) {
-        this->expect_no_midi_messages_in_buffer(msg);
+    testMidiBlockProcessing(messages_to_send, [=](std::string msg) {
+        this->expectNoMidiMessagesInBuffer(msg);
     });
 }
 
@@ -109,7 +109,7 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_midi_block_processing_with_cc_as_d
         EXPECT_CALL(midi_mock, openOutput(0, 1));
     }
     // then act:
-    load_test_panel();
+    loadTestPanel();
 
     CtrlrPanel* panel = processor->getManager().getPanel(std::get<1>(GetParam()));
     
@@ -131,8 +131,8 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_midi_block_processing_with_cc_as_d
     messages_to_send.addEvent(juce::MidiMessage::controllerEvent(4, 3, 67), 1*BLOCK_SIZE / 3);
     messages_to_send.addEvent(juce::MidiMessage::controllerEvent(4, 3, 80), 2*BLOCK_SIZE / 3);
 
-    test_midi_block_processing(messages_to_send, [=](std::string msg) {
-        this->expect_no_midi_messages_in_buffer(msg);
+    testMidiBlockProcessing(messages_to_send, [=](std::string msg) {
+        this->expectNoMidiMessagesInBuffer(msg);
     }, 5);
 
     EXPECT_FLOAT_EQ(processor->getParameter(1), 80.0f/127.0f) << "Expected the state of the modulator to match the last CC input from host";
@@ -147,7 +147,7 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_sends_midi_to_host_and_device_afte
         EXPECT_CALL(midi_mock, sendMidiEvent(0, 1, juce::MidiMessage::controllerEvent(4, 3, 64))).Times(1);
     }
     // then act:
-    load_test_panel();
+    loadTestPanel();
     
     processor->prepareToPlay(44100, BLOCK_SIZE);
 
@@ -165,8 +165,8 @@ TEST_P(ProcessorInstanceWithPanel, test_panel_sends_midi_to_host_and_device_afte
         EXPECT_EQ((*midi_iter).samplePosition, 0);
     }
 
-    process_block_without_midi_messages("in round 2", [=](std::string msg) {
-        this->expect_no_midi_messages_in_buffer(msg);
+    processBlockWithoutMidiMessages("in round 2", [=](std::string msg) {
+        this->expectNoMidiMessagesInBuffer(msg);
     });
 }
 

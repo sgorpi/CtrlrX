@@ -12,15 +12,16 @@
 /**
  * MIDI routing tests (host<->device<->host).
  *
- * These pin down the deterministic invariants of the MIDI routing before the planned rework:
+ * These pin down the deterministic invariants of the MIDI routing:
  *  - message COUNT and ONCE-ness (no duplicate output),
  *  - which sink (host buffer vs. device) a message reaches,
  *  - pause-out / pause-in gating.
  *
  * Most are characterization tests (locking down behavior we believe correct). A small number are
  * *specification* tests asserting the DESIRED behavior for the suspected duplicate-output bug
- * (see CtrlrProcessor.cpp:179 unconditional echo + CtrlrPanel::sendMidi host fan-out). Those that
- * fail today are listed in Tests/known_failures.txt and become the rework's acceptance criteria.
+ * (see CtrlrProcessor.cpp:179 unconditional echo + CtrlrPanel::sendMidi host fan-out).
+ * 
+ * Accepted failures are listed in Tests/known_failures.txt.
  *
  * Seam: black-box only. We drive processBlock / setParameter / the mock's injectMidiInput, and
  * observe the returned MidiBuffer (host output) plus the StrictMock<MockMidi> device.
@@ -30,95 +31,10 @@ using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::Invoke;
 
-namespace {
-    int count_equal(const std::vector<juce::MidiMessage>& haystack, const juce::MidiMessage& needle)
-    {
-        int n = 0;
-        for (const auto& m : haystack)
-            if (m == needle)
-                n++;
-        return n;
-    }
-}
-
+// Shared helpers (allowAndRecordDeviceSends / countDeviceSends / loadPanel / runHostBlocks /
+// pumpInputThreads) and count_equal now live in test_ProcessorFixture.h.
 class MidiRouting : public ProcessorInstance
 {
-protected:
-    // Device output recorded from the StrictMock so tests can count/inspect it freely.
-    // sendMidiEvent fires on JUCE's MidiOutput background thread, so guard the vector.
-    std::mutex sendsMutex;
-    std::vector<juce::MidiMessage> deviceSends;
-    int openInputCalls = 0;
-
-    // Permit (and record) any number of device sends. Use when a test asserts on the recorded
-    // vector rather than on exact EXPECT_CALL counts.
-    void allowAndRecordDeviceSends()
-    {
-        if (midi_mock.hasSubsystemMock())
-        {
-            EXPECT_CALL(midi_mock, openOutput(_, _)).Times(AnyNumber());
-            EXPECT_CALL(midi_mock, openInput(_, _))
-                .Times(AnyNumber())
-                .WillRepeatedly(Invoke([this](int, int) { openInputCalls++; }));
-            EXPECT_CALL(midi_mock, sendMidiEvent(_, _, _))
-                .Times(AnyNumber())
-                .WillRepeatedly(Invoke([this](int, int, juce::MidiMessage m) {
-                    std::lock_guard<std::mutex> l(sendsMutex);
-                    deviceSends.push_back(m);
-                }));
-        }
-    }
-
-    int countDeviceSends(const juce::MidiMessage& needle)
-    {
-        std::lock_guard<std::mutex> l(sendsMutex);
-        return count_equal(deviceSends, needle);
-    }
-
-    CtrlrPanel* loadPanel(const std::string& file)
-    {
-        EXPECT_NO_THROW(processor->openFileFromCli(
-            juce::File::getCurrentWorkingDirectory().getChildFile(file)));
-        const int n = processor->getManager().getNumPanels();
-        return n > 0 ? processor->getManager().getPanel(n - 1) : nullptr;
-    }
-
-    // Run one processBlock carrying `input`, then `idleBlocks` empty blocks (each after a ~one-block
-    // sleep so the MidiMessageCollector flushes), collecting every host-output message produced.
-    std::vector<juce::MidiMessage> runHostBlocks(const juce::MidiBuffer& input, int idleBlocks = 4)
-    {
-        using namespace std::chrono_literals;
-        std::vector<juce::MidiMessage> out;
-
-        processor->prepareToPlay(44100, BLOCK_SIZE);
-
-        midiMessages.clear();
-        for (const auto meta : input)
-            midiMessages.addEvent(meta.getMessage(), meta.samplePosition);
-
-        processor->processBlock(buffer, midiMessages);
-        for (const auto meta : midiMessages)
-            out.push_back(meta.getMessage());
-
-        for (int i = 0; i < idleBlocks; i++)
-        {
-            midiMessages.clear();
-            std::this_thread::sleep_for(23ms);
-            processor->processBlock(buffer, midiMessages);
-            for (const auto meta : midiMessages)
-                out.push_back(meta.getMessage());
-        }
-        return out;
-    }
-
-    // Pump both the JUCE message loop (delivers injected device input to handleMIDIFromDevice) and
-    // give the per-panel input thread time to run its process() loop (comparator + D2H/D2D).
-    void pumpInputThreads(int milliseconds = 600)
-    {
-        const int step = 25;
-        for (int waited = 0; waited < milliseconds; waited += step)
-            juce::MessageManager::getInstance()->runDispatchLoopUntil(step);
-    }
 };
 
 /**

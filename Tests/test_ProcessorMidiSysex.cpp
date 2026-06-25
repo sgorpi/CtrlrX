@@ -12,8 +12,7 @@
 /**
  * NRPN (latch & stream) and SysEx tests.
  *
- * These pin down the deterministic invariants of the multi-message (NRPN) and SysEx paths before
- * the planned MIDI rework:
+ * These pin down the deterministic invariants of the multi-message (NRPN) and SysEx paths:
  *  - NRPN latch/stream emits the header CCs (99/98) ONCE and then streams data only (CC 6/38),
  *    in the correct order (the recent fef3b8d8 feature) -- characterization,
  *  - a SysEx-token modulator emits its message exactly once on a value change, and a matching
@@ -28,55 +27,10 @@ using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::Invoke;
 
+// Shared helpers (allowAndRecordDeviceSends / loadPanel / takeSendsAfterDelivery /
+// controllerNumbers) now live in test_ProcessorFixture.h.
 class MidiSysex : public ProcessorInstance
 {
-protected:
-    std::mutex sendsMutex;
-    std::vector<juce::MidiMessage> deviceSends; // guarded by sendsMutex (written from MIDI out thread)
-
-    void allowAndRecordDeviceSends()
-    {
-        if (midi_mock.hasSubsystemMock())
-        {
-            EXPECT_CALL(midi_mock, openOutput(_, _)).Times(AnyNumber());
-            EXPECT_CALL(midi_mock, openInput(_, _)).Times(AnyNumber());
-            EXPECT_CALL(midi_mock, sendMidiEvent(_, _, _))
-                .Times(AnyNumber())
-                .WillRepeatedly(Invoke([this](int, int, juce::MidiMessage m) {
-                    std::lock_guard<std::mutex> l(sendsMutex);
-                    deviceSends.push_back(m);
-                }));
-        }
-    }
-
-    CtrlrPanel* loadPanel(const std::string& file)
-    {
-        EXPECT_NO_THROW(processor->openFileFromCli(
-            juce::File::getCurrentWorkingDirectory().getChildFile(file)));
-        const int n = processor->getManager().getNumPanels();
-        return n > 0 ? processor->getManager().getPanel(n - 1) : nullptr;
-    }
-
-    // Give JUCE's MidiOutput background thread time to flush queued messages, then take & clear the
-    // recorded device sends.
-    std::vector<juce::MidiMessage> takeSendsAfterDelivery(int waitMs = 250)
-    {
-        for (int waited = 0; waited < waitMs; waited += 20)
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        std::lock_guard<std::mutex> l(sendsMutex);
-        auto copy = deviceSends;
-        deviceSends.clear();
-        return copy;
-    }
-
-    static std::vector<int> controllerNumbers(const std::vector<juce::MidiMessage>& msgs)
-    {
-        std::vector<int> cc;
-        for (const auto& m : msgs)
-            if (m.isController())
-                cc.push_back(m.getControllerNumber());
-        return cc;
-    }
 };
 
 /**
