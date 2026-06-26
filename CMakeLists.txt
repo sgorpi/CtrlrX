@@ -4,6 +4,9 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.31.0")
   cmake_policy(SET CMP0175 NEW)
 endif()
 
+# allows clang-based tools to work with the source:
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # This tells cmake we have goodies in the /cmake folder
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include (PamplejuceVersion)
@@ -328,7 +331,9 @@ include(PamplejuceIPP)
 
 
 # Everything related to the tests target
-#include(Tests) # enable once we have tests...
+#include(Tests) # This would use the Catch2 framework and recompile the source-code...
+enable_testing()
+add_subdirectory(Tests)
 
 # A separate target for Benchmarks (keeps the Tests target fast)
 #include(Benchmarks) # enable once we have benchmarks...

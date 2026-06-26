@@ -1,0 +1,35 @@
+# Known-failing tests, allowlisted so the "Tests (excluding known failures)" CI check
+# stays green while these are outstanding. The "Tests" check still reports them as red.
+#
+# Format: one fully-qualified GoogleTest name per line, exactly as gtest prints it after
+# "[ FAILED ]" (which equals the JUnit classname + "." + name). Blank lines and lines
+# starting with "#" are ignored.
+#
+# Remove an entry once its test is fixed. CI warns (non-fatal) when a listed test starts
+# passing again, so a stale list is easy to spot.
+
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_notes/0
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_notes/1
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_cc_as_defined_in_panel/0
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_cc_as_defined_in_panel/1
+ProcessorInstance.midi_block_processing_without_panel
+
+# Specification tests for the suspected duplicate-output bug (acceptance criteria for the MIDI
+# rework -- remove each entry once it passes):
+#
+# Host CC fans out to the host twice: the unconditional echo at CtrlrProcessor.cpp:179 plus
+# CtrlrPanel::sendMidi's host queueing (CtrlrPanel.cpp:1681-1708) on the H2D path. Desired: once.
+MidiRouting.h2d_host_cc_reaches_device_once_and_host_once
+
+# The unconditional echo at CtrlrProcessor.cpp:179 ignores panelMidiPauseIn, so host input is still
+# echoed back to the host while input is paused. Desired: no echo while paused-in.
+MidiRouting.pause_in_blocks_host_echo
+
+# Lua multiMidiReceived is only invoked by the Multi input comparator's reassembly path
+# (CtrlrMidiInputComparatorMulti.cpp:129/194), which is timer-gated (startTimer(200)) and has no
+# other test coverage. Driving a full NRPN reassembly deterministically from the black-box seam is
+# not reliable today; the desired behavior is that a matched multi input fires multiMidiReceived
+# once. Acceptance criterion for the rework's input path.
+MidiLua.device_input_invokes_lua_multiMidiReceived_once
+MidiSysex.nrpn_latch_stream_emits_header_once_then_data_only
+
