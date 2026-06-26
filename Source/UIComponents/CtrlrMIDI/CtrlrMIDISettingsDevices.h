@@ -84,6 +84,7 @@ private:
     ScopedPointer<ToggleButton> pluginOutput;
     ScopedPointer<Label> label9;
     ScopedPointer<ToggleButton> pluginInput;
+    ScopedPointer<ToggleButton> pluginInputToHostComp;
     ScopedPointer<ComboBox> pluginInputChannel;
 
 

@@ -16,6 +16,7 @@ CtrlrManager::CtrlrManager(CtrlrProcessor *_owner, CtrlrLog &_ctrlrLog)
 		ctrlrMidiDeviceManager(*this),
 		ctrlrDocumentPanel(nullptr),
 		ctrlrManagerVst(nullptr),
+		ctrlrNativeObject(nullptr),
 		audioThumbnailCache(256),
 		ctrlrPlayerInstanceMode(InstanceMulti),
 		ctrlrManagerRestoring(false),
@@ -71,8 +72,11 @@ void CtrlrManager::setDefaults()
     setProperty (Ids::ctrlrMidiMonOutputBufferSize, 8192);
     setProperty (Ids::ctrlrLuaDisabled, false);
     setProperty (Ids::ctrlrOverwriteResources, true);
-    setProperty (Ids::ctrlrAutoSave, true);
-    setProperty (Ids::ctrlrAutoSaveInterval, 300);
+    if (JUCEApplication::isStandaloneApp()) // Added v5.6.35
+    {
+        setProperty (Ids::ctrlrAutoSave, true);
+        setProperty (Ids::ctrlrAutoSaveInterval, 300);
+    }
     // setProperty (Ids::ctrlrLogOptions, 32); // Updated v5.6.31. Value sets default properties as enabled
     setProperty (Ids::ctrlrLogOptions, 6014); // 6014 shows everything by default with MIDI messages in Hex
     // setProperty (Ids::ctrlrUseEditorWrapper, true); // Removed v5.6.34. Conditions hard coded for the wrapper with Ableton Live on Windows
@@ -216,17 +220,17 @@ void CtrlrManager::restoreState (const ValueTree &savedTree)
     _DBG("CtrlrManager::restoreState (ValueTree) enter");
 
     // --- Start: Conditional MessageManagerLock for Thread Safety ---
-    #ifndef JucePlugin_Build_AAX
-        // This lock is often necessary for thread safety in other plugin formats (VST/AU/Standalone)
-        // when setStateInformation might involve direct UI updates or MessageManager interactions.
-        // It's REMOVED for AAX builds because AAX calls setStateInformation on a host thread
-        // where acquiring this lock directly can cause deadlocks in newer JUCE versions (v4+).
-        MessageManagerLock mmlock;
-        _DBG("CtrlrManager::restoreState: MessageManagerLock acquired (non-AAX build).");
+    #if JucePlugin_Build_AAX
+		// For AAX builds, the lock is bypassed to prevent deadlock.
+		// Any UI-touching code below MUST be marshalled to the Message Thread via callAsync.
+		_DBG("CtrlrManager::restoreState: MessageManagerLock skipped (AAX build).");
     #else
-        // For AAX builds, the lock is bypassed to prevent deadlock.
-        // Any UI-touching code below MUST be marshalled to the Message Thread via callAsync.
-        _DBG("CtrlrManager::restoreState: MessageManagerLock skipped (AAX build).");
+		// This lock is often necessary for thread safety in other plugin formats (VST/AU/Standalone)
+		// when setStateInformation might involve direct UI updates or MessageManager interactions.
+		// It's REMOVED for AAX builds because AAX calls setStateInformation on a host thread
+		// where acquiring this lock directly can cause deadlocks in newer JUCE versions (v4+).
+		MessageManagerLock mmlock;
+		_DBG("CtrlrManager::restoreState: MessageManagerLock acquired (non-AAX build).");
     #endif
     // --- End: Conditional MessageManagerLock ---
 
@@ -301,7 +305,7 @@ void CtrlrManager::restoreState (const ValueTree &savedTree)
         // --- CRITICAL SECTION FOR AAX UI-RELATED WORK ---
         // If restoreEditorState() (or anything it calls) involves creating/modifying JUCE UI components,
         // it MUST be explicitly marshalled to the JUCE Message Manager thread for AAX builds.
-        #ifdef JucePlugin_Build_AAX
+        #if JucePlugin_Build_AAX
             _DBG("CtrlrManager::restoreState: AAX build - scheduling restoreEditorState on Message Thread.");
             juce::MessageManager::callAsync ([this]() {
                 // This lambda (the code inside {}) will be executed on the JUCE Message Manager thread.

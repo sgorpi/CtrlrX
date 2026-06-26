@@ -93,6 +93,8 @@ enum CtrlrSysExFormulaToken
 	MSB4bitValue,
 	GlobalVariable,
 	ChecksumRolandJP8080,
+	CCCoarseMSB,
+	CCFineLSB,
 	RolandSplitByte1,
 	RolandSplitByte2,
 	RolandSplitByte3,
@@ -106,6 +108,14 @@ enum CtrlrSysExFormulaToken
 	ChecksumXor,
 	CurrentProgram,
 	CurrentBank,
+	Nibble16bitLsb0,    // bits 0-3
+	Nibble16bitLsb1,    // bits 4-7
+	Nibble16bitLsb2,    // bits 8-11
+	Nibble16bitLsb3,    // bits 12-15
+	Nibble16bitMsb0,    // bits 12-15
+	Nibble16bitMsb1,    // bits 8-11
+	Nibble16bitMsb2,    // bits 4-7
+	Nibble16bitMsb3,    // bits 0-3
 	NoToken
 };
 
@@ -149,6 +159,20 @@ enum CtrlrMidiLogOptions
 	midiLogDevice=1024,
 	midiLogDevAttach=2048,
 	midiLogDataSize=4096
+};
+
+enum CtrlrMIDIMessageType // Added v5.6.35. MIDI Monitor MIDI Filters Support. Thanks to @dnaldoog
+{
+	Filter_NoteOn = 1,
+	Filter_NoteOff = 2,
+	Filter_AftertouchPoly = 4,
+	Filter_Control = 8,
+	Filter_Program = 16,
+	Filter_Sysex = 32,
+	Filter_ChannelPressure = 64,
+	Filter_PitchWheel = 128,
+	Filter_ActiveSense = 256,
+	Filter_Clock = 512
 };
 
 enum CtrlrFontProperties
@@ -267,9 +291,14 @@ enum CtrlrByteSplit
 enum CtrlrByteEncoding
 {
 	EncodeNormal,
-	EncodeMSBFirst,
-	EncodeLSBFirst,
-	EncodeDSI
+	EncodeMSBFirst,           // 7-bit: MSB, LSB
+	EncodeLSBFirst,           // 7-bit: LSB, MSB
+	EncodeNibbleMsbFirst,     // 4-bit: MSB nibble, LSB nibble (unsigned)
+	EncodeNibbleLsbFirst,     // 4-bit: LSB nibble, MSB nibble (unsigned)
+	EncodeSignedNibbleMsbFirst, // 4-bit: MSB nibble, LSB nibble (signed int8)
+	EncodeSignedNibbleLsbFirst, // 4-bit: LSB nibble, MSB nibble (signed int8)
+	Encode16bitLsbFirst, // 4 bit *4 = 16 bit)
+	Encode16bitMsbFirst // 4 bit *4 = 16 bit)
 };
 
 enum CtrlrMIDIDeviceType

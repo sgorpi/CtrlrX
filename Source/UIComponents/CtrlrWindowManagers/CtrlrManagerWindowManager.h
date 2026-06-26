@@ -35,7 +35,9 @@ class CtrlrManagerWindowManager : public CtrlrWindowManager
 			Repository,
 			MidiMonWindow,
 			LogViewer,
-			MIDICalculator
+			MIDICalculator,
+			GlobalSettings, /* to avoid wayland crash*/
+			AboutWindow /* to avoid wayland crash*/
 		};
 
 		CtrlrManagerWindowManager(CtrlrManager &_owner);

@@ -84,35 +84,29 @@ CtrlrPanelLayerListItem::~CtrlrPanelLayerListItem()
 //==============================================================================
 void CtrlrPanelLayerListItem::paint(juce::Graphics& g)
 {
-    // Get the background color from the current LookAndFeel
-    auto backgroundColour = getLookAndFeel().findColour(juce::ListBox::backgroundColourId);
-
-    // Get the text colour from the current LookAndFeel
-    auto textColour = getLookAndFeel().findColour(juce::ListBox::textColourId);
-
-    // Fill the background with the dynamic color
-    g.setColour(backgroundColour);
-    g.fillRect(getLocalBounds());
-
-    // The rest of your existing paint code follows
-    g.setColour(textColour);
-    g.drawLine(0, getHeight(), getWidth(), getHeight(), 1.0f);
-
-    // Show if this layer is part of an isolation
-    if (owner.isLayerIsolationActive())
+    if (isSelected)
     {
-        // Highlight the item differently when isolation is active
-        g.setColour(juce::Colours::orange.withAlpha(0.1f));
-        g.fillRect(getLocalBounds().reduced(1));
+        _DBG("paint: drawing selection highlight");
+        g.setColour(juce::Colours::steelblue.withAlpha(0.4f));
+        g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 3.0f);
+
+        g.setColour(juce::Colours::steelblue);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 3.0f, 1.0f);
     }
-
-    // Optional: Add visual feedback when dragging
-    if (isDragging)
+    else
     {
-        g.setColour(getLookAndFeel().findColour(juce::TextButton::buttonOnColourId).withAlpha(0.3f));
-        g.fillRect(getLocalBounds());
+        g.setColour(findColour(juce::ListBox::backgroundColourId));
+        g.fillAll();
     }
 }
+
+void CtrlrPanelLayerListItem::setSelected(bool shouldBeSelected)
+{
+    isSelected = shouldBeSelected;
+    _DBG("setSelected called: " + String(shouldBeSelected ? "true" : "false"));
+    repaint();
+}
+
 
 void CtrlrPanelLayerListItem::resized()
 {

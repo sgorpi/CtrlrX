@@ -92,6 +92,8 @@ const Result CtrlrWindows::exportWithDefaultPanel(CtrlrPanel*  panelToWrite, con
 		return (Result::fail("Windows Native: exportWithDefaultPanel got nullptr for panel"));
 	}
 
+	// 1. Setup Variables & Logger
+	CtrlrManager& manager = panelToWrite->getOwner();
 	File	me = File::getSpecialLocation(File::currentExecutableFile);
 	File	newMe;
 	HANDLE	hResource;
@@ -101,29 +103,68 @@ const Result CtrlrWindows::exportWithDefaultPanel(CtrlrPanel*  panelToWrite, con
 	logger.log("Starting exportWithDefaultPanel");
 	String fileExtension = me.getFileExtension();
 	logger.log("CtrlrX source fileExtension is :" + fileExtension);
-	//MemoryBlock iconData(BinaryData::ico_midi_png, BinaryData::ico_midi_pngSize);
 
+	// 2. Check if panelToWrite is a valid ptr
 	if (panelToWrite == nullptr)
 	{
 		logger.log("Error: panelToWrite is nullptr");
 		return (Result::fail("Windows Native: exportWithDefaultPanel got nullptr for panel"));
 	}
-
-	FileChooser exportFc(CTRLR_NEW_INSTANCE_DIALOG_TITLE,
-		me.getParentDirectory().getChildFile(File::createLegalFileName(panelToWrite->getProperty(Ids::name))).withFileExtension(me.getFileExtension()),
-		"*" + me.getFileExtension(),
-		panelToWrite->getOwner().getProperty(Ids::ctrlrNativeFileDialogs));
-
+	
+	// 3. Determine Initial Directory (Sticky Logic)
+	String lastPath = manager.getProperty("lastExportPath").toString();
+	File targetDir;
+	
+	if (lastPath.isNotEmpty() && File(lastPath).isDirectory())
+	{
+		targetDir = File(lastPath);
+	}
+	else
+	{
+		// First time run logic:
+		if (fileExtension.equalsIgnoreCase(".vst3") || fileExtension.equalsIgnoreCase(".dll"))
+		{
+			// Ternary to pick the folder name based on extension
+			String subFolder = fileExtension.equalsIgnoreCase(".vst3") ? "VST3" : "VST2";
+			
+			targetDir = File::getSpecialLocation(File::globalApplicationsDirectory)
+			.getChildFile("Common Files")
+			.getChildFile(subFolder);
+			
+			// Final fallback if the path is missing or restricted
+			if (!targetDir.exists())
+				targetDir = File::getSpecialLocation(File::userDocumentsDirectory);
+		}
+		else
+		{
+			targetDir = File::getSpecialLocation(File::userDocumentsDirectory);
+		}
+	}
+	
+	// 4. File Chooser
+	String defaultFileName = File::createLegalFileName(panelToWrite->getProperty(Ids::name));
+	File defaultFile = targetDir.getChildFile(defaultFileName).withFileExtension(fileExtension);
+	
+	FileChooser exportFc (CTRLR_NEW_INSTANCE_DIALOG_TITLE,
+						  defaultFile,
+						  "*" + fileExtension,
+						  manager.getProperty(Ids::ctrlrNativeFileDialogs));
+	
 	if (exportFc.browseForFileToSave(true))
 	{
 		newMe = exportFc.getResult();
-		logger.log("File selected: " + newMe.getFullPathName());
-
-		if (!newMe.hasFileExtension(me.getFileExtension()))
-		{
-			newMe = newMe.withFileExtension(me.getFileExtension());
-		}
-
+		
+		// Save sticky path
+		manager.setProperty("lastExportPath", newMe.getParentDirectory().getFullPathName());
+		// This forces Ctrlr to write the new path to the actual settings file on disk
+		
+		// Optional: Persist this to the global XML settings file on disk
+		// Disable the following line if you prefer session-only memory.
+		manager.saveState();
+		
+		if (!newMe.hasFileExtension(fileExtension))
+			newMe = newMe.withFileExtension(fileExtension);
+		
 		if (!me.copyFileTo(newMe))
 		{
 			logger.log("Error: Failed to copy executable");
@@ -134,45 +175,16 @@ const Result CtrlrWindows::exportWithDefaultPanel(CtrlrPanel*  panelToWrite, con
 	else
 	{
 		logger.log("Error: File selection dialog failed");
-		return (Result::fail("Windows Native: exportMeWithNewResource \"Save file\" dialog failed"));
+		// return (Result::fail("Windows Native: exportMeWithNewResource \"Save file\" dialog failed"));
+		return Result::fail("User cancelled the export operation.");
 	}
 
-	// Export panel data and resources
+	// 5. Update Win32 Resources (Panel Injection)
 	hResource = BeginUpdateResource(newMe.getFullPathName().toUTF8(), FALSE);
 	if (hResource)
 	{
 		if ((error = CtrlrPanel::exportPanel(panelToWrite, File(), newMe, &panelExportData, &panelResourcesData, isRestricted)) == "")
 		{
-			// Encrypt panel data and resources using JUCE BlowFish directly on copies
-			//String keyString = "yourkey"; // Replace with your actual key (security!).
-			//juce::BlowFish blowfish(keyString.toUTF8(), keyString.getNumBytesAsUTF8());
-			//
-			//if (panelExportData.getSize() > 0)
-			//{
-			//	MemoryBlock encryptedPanelData = panelExportData;
-			//	blowfish.encrypt(encryptedPanelData);
-			//	panelExportData = encryptedPanelData;
-			//	logger.log("Panel data encrypted.");
-			//}
-			//else
-			//{
-			//	logger.log("Error: panelExportData is empty");
-			//	return Result::fail("Error: panelExportData is empty");
-			//}
-			//
-			//if (panelResourcesData.getSize() > 0)
-			//{
-			//	MemoryBlock encryptedResourcesData = panelResourcesData;
-			//	blowfish.encrypt(encryptedResourcesData);
-			//	panelResourcesData = encryptedResourcesData;
-			//	logger.log("Panel resources encrypted.");
-			//}
-			//else
-			//{
-			//	logger.log("Error: panelResourcesData is empty");
-			//	return Result::fail("Error: panelResourcesData is empty");
-			//}
-
 			if (writeResource(hResource, MAKEINTRESOURCE(CTRLR_INTERNAL_PANEL_RESID), RT_RCDATA, panelExportData)
 				&& writeResource(hResource, MAKEINTRESOURCE(CTRLR_INTERNAL_RESOURCES_RESID), RT_RCDATA, panelResourcesData))
 			{
@@ -197,7 +209,7 @@ const Result CtrlrWindows::exportWithDefaultPanel(CtrlrPanel*  panelToWrite, con
 	} // End if (hResource)
 
 
-
+	// 6. Binary String Replacement (Rebranding)
 	// Introduce a delay before modifying the executable
 	logger.log("Thread sleep to delay binary modification task.");
 	juce::Thread::sleep(500); // milliseconds (250ms should be ok, adjust as needed)

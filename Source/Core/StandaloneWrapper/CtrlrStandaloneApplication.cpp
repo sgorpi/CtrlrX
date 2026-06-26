@@ -2,6 +2,11 @@
 #include "CtrlrMacros.h"
 #include "CtrlrLog.h"
 #include "CtrlrStandaloneWindow.h"
+#include "LinuxDpiScale.h"
+
+#if JUCE_LINUX
+ #include <cmath>
+#endif
 
 class CtrlrApplication : public JUCEApplication
 {
@@ -68,6 +73,13 @@ class CtrlrApplication : public JUCEApplication
                 {
 					Logger::writeToLog("CTRLR:initialise params \""+commandLineParameters+"\"");
 
+#if JUCE_LINUX
+					const double linuxScale = ctrlrx_get_linux_scale_factor();
+					if (std::abs(linuxScale - 1.0) > 0.001)
+						Desktop::getInstance().setGlobalScaleFactor((float)linuxScale);
+
+					Logger::writeToLog("CTRLR:linux scale factor \"" + String(linuxScale, 3) + "\"");
+#endif
 
 					{
 						bool setcrashhandler = true;

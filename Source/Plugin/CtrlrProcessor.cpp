@@ -81,7 +81,12 @@ CtrlrProcessor::~CtrlrProcessor() // Updated v5.6.34. Prevents AAX from crashing
     //    (Confirmed even when property exists and has a default value).
     // 2. Explicitly deleting ctrlrLog (if it were done here) caused crashes on AAX plugin startup scan.
     // The safest approach for AAX is to do minimal work for these components in the destructor.
-    #ifndef JucePlugin_Build_AAX
+    #if JucePlugin_Build_AAX
+        // For JUCE_AAX builds:
+        // We ensure raw pointers are nullified without deletion to avoid crashes during scan/removal.
+        // ScopedPointer will still automatically delete its content (ctrlrManager) when the CtrlrProcessor object is destroyed.
+        ctrlrLog = nullptr;
+    #else
         // For all plugin formats *EXCEPT* AAX:
         // Perform explicit deletion for the raw pointer (ctrlrLog).
         // ScopedPointer (ctrlrManager) will handle its own deletion automatically.
@@ -96,11 +101,6 @@ CtrlrProcessor::~CtrlrProcessor() // Updated v5.6.34. Prevents AAX from crashing
             // It remains here for other macOS builds if it's considered necessary for them. Mainly for panels with timer process handled in the background and delayed saveState() process.
             MessageManager::getInstance()->runDispatchLoopUntil((int)overridesTree.getProperty(Ids::ctrlrShutdownDelay));
         #endif
-    #else
-        // For JUCE_AAX builds:
-        // We ensure raw pointers are nullified without deletion to avoid crashes during scan/removal.
-        // ScopedPointer will still automatically delete its content (ctrlrManager) when the CtrlrProcessor object is destroyed.
-        ctrlrLog = nullptr;
     #endif
 }
 
@@ -234,6 +234,17 @@ String CtrlrProcessor::getParameterID(int index) // Added v5.6.33. Will pass vst
     
     //logger.log("getParameterID() called with index: " + String(index));
 
+    // Check if we are currently running as an AudioUnit
+    if (wrapperType == AudioProcessor::wrapperType_AudioUnit)
+    {
+        // For AU: Return the index as a string to force sequential IDs
+        // This stops Logic from "shuffling" your parameters based on hashes
+        
+        // Adding 1 ensures we stay away from the '0' ID which can be reserved
+            return String(index + 1);
+    }
+    
+    // For VST3 / Others: Keep your descriptive IDs
     if (CtrlrModulator* m = ctrlrManager->getModulatorByVstIndex (index))
     {
         int vstIndex = m->getVstIndex();
@@ -262,7 +273,8 @@ const String CtrlrProcessor::getParameterName (int index)
     }
     else
     {
-        return ("undefined_"+String(index));
+        // return ("undefined_"+String(index)); // Updated v5.6.35. SEE: https://github.com/damiensellier/CtrlrX/issues/228#issuecomment-4030969898
+        return " "; // For the Mackie Controllers with LCD, a space looks better than "undefined_XX"
     }
 }
 

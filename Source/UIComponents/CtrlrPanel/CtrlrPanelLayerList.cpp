@@ -190,10 +190,14 @@ int CtrlrPanelLayerList::getNumRows()
 
 void CtrlrPanelLayerList::paintListBoxItem (int rowNumber, Graphics& g, int width, int height, bool rowIsSelected)
 {
-    if (rowIsSelected)
-    {
-		// gui::drawSelectionRectangle (g, width, height); // Update v5.6.34. Won't highlight the selected list item
-    }
+	if (rowIsSelected)
+	{
+		g.setColour(juce::Colours::steelblue.withAlpha(0.4f));
+		g.fillRect(0, 0, width, height);
+
+		g.setColour(juce::Colours::steelblue);
+		g.drawRect(0, 0, width, height, 1);
+	}
 }
 
 Component* CtrlrPanelLayerList::refreshComponentForRow (int rowNumber, bool isRowSelected, Component* existingComponentToUpdate)
@@ -209,7 +213,8 @@ Component* CtrlrPanelLayerList::refreshComponentForRow (int rowNumber, bool isRo
 
 	itemInfo->setRow(actualLayerIndex);  // Use the actual layer index for the row
 	itemInfo->setLayer(owner.getEditor()->getCanvas()->getLayerFromArray(actualLayerIndex));
-	
+	itemInfo->setSelected(isRowSelected);  
+
 	return itemInfo;
 }
 

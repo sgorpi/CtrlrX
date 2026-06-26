@@ -27,7 +27,9 @@ class CtrlrSysexProcessor
 		void checksumXor(const CtrlrSysexToken token, MidiMessage &m); // Added v5.6.34. Thanks to @dnaldoog
 		void checksumTechnics(const CtrlrSysexToken token, MidiMessage &m); // Added v5.6.34. Thanks to @dnaldoog
 		void checksumOnesComplement(const CtrlrSysexToken token, MidiMessage &m); // Added v5.6.34. Thanks to @dnaldoog
-        void checksumSummingSimple(const CtrlrSysexToken token, MidiMessage &m); // Added v5.6.34. Thanks to @dnaldoog
+		void checksumSummingSimple(const CtrlrSysexToken token, MidiMessage &m); // Added v5.6.34. Thanks to @dnaldoog
+		String openAdvancedMessageEditor(); // Added v5.6.35. Thanks to @dnaldoog. Hold old AlertWindow Multi Midi Editor code
+		static void showMidiHelp(); // Added v5.6.35. Thanks to @dnaldoog. Shows how to use convoluted sysntax for Multi Midi Mesaages!
 		int getGlobalIndex(const CtrlrSysexToken token);
 
 		static double getValue(const Array<CtrlrSysexToken> &tokens, const CtrlrMidiMessageEx &message);

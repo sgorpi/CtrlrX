@@ -8,8 +8,12 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include (PamplejuceVersion)
 
-# Modern concise way to add dependencies to your project
-include (CPM)
+# CPM is only needed for optional targets (tests/benchmarks) and should not
+# be required for normal local/package builds that rely on system libs.
+option(CTRLRX_ENABLE_CPM "Enable CPM-based optional dependencies" OFF)
+if(CTRLRX_ENABLE_CPM)
+    include (CPM)
+endif()
 
 # Configures universal binaries and decides which version of macOS to support
 include(PamplejuceMacOS)
@@ -48,6 +52,7 @@ set(BUNDLE_ID "com.${BASE_ID_NAME}.${PROJECT_NAME}")
 # Change me! Set the plugin formats you want built
 # Valid choices: AAX Unity VST VST3 AU AUv3 Standalone
 set(FORMATS Standalone AU VST3)
+option(CTRLRX_COPY_PLUGIN_AFTER_BUILD "Copy plugin artefacts to user/system plugin folders after build" OFF)
 
 # For simplicity, the name of the CMake project is also the name of the target
 # CURRENT_VERSION is from the VERSION file and shall contain non-negative integer components,
@@ -92,8 +97,9 @@ juce_add_plugin("${PROJECT_NAME}"
     COMPANY_NAME "${COMPANY_NAME}"
     BUNDLE_ID "${BUNDLE_ID}"
 
-    # On MacOS, plugin is copied to /Users/yourname/Library/Audio/Plug-Ins/
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    # Keep builds hermetic by default (important for CI/sandboxed/local package builds).
+    # Enable with -DCTRLRX_COPY_PLUGIN_AFTER_BUILD=ON when you want host plugin folders updated.
+    COPY_PLUGIN_AFTER_BUILD ${CTRLRX_COPY_PLUGIN_AFTER_BUILD}
 
     # Change me!
     # A four-character plugin id
@@ -107,10 +113,11 @@ juce_add_plugin("${PROJECT_NAME}"
     FORMATS "${FORMATS}"
 
     # --- CORE PLUGIN CHARACTERISTICS FROM PROJUCER ---
-    PLUGIN_IS_SYNTH TRUE
-    PLUGIN_WANTS_MIDI_INPUT TRUE
-    PLUGIN_PRODUCES_MIDI_OUTPUT TRUE
-    PLUGIN_EDITOR_REQUIRES_KEYS TRUE
+    IS_SYNTH TRUE
+    IS_MIDI_EFFECT FALSE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT TRUE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     # -------------------------------------------------
 
     # FIX: VST3 Category is set using the official plural argument (VST3_CATEGORIES)
@@ -120,6 +127,9 @@ juce_add_plugin("${PROJECT_NAME}"
     # The name of your final executable. This now uses the clean PRODUCT_NAME.
     PRODUCT_NAME "${PRODUCT_NAME}"
 )
+
+
+# ---------------------------------------------------
 
 # --- VST3 Dynamic Name/Manufacturer Override ---
 # This block is essential for controlling the final VST3 plugin name
@@ -133,6 +143,23 @@ if ("VST3" IN_LIST FORMATS)
         JUCE_COMPANY_NAME "CtrlrX Project                  "
     )
 endif()
+
+# ---------------------------------------------------
+
+# --- Audio Unit (AU) Specific Overrides to match Projucer ---
+if ("AU" IN_LIST FORMATS)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        # Forces the AU to be a Synth (MusicDevice) instead of an FX
+        JUCE_AU_MAIN_TYPE kAudioUnitType_MusicDevice
+        
+        # Matches the exact name with trailing spaces from your .jucer file
+        JUCE_PLUGIN_NAME "CtrlrX                          "
+        
+        # Matches the Manufacturer name from your .jucer file
+        JUCE_COMPANY_NAME "CtrlrX Project                  "
+    )
+endif()
+
 # ---------------------------------------------------
 
 # If you had any *other* necessary, non-category format overrides here, they should 
@@ -194,6 +221,7 @@ target_sources(SharedCode INTERFACE ${SourceFiles})
 target_include_directories(SharedCode INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/Source"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/Misc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Source/Misc/rapidfuzz"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/Misc/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/Misc/lua/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/Misc/luabind"

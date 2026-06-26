@@ -106,8 +106,8 @@ CtrlrFileListBox::CtrlrFileListBox (CtrlrModulator &owner)
 	setProperty (Ids::uiFileListFont, FONT2STR (Font(14)));
 	setProperty (Ids::uiFileListTextColour, (String)findColour(TextButton::textColourOffId).toString()); // "0xff000000"
 
-	setProperty (Ids::uiFileListHighlightTextColour, (String)findColour(TextEditor::highlightColourId).toString()); // "0xff000000"
-	setProperty (Ids::uiFileListHighlightBgColour, (String)findColour(TextEditor::highlightedTextColourId).toString()); // "0xff0000ff"
+	setProperty (Ids::uiFileListHighlightTextColour, (String)findColour(TextEditor::highlightedTextColourId).toString()); // "0xff000000"
+	setProperty (Ids::uiFileListHighlightBgColour, (String)findColour(TextEditor::highlightColourId).toString()); // "0xff0000ff"
 	setProperty (Ids::uiFileListBoxHighlightFont, FONT2STR (Font(14)));
 	setProperty (Ids::uiFileListBoxOutline, 0);
 	setProperty (Ids::uiFileListBoxOutlineColour, (String)findColour(TextEditor::outlineColourId).toString()); // "0xff000000"
@@ -263,7 +263,11 @@ void CtrlrFileListBox::valueTreePropertyChanged (ValueTree &treeWhosePropertyHas
 	}
 	else if (property == Ids::uiFileListHighlightTextColour)
 	{
-		treeComponent->setColour (DirectoryContentsDisplayComponent::highlightColourId, VAR2COLOUR(getProperty(property)));
+		treeComponent->setColour (DirectoryContentsDisplayComponent::highlightedTextColourId, VAR2COLOUR(getProperty(property)));
+	}
+	else if (property == Ids::uiFileListHighlightBgColour) // Added v5.6.35. Thanks to @dobo365
+	{
+		treeComponent->setColour(DirectoryContentsDisplayComponent::highlightColourId, VAR2COLOUR(getProperty(property)));
 	}
 	else if (property == Ids::uiFileListOpenButtonVisible)
 	{

@@ -18,6 +18,7 @@ CtrlrPanel::CtrlrPanel(CtrlrManager &_owner)
 		: owner(_owner),
 		panelTree(Ids::panel),
 		panelWindowManager(*this),
+		globalVariables({}),
 		ctrlrSysexProcessor(*this),
 		processor(*this),
 		snapshot(*this),
@@ -871,8 +872,8 @@ void CtrlrPanel::removeModulator (CtrlrModulator *modulatorToDelete)
 
 		listeners.call (&CtrlrPanel::Listener::modulatorRemoved, modulatorToDelete);
 
-		ctrlrModulators.removeObject (modulatorToDelete);
 		panelTree.removeChild (modulatorToDelete->getModulatorTree(), 0);
+		ctrlrModulators.removeObject (modulatorToDelete);
 	}
 }
 
@@ -953,27 +954,40 @@ const Array <CtrlrModulator*> CtrlrPanel::getModulatorsByUIType(const Identifier
 	return (ret);
 }
 
-const Array <CtrlrModulator*> CtrlrPanel::getModulatorsWithProperty(const Identifier &propertyName, const var &propertyValue)
+const Array<CtrlrModulator*> CtrlrPanel::getModulatorsWithProperty(const Identifier& propertyName, const var& propertyValue)
 {
-	Array <CtrlrModulator *>ret;
+	Array<CtrlrModulator*> ret;
 
-	for (int i=0; i<ctrlrModulators.size(); i++)
+	// Always convert to string and trim for consistent comparison
+	String searchValue = propertyValue.toString().trim();
+
+	// Handle edge case: if the var is numeric 0, toString() works fine
+	// but let's be explicit about it
+	if (propertyValue.isInt() || propertyValue.isInt64() || propertyValue.isDouble())
 	{
-		if (ctrlrModulators[i]->getProperty(propertyName) == propertyValue)
+		searchValue = String((int)propertyValue);
+	}
+
+	for (int i = 0; i < ctrlrModulators.size(); i++)
+	{
+		String modValue = ctrlrModulators[i]->getProperty(propertyName).toString().trim();
+
+		if (modValue == searchValue)
 		{
 			ret.addIfNotAlreadyThere(ctrlrModulators[i]);
 		}
 
 		if (ctrlrModulators[i]->getComponent())
 		{
-			if (ctrlrModulators[i]->getComponent()->getProperty(propertyName) == propertyValue)
+			String compValue = ctrlrModulators[i]->getComponent()->getProperty(propertyName).toString().trim();
+
+			if (compValue == searchValue)
 			{
 				ret.addIfNotAlreadyThere(ctrlrModulators[i]);
 			}
 		}
 	}
-
-	return (ret);
+	return ret;
 }
 
 const String CtrlrPanel::getUniqueModulatorName(const String &proposedName)
@@ -1308,9 +1322,9 @@ void CtrlrPanel::panelReceivedMidi(const MidiBuffer &buffer, const CtrlrMIDIDevi
 {
 	MidiBuffer::Iterator i(buffer);
 	MidiMessage m;
-	int time;
+	int samplePosition;
 
-	while (i.getNextEvent(m,time))
+	while (i.getNextEvent(m, samplePosition))
 	{
 		midiMessageCollector.addMessageToQueue (m);
 	}
@@ -1698,12 +1712,62 @@ void CtrlrPanel::sendMidi (CtrlrMidiMessage &m, double millisecondCounterToStart
 	if (isMidiOutPaused())
 		return;
 
-	if (outputDevicePtr)
+	if (!outputDevicePtr)
+		return;
+	
+	const double sendTime = globalMidiDelay + millisecondCounterToStartAt;
+	const bool latchEnabled = (bool)m.getProperty(Ids::midiMessageLatchAndStream);
+	
+	if (m.getMidiMessageType() == Multi && latchEnabled)
 	{
-		outputDevicePtr->sendMidiBuffer (m.getMidiBuffer(), globalMidiDelay + millisecondCounterToStartAt);
+		const int    incomingNumber  = m.getNumber();
+		const String incomingFormula = m.getProperty(Ids::midiMessageMultiList).toString();
+		
+		// Reset latch when parameter number OR formula type changes
+		if (incomingNumber != nrpnLatchedNumber || incomingFormula != nrpnLatchedFormula)
+		{
+			_DBG("NRPN latch: reset - number=" + String(incomingNumber)
+				 + " formula=" + incomingFormula);
+			nrpnHeaderLatched = false;
+			nrpnLatchedNumber  = incomingNumber;
+			nrpnLatchedFormula = incomingFormula;
+		}
+		
+		auto& messages = m.getMidiMessageArray();
+		_DBG("NRPN latch: arraySize=" + String(messages.size())
+			 + " latched=" + String((int)nrpnHeaderLatched)
+			 + " number=" + String(incomingNumber));
+		
+		MidiBuffer filtered;
+		int sample = 0;
+		
+		for (int i = 0; i < messages.size(); i++)
+		{
+			const MidiMessage& msg = messages.getReference(i).m;
+			const int cc = msg.getControllerNumber();
+			
+			const bool isHeader = msg.isController()
+			&& (cc == 99 || cc == 98   // NRPN MSB/LSB
+				|| cc == 101 || cc == 100); // RPN MSB/LSB
+			
+			if (isHeader && nrpnHeaderLatched)
+			{
+				_DBG("NRPN latch: skipping header CC" + String(cc));
+				continue;
+			}
+			
+			filtered.addEvent(msg, sample++);
+		}
+		
+		nrpnHeaderLatched = true;
+		outputDevicePtr->sendMidiBuffer(filtered, sendTime);
+		queueMessagesForHostOutput(filtered);
 	}
-
-	queueMessageForHostOutput (m);
+	else
+	{
+		outputDevicePtr->sendMidiBuffer(m.getMidiBuffer(), sendTime);
+		queueMessageForHostOutput(m);
+	}
 }
 
 bool CtrlrPanel::isMidiOutPaused()

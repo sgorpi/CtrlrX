@@ -34,8 +34,11 @@ void CtrlrManager::setEmbeddedDefaults()
 	setProperty (Ids::ctrlrMidiMonOutputBufferSize, 8192);
 	setProperty (Ids::ctrlrLuaDisabled, false);
 	setProperty (Ids::ctrlrOverwriteResources, true);
-	setProperty (Ids::ctrlrAutoSave, true);
-	setProperty (Ids::ctrlrAutoSaveInterval, 300);
+	if (JUCEApplication::isStandaloneApp()) // Added v5.6.35
+	{
+		setProperty (Ids::ctrlrAutoSave, true);
+		setProperty (Ids::ctrlrAutoSaveInterval, 300);
+	}
     // setProperty (Ids::ctrlrLogOptions, 32); // Updated v5.6.31
     setProperty (Ids::ctrlrLogOptions, 6014); // Added v5.6.31. 6014 shows everything by default with MIDI messages in Hex
     setProperty (Ids::ctrlrScrollbarThickness, 16.0f); // Added v5.6.31
@@ -176,7 +179,7 @@ const String CtrlrManager::getInstanceNameForHost() const
 {
 	if (getInstanceMode() == InstanceSingle || getInstanceMode() == InstanceSingleRestriced)
 	{
-        #ifdef JucePlugin_Build_AAX
+        #if JucePlugin_Build_AAX
             // This code runs ONLY when building for AAX.
             return (ctrlrPlayerInstanceTree.getProperty(Ids::name).toString());
         #else

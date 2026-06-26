@@ -7,6 +7,10 @@
 #include "CtrlrMIDI/CtrlrMIDIMon.h"
 #include "CtrlrLogViewer.h"
 #include "CtrlrMIDI/CtrlrMIDICalculator.h"
+#include "CtrlrSettingsContent.h"
+#include "CtrlrAboutContent.h"
+#include "../CtrlrApplicationWindow/CtrlrSettings.h" // use application-window header
+#include "CtrlrAbout.h" // to avoid wayland crash
 
 CtrlrManagerWindowManager::CtrlrManagerWindowManager(CtrlrManager &_owner)
     : owner(_owner), managerTree(Ids::uiWindowManager), CtrlrWindowManager(_owner)
@@ -122,6 +126,10 @@ const String CtrlrManagerWindowManager::getWindowName(const CtrlrManagerWindowMa
 			return ("LogViewer");
 		case MIDICalculator:
 			return ("MIDICalculator");
+		case GlobalSettings: // added for wayland crash
+			return ("GlobalSettings");
+		case AboutWindow: // added for wayland crash
+			return ("AboutWindow");
 		default:
 			return ("Unknown");
 	}
@@ -137,6 +145,10 @@ CtrlrManagerWindowManager::WindowType CtrlrManagerWindowManager::getWindowType(c
 		return (LogViewer);
 	if (windowName == "MIDICalculator")
 		return (MIDICalculator);
+	if (windowName == "GlobalSettings") // added for wayland crash
+		return (GlobalSettings);
+	if (windowName == "AboutWindow") // added for wayland crash
+		return (AboutWindow);
 	return (MidiMonWindow);
 }
 
@@ -193,6 +205,14 @@ CtrlrChildWindow *CtrlrManagerWindowManager::createWindow(const CtrlrManagerWind
 			w->setContent (new CtrlrMIDICalculator (owner));
 			break;
 
+		case CtrlrManagerWindowManager::GlobalSettings: // added for wayland issues
+			w->setContent (new CtrlrSettingsContent (owner));
+			break;
+
+		case CtrlrManagerWindowManager::AboutWindow: // added for wayland issues
+			w->setContent (new CtrlrAboutContent (owner));
+			break;
+			
         case CtrlrManagerWindowManager::Repository:
             break;
 	}

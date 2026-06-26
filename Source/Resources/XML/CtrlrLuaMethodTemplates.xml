@@ -6,6 +6,20 @@
     -- @mod   http://ctrlr.org/api/class_ctrlr_modulator.html
     -- @value    new numeric value of the modulator
     --
+    -- get name of modulator with L(mod:getName())
+    --
+    -- @source indicates what caused the change
+    --
+    -- * initial value = 0
+    -- * changed by Host = 1
+    -- * changed by MidiIn = 2
+    -- * changed by MidiController = 3
+    -- * changed by GUI = 4
+    -- * changed by Lua = 5
+    -- * changed by Program = 6
+    -- * changed by Link = 7
+    -- * change by Unknown = 8
+
     __method_name = function(--[[ CtrlrModulator --]] mod, --[[ number --]] value, --[[ number --]] source)
     end
   </luaMethod>
@@ -23,6 +37,10 @@
     --
     -- Called when a mouse is down on this component
     --
+    -- get name of modulator with L(comp:getOwner():getName())
+    -- get mouse event info from event parameter event.x, event.y, event.mods, etc.
+    -- x coordinate = event.x
+    -- y coordinate = event.y
 
     __method_name = function(--[[ CtrlrComponent --]] comp, --[[ MouseEvent --]] event)
     end
@@ -32,6 +50,10 @@
     --
     -- Called when a mouse is up on this component
     --
+    -- get name of modulator with L(comp:getOwner():getName())
+    -- get mouse event info from event parameter event.x, event.y, event.mods, etc.
+    -- x coordinate = event.x
+    -- y coordinate = event.y
 
     __method_name = function(--[[ CtrlrComponent --]] comp, --[[ MouseEvent --]] event)
     end
@@ -298,7 +320,7 @@
   <luaMethod name="luaPanelSaved">
     --
     -- Called when the panel is saved
-    -- @saveType         A number that indicates the type of file beeing saved http://ctrlr.org/api/class_ctrlr_panel.html
+    -- @saveType         A number that indicates the type of file being saved http://ctrlr.org/api/class_ctrlr_panel.html
     -- @destinationFile  A file object http://ctrlr.org/api/class_ctrlr_lua_file.html
     --                      see more http://www.rawmaterialsoftware.com/juce/api/classFile.html
     --
@@ -499,7 +521,7 @@
     --
     -- Called when the panel has finished loading
     --
-    -- @type the type of instance beeing started, types available in the CtrlrPanel
+    -- @type the type of instance being started, types available in the CtrlrPanel
     -- class as enum
     --
     -- InstanceSingle

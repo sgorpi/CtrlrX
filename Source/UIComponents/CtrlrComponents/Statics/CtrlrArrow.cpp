@@ -16,7 +16,7 @@ CtrlrArrow::CtrlrArrow (CtrlrModulator &owner)
 	setProperty (Ids::uiArrowHeadHeight, 16);
 	setProperty (Ids::uiArrowOrientation, 0);
 	setProperty (Ids::uiArrowRotation, 0);
-	setProperty (Ids::uiArrowStokeThickness, 1);
+	setProperty (Ids::uiArrowStrokeThickness, 1); // Updated v5.6.35. Typo. Thanks to @dnaldoog
 
 	componentTree.addListener (this);
     //[/UserPreSize]
@@ -45,7 +45,7 @@ void CtrlrArrow::paint (Graphics& g)
 {
     //[UserPrePaint] Add your own custom painting code here..
 	const int orientation	= getProperty(Ids::uiArrowOrientation);
-	const int thick			= getProperty(Ids::uiArrowStokeThickness);
+	const int thick			= getProperty(Ids::uiArrowStrokeThickness);
 
 	g.setColour (VAR2COLOUR(getProperty (Ids::uiArrowColour)));
 	Path arrowPath;
@@ -72,7 +72,7 @@ void CtrlrArrow::paint (Graphics& g)
 			break;
 	}
 
-	g.strokePath (arrowPath, PathStrokeType(getProperty(Ids::uiArrowStokeThickness)), AffineTransform::rotation ((float)getProperty(Ids::uiArrowRotation)*(float_Pi/180), getWidth()/2.0f, getHeight()/2.0f));
+	g.strokePath (arrowPath, PathStrokeType(getProperty(Ids::uiArrowStrokeThickness)), AffineTransform::rotation ((float)getProperty(Ids::uiArrowRotation)*(float_Pi/180), getWidth()/2.0f, getHeight()/2.0f));
     //[/UserPrePaint]
 
     //[UserPaint] Add your own custom painting code here..

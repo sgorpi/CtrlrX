@@ -15,10 +15,10 @@
   <id name="modulatorLinkedToModulatorSource" 	text="Link to MODULATOR modulation type" type="Bool" defaults="Numeric/Text"/>
   <id name="modulatorLinkedToModulator" 		text="Link to MODULATOR" type="VarText"/>
   <id name="modulatorLinkedToComponent" 		text="Link to what type of MODULATOR property" type="VarNumeric" defaults="Modulator=0,Component=1,MIDI Message=2" />
-  <id name="modulatorMin" 						text="Minimum value the modulator can have, should be set from the UI component" type="ReadOnly" min="-65536" max="65536" int="0.0001" />
-  <id name="modulatorMax"                       text="Maximum value the modulator can have, should be set from the UI component" type="ReadOnly" min="-65536" max="65536" int="0.0001" />
+  <id name="modulatorMin" 						text="Minimum value the modulator can have, should be set from the UI component" type="ReadOnly" min="-32768" max="65535" int="0.0001" />
+  <id name="modulatorMax"                       text="Maximum value the modulator can have, should be set from the UI component" type="ReadOnly" min="-32768" max="65535" int="0.0001" />
   <id name="modulatorExcludeFromSnapshot" 		text="Don't send this modulator during snapshots" type="Bool" defaults="Don't send/Send"/>
-  <id name="modulatorBaseValue" 				text="Base/fallback value" type="Numeric" min="-65536" max="65536"/>
+  <id name="modulatorBaseValue" 				text="Base/fallback value" type="Numeric" min="-32768" max="65535"/>
   <id name="modulatorCustomIndex" 				text="Custom modulator index" type="Text"/>
   <id name="modulatorCustomIndexGroup" 			text="Custom modulator index group" type="Text"/>
   <id name="modulatorVstExported" 				text="Export parameter to VST host" type="Bool" defaults="Export/Don't export"/>
@@ -251,9 +251,9 @@
   <id name="uiSliderStyle" 					text="Slider style"     type="VarNumeric" defaults="LinearHorizontal,LinearVertical,LinearBar,LinearBarVertical,Rotary,RotaryHorizontalDrag,RotaryVerticalDrag,RotaryHorizontalVerticalDrag,IncDecButtons,TwoValueHorizontal,TwoValueVertical,ThreeValueHorizontal,ThreeValueVertical"/>
   
   <!-- Updated v5.6.32 -->
-  <id name="uiSliderMin" 					text="Minimum value"    type="Numeric" min="-65536" max="65536"  int="0.0001" />
-  <id name="uiSliderMax" 					text="Maximum value"    type="Numeric" min="-65536" max="65536"  int="0.0001" />
-  <id name="uiSliderInterval" 				text="Interval"         type="Numeric" min="0" max="65536"  int="0.0001" />
+  <id name="uiSliderMin" 					text="Minimum value"    type="Numeric" min="-32768" max="65535"  int="0.0001" />
+  <id name="uiSliderMax" 					text="Maximum value"    type="Numeric" min="-32768" max="65535"  int="0.0001" />
+  <id name="uiSliderInterval" 				text="Interval"         type="Numeric" min="0" max="65535"  int="0.0001" />
   <id name="uiSliderDecimalPlaces"          text="Decimal place"    type="Numeric" min="0" max="4" />
   <id name="uiSliderValueSuffix"            text="Value suffix"     type="Text" />
   
@@ -285,12 +285,12 @@
   <id name="uiSliderValueTextJustification" text="Value text justification" type="VarText" defaults="@justification"/>
   <id name="uiSliderVelocityMode" 			text="Velocity Mode" type="Bool"/>
   <id name="uiSliderVelocityModeKeyTrigger" text="Keyboard trigger - velocity Mode" type="Bool"/>
-  <id name="uiSliderVelocitySensitivity" 	text="Sensitivity - velocity Mode" type="Numeric" min="1" max="65536" int="0.0001"/>
-  <id name="uiSliderVelocityThreshold" 		text="Threshold - velocity Mode" type="Numeric" min="1" max="65536" int="0.0001" />
+  <id name="uiSliderVelocitySensitivity" 	text="Sensitivity - velocity Mode" type="Numeric" min="1" max="65535" int="0.0001"/>
+  <id name="uiSliderVelocityThreshold" 		text="Threshold - velocity Mode" type="Numeric" min="1" max="65535" int="0.0001" />
   <id name="uiSliderVelocityOffset" 		text="Offset in pixels - velocity Mode" type="Numeric" max="127" int="0.5"/>
   <id name="uiSliderSpringMode" 			text="Slider spring mode" type="Bool"/>
-  <id name="uiSliderSpringValue" 			text="Slider spring to value" type="Numeric" min="-65536" max="65536"  int="0.0001" />
-  <id name="uiSliderMouseWheelInterval" 	text="Interval for mouse wheel" type="Numeric" min="0" max="65536" int="0.0001" />
+  <id name="uiSliderSpringValue" 			text="Slider spring to value" type="Numeric" min="-32768" max="65535"  int="0.0001" />
+  <id name="uiSliderMouseWheelInterval" 	text="Interval for mouse wheel" type="Numeric" min="0" max="65535" int="0.0001" />
   <id name="uiSliderPopupBubble" 			text="Display popup bubble when dragging" type="Bool"/>
   <id name="uiSliderSetNotificationOnlyOnRelease" text="Send Value only on release" type="Bool" defaults="enabled/Disabled"/>
 
@@ -304,6 +304,10 @@
   <id name="uiImageResource" text="Image resource" type="VarText"/>
     
   <!-- Combo box -->
+  <id name="uiComboSearch" text="Combo search item" type="Bool" defaults="enabled/Disabled"/>
+  <id name="uiComboSearchFont" text="Combo search text" type="Font"/>
+  <id name="uiComboSearchTextColour" text="Combo search text colour" type="Colour"/>
+  <id name="uiComboSearchBgColour" text="Combo search background colour" type="Colour"/>
   <id name="uiComboArrowColour" text="Arrow colour" type="Colour"/>
   <id name="uiComboOutlineColour" text="Outline colour" type="Colour"/>
   <id name="uiComboTextColour" text="Text colour" type="Colour"/>
@@ -311,12 +315,12 @@
   <id name="uiComboButtonColour" text="Button colour" type="Colour"/>
   <id name="uiComboBgColour" text="Background colour" type="Colour"/>
   <id name="uiComboContent" text="Combo contents" type="MultiLine"/>
-  <id name="uiComboFont" text="Combo font" type="Font"/>
+  <id name="uiComboFont" text="Combo text" type="Font"/>
   <id name="uiComboMenuFont" text="Combo menu font" type="Font"/>
   <id name="uiComboMenuBackgroundColour" text="Combo menu background colour" type="Colour"/>
-  <id name="uiComboMenuFontColour" text="Combo menu font colour" type="Colour"/>
-  <id name="uiComboMenuFontHighlightedColour" text="Combo menu highlighted font colour" type="Colour"/>
-  <id name="uiComboMenuHighlightColour" text="Combo menu highlight colour" type="Colour"/>
+  <id name="uiComboMenuFontColour" text="Combo menu text colour" type="Colour"/>
+  <id name="uiComboMenuFontHighlightedColour" text="Combo menu highlighted text colour" type="Colour"/>
+  <id name="uiComboMenuHighlightColour" text="Combo menu highlight background colour" type="Colour"/>
   <id name="uiComboMenuBackgroundRibbed" text="Combo menu background has ribs" type="Bool"/>
   <id name="uiComboDynamicContent" text="Instead of contents display dynamic values" type="VarNumeric" defaults="@dynamicContent"/>
   <id name="uiComboButtonGradient" text="Use a gradient for the button" type="Bool"/>
@@ -436,8 +440,8 @@
   <id name="uiButtonContent"            text="Button values" type="MultiLine"/>
   <id name="uiButtonIsToggle"           text="Button is toggle button" type="Bool"/>
   <id name="uiButtonIsMomentary"        text="Button is a momentary buttom (springs back to 0)" type="Bool"/>
-  <id name="uiButtonTrueValue"          text="Value for ON state" type="Numeric" min="-65536" max="65536" int="1" />
-  <id name="uiButtonFalseValue"         text="Value for OFF state" type="Numeric" min="-65536" max="65536" int="1" />
+  <id name="uiButtonTrueValue"          text="Value for ON state" type="Numeric" min="-32768" max="65535" int="1" />
+  <id name="uiButtonFalseValue"         text="Value for OFF state" type="Numeric" min="-32768" max="65535" int="1" />
   <id name="uiButtonConnectedLeft"      text="Connected Left" type="Bool"/>
   <id name="uiButtonConnectedRight"     text="Connected Right" type="Bool"/>
   <id name="uiButtonConnectedTop"       text="Connected Top" type="Bool"/>
@@ -510,7 +514,7 @@
   <id name="uiArrowHeadHeight" text="Arrow head height" type="Numeric" min="0" max="4096" int="1" />
   <id name="uiArrowOrientation" text="Arrow orientation" type="VarNumeric" defaults="PointingTop=0,PointingBottom=1,PointingLeft=2,PointigRight=3"/>
   <id name="uiArrowRotation" text="Arrow rotation" type="Numeric" min="0" max="360" int="1" />
-  <id name="uiArrowStokeThickness" text="Arrow stroke thickness" type="Numeric" min="1" max="255" int="1" />
+  <id name="uiArrowStrokeThickness" text="Arrow stroke thickness" type="Numeric" min="1" max="255" int="1" />
 
   <!-- Custom component -->
   <id name="uiCustomResizedCallback" text="Resized callback" type="LuaMethod"/>
@@ -597,9 +601,9 @@
   <id name="uiXYSurfaceModulatorOutlineThickness"     text="Modulator outline thickness"        type="Numeric" max="255"/>
   <id name="uiXYSurfaceModulatorWidth"                text="Modulator width"                    type="Numeric" max="255"/>
   <id name="uiXYSurfaceModulatorHeight"               text="Modulator height"                   type="Numeric" max="255"/>
-  <id name="uiXYSurfaceMaxX"                          text="Max value for X"                    type="Numeric" min="-65536" max="65536"/>
+  <id name="uiXYSurfaceMaxX"                          text="Max value for X"                    type="Numeric" min="-32768" max="65535"/>
   <id name="uiXYSurfaceDestinationX"                  text="Destination modulator for X axis"   type="ModulatorList"/>
-  <id name="uiXYSurfaceMaxY"                          text="Max value for Y"                    type="Numeric" min="-65536" max="65536"/>
+  <id name="uiXYSurfaceMaxY"                          text="Max value for Y"                    type="Numeric" min="-32768" max="65535"/>
   <id name="uiXYSurfaceDestinationY"                  text="Destination modulator for Y axis"   type="ModulatorList"/>
   <id name="uiXYSurfaceGradientColour"                text="Rulers colour"                      type="Colour"/>
   <id name="uiXYSurfaceGradientGrain"                 text="Rulers density"                     type="Numeric" max="255"/>
@@ -692,8 +696,10 @@
   <id name="uiXYSurface" text="A XY modulator surface" type="Text"/>
 
   <!-- MIDI message properties -->
-  <id name="midiMessageCtrlrNumber" text="MIDI Controller number" type="Numeric" min="0" max="127" />
+  <id name="midiMessageCtrlrNumber" text="MIDI Controller number" type="Numeric" min="0" max="16383" /> <!-- 127 is a limit for CC messages but NRPN can go to 16383 -->
   <id name="midiMessageChannel" text="MIDI Channel" type="Numeric" min="1" max="16"/>
+  <id name="midiMessageCtrlrNumberSize" text="Controller Resolution" type="Bool" defaults="14-bit/7-bit" /> <!-- Added v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog. Does this do anything? midiMessageCtrlrValue -->
+  <id name="midiMessageLatchAndStream" text="Latch &amp; Stream" type="Bool" defaults="On/Off" />
   <id name="midiMessageCtrlrValue" text="MIDI Controller value" type="Numeric" min="0" max="127" />
   <id name="midiMessageType" text="MIDI message type" type="VarNumeric"  defaults="CC=0,Aftertouch=1,ChannelPressure=2,NoteOn=3,NoteOff=4,SysEx=5,Multi=6,ProgramChange=7,PitchWheel=8,None=9"/>
   <id name="midiMessageSysExFormula" text="SysEx Formula" type="SysEx"/>

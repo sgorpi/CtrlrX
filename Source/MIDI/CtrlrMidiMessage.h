@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CtrlrMidiMessageEx.h"
+#include <luabind/object_fwd.hpp> // Use the official forward declaration header
 
 class CtrlrLuaObjectWrapper;
 
@@ -52,6 +53,7 @@ class CtrlrMidiMessage : public ValueTree::Listener
 		CtrlrMidiMessage (const MidiMessage& other);
 		CtrlrMidiMessage (MemoryBlock& other);
 		CtrlrMidiMessage (const String& hexData);
+		CtrlrMidiMessage (const luabind::object& tableData); // Added v5.6.35. Support for table
 		CtrlrMidiMessage (const CtrlrLuaObjectWrapper& other);
 
 		virtual ~CtrlrMidiMessage();
@@ -103,7 +105,7 @@ class CtrlrMidiMessage : public ValueTree::Listener
 
 			@param	formula	the new formula to set
 		*/
-		void setSysExFormula (const String &formula);
+		// void setSysExFormula (const String &formula); // Removed v5.6.35. For multi MIDI Message. Thanks to @dnaldoog
 
 		const CtrlrMidiMessageEx &getMidiMessageEx(const int index) const									{ return (messageArray.getReference(index)); }
 		const String toString() const;
@@ -133,6 +135,7 @@ class CtrlrMidiMessage : public ValueTree::Listener
 		void clear();
 		virtual void patternChanged();
 		void memoryMerge (const CtrlrMidiMessage &otherMessage);
+		void buildMidiMessagesFromMulti(); // Added v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog
 		const MemoryBlock &getMidiPattern()	const;
 		const LMemoryBlock getData() const;
 		int getSize() const;
@@ -173,4 +176,43 @@ class CtrlrMidiMessage : public ValueTree::Listener
 		MidiBuffer midiBuffer;
 		MemoryBlock messagePattern;
 		TimestampComparator timestampComparator;
+    
+    enum class Type
+    {
+        CC,
+        ProgramChange,
+        SysEx,
+        NoteOn,
+        NoteOff,
+        Aftertouch,
+        ChannelPressure,
+        PitchWheel,
+        Unknown
+    };
+
+    struct MidiMessageData
+    {
+        Type type = Type::Unknown;
+        int midiNumber = -1;    // For CC/ProgramChange/etc
+        int midiValue = -1;    // For CC/ProgramChange/etc
+        juce::String sysexData; // For SysEx
+    };
+
+    struct MultiMessage
+    {
+        String midiType;
+        int numberToken = -1;
+        int valueToken = -1;
+        String sysexData;
+
+        // For MS/LS split support (NEW format: CC,MS,99,-2)
+        String splitType;  // "MS", "LS", "MSB", "LSB", etc.
+
+        // For legacy NRPN/RPN support (OLD format: CC,ByteValue,MSB7bitValue,99,-2)
+        String legacyData1Source;
+        String legacyData2Source;
+
+        bool isSysEx() const noexcept { return midiType.equalsIgnoreCase("SysEx"); }
+    };
+    Array<MultiMessage> multiMessages;
 };

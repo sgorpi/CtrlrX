@@ -35,7 +35,7 @@ CtrlrPanelProperties::CtrlrPanelProperties (CtrlrPanelEditor &_owner)
                              true
                              );
     
-	tabbedComponent->addTab ("Utility",
+	tabbedComponent->addTab ("XML", // Updated v5.6.35
                              getLookAndFeel().findColour(TabbedComponent::backgroundColourId), // Updated v5.6.31
                              new CtrlrPanelUtilities(owner),
                              true

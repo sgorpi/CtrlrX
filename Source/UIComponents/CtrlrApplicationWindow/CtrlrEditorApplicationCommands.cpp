@@ -110,7 +110,7 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
 	switch (commandID)
 	{
 		case doSaveState:
-			result.setInfo ("Save CTRLR state", "Saves the CTRLR state to disk", globalCategory, 0);
+			result.setInfo ("Save CTRLR State", "Saves the CTRLR state to disk", globalCategory, 0);
             if (!isRestricted()) // Added v5.6.32. Disable shortcut on restricted instance
             {
                 result.addDefaultKeypress ('s', ModifierKeys::commandModifier | ModifierKeys::altModifier);
@@ -226,7 +226,7 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
             break;
 
 		case doSave:
-			result.setInfo ("Save", "Save panel to a file", panelCategory, 0);
+			result.setInfo ("Save Panel", "Save panel to a file", panelCategory, 0);
             if (!isRestricted()) // Added v5.6.32. Disable shortcut on restricted instance
             {
                  result.addDefaultKeypress ('s', ModifierKeys::commandModifier);
@@ -240,7 +240,7 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
 			break;
 
 		case doSaveAs:
-			result.setInfo ("Save As", "Save panel as a new file", panelCategory, 0);
+			result.setInfo ("Save Panel As...", "Save panel as a new file", panelCategory, 0);
             if (!isRestricted()) // Added v5.6.32. Disable shortcut on restricted instance
             {
                 result.addDefaultKeypress ('s', ModifierKeys::commandModifier | ModifierKeys::shiftModifier);
@@ -249,7 +249,7 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
 			break;
 
 		case doSaveVersioned:
-			result.setInfo ("Save versioned", "Save panel to a new versioned file", panelCategory, 0);
+			result.setInfo ("Save Versioned Panel", "Save panel to a new versioned file", panelCategory, 0);
             if (!isRestricted()) // Added v5.6.32. Disable shortcut on restricted instance
             {
                 result.addDefaultKeypress ('s', ModifierKeys::altModifier | ModifierKeys::shiftModifier);
@@ -575,7 +575,7 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
             
         case LuaMethodEditorCommandIDs::editFindAndReplace:
             result.setInfo("Find and Replace", "Finds and replaces text in the editor", luaCategory, 0);
-            result.addDefaultKeypress('h', ModifierKeys::commandModifier); // Not a good idea since cmd+h is to hide the app for macOS cmd+r would be better
+            result.addDefaultKeypress('r', ModifierKeys::commandModifier); // cmd+h was not a good idea since cmd+h is to hide the app for macOS, cmd+r is better
             result.setActive(isPanelActive());
             break;
             

@@ -3,6 +3,8 @@
 #include "CtrlrLua/MethodEditor/CtrlrLuaMethodEditor.h"
 #include "CtrlrLuaManager.h"
 #include "CtrlrInlineUtilitiesGUI.h"
+#include <juce_gui_basics/juce_gui_basics.h>  // ADDED v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog
+using namespace juce; // ADDED v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog
 
 CtrlrPropertyComponent::CtrlrPropertyComponent (const Identifier &_propertyName,
 								const ValueTree &_propertyElement,
@@ -18,7 +20,23 @@ CtrlrPropertyComponent::CtrlrPropertyComponent (const Identifier &_propertyName,
 		possibleChoices(_possibleChoices),
 		possibleValues(_possibleValues)
 {
-	if (!identifierDefinition.isValid())
+
+//    if (propertyName == Ids::midiMessageCtrlrValue) // ADDED v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog
+//    {
+//        setVisible(false); // this hides the midi message ctrlr value slider because @dnaldoog doesn't think it does anything
+//        visibleText = identifierDefinition.isValid() ? identifierDefinition.getProperty("text").toString()
+//        : propertyName.toString();
+//        visibleText.clear();
+//        propertyType = CtrlrIDManager::Numeric;
+//        return;
+//    }
+
+    if (propertyName == Ids::midiMessageCtrlrNumber)
+    {
+        propertyElement.addListener(this);
+    }
+    
+    if (!identifierDefinition.isValid())
 	{
 		addAndMakeVisible (new CtrlrUnknownPropertyComponent (propertyName, propertyElement, identifierDefinition));
 		visibleText	 = propertyName.toString();
@@ -82,7 +100,21 @@ void CtrlrPropertyComponent::refresh()
 		}
 	}
 }
-
+void CtrlrPropertyComponent::valueTreePropertyChanged(ValueTree& treeWhosePropertyHasChanged, const Identifier& property) // ADDED v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog
+{
+    // When midiMessageCtrlrNumberSize changes, refresh the midiMessageCtrlrNumber slider
+    if (propertyName == Ids::midiMessageCtrlrNumber &&
+        property == Ids::midiMessageCtrlrNumberSize)
+    {
+        // Remove old component
+        deleteAllChildren();
+        
+        // Recreate with new max value
+        addAndMakeVisible(getPropertyComponent());
+        resized();
+        repaint();
+    }
+}
 Component *CtrlrPropertyComponent::getPropertyComponent()
 {
 	Value valueToControl = propertyElement.getPropertyAsValue (propertyName, panel ? panel->getUndoManager() : nullptr);
@@ -215,6 +247,13 @@ Component *CtrlrPropertyComponent::getPropertyComponent()
 		case CtrlrIDManager::Numeric:
             // preferredHeight = 36;
             preferredHeight = roundDoubleToInt(propertyLineheightBaseValue * 1.0); // Updated v5.6.33.
+			// Special handling for midiMessageCtrlrNumber to make max dynamic
+			if (propertyName == Ids::midiMessageCtrlrNumber)
+			{
+				bool is14Bit = propertyElement.getProperty(Ids::midiMessageCtrlrNumberSize, false);
+				double maxValue = is14Bit ? 16383 : 127;
+                return (new CtrlrSliderPropertyComponent(valueToControl, (double)identifierDefinition.getProperty("min", 0), maxValue, (double)identifierDefinition.getProperty("int", 1)));
+			}
 			return (new CtrlrSliderPropertyComponent(valueToControl, (double)identifierDefinition.getProperty ("min", 0), (double)identifierDefinition.getProperty ("max", 127), (double)identifierDefinition.getProperty ("int", 1)));
             
 		case CtrlrIDManager::VarNumeric:
@@ -308,6 +347,22 @@ const String CtrlrPropertyComponent::getElementType()
 	}
 }
 
+// Constructor 1:  custom true/false text
+CtrlrBooleanPropertyComponent::CtrlrBooleanPropertyComponent(const Value& _valueToControl, const juce::String& _trueText, const juce::String& _falseText)
+	: valueToControl(_valueToControl),
+	stateText(""),
+	onText(_trueText),      // onText = "14-bit"
+	offText(_falseText)     // offText = "7-bit"
+{
+	addAndMakeVisible(&button);
+	button.addListener(this);
+	button.setClickingTogglesState(false);
+	button.setButtonText(offText);  // Start with "7-bit" when false
+	button.setClickingTogglesState(true);
+	button.setToggleState(valueToControl.getValue(), dontSendNotification);
+}
+
+// Constructor 2:  stateText
 CtrlrBooleanPropertyComponent::CtrlrBooleanPropertyComponent (const Value& _valueToControl, const String& _stateText)
     : valueToControl(_valueToControl), stateText(_stateText)
 {
@@ -1294,194 +1349,364 @@ void CtrlrModulatorListProperty::modulatorRemoved (CtrlrModulator *modulatorRemo
 	listChanged();
 }
 
-CtrlrMultiMidiPropertyComponent::CtrlrMultiMidiPropertyComponent (const Value &_valueToControl)
-    : valueToControl(_valueToControl),
-      add (0),
-      remove (0),
-      list (0),
-      copy (0),
-      paste (0),
-      insert (0)
+
+// UDPATED v5.6.35. CtrlrMultiMidiPropertyComponent. Thanks to @dnaldoog
+
+CtrlrMultiMidiPropertyComponent::CtrlrMultiMidiPropertyComponent(const Value& _valueToControl)
+	: valueToControl(_valueToControl),
+	addMulti(0),
+	removeMulti(0),
+	listMulti(0),
+	copy(0),
+	paste(0),
+	helpMmidi(0)
 {
-    addAndMakeVisible (add = gui::createDrawableButton("Add", BIN2STR(file_svg)));
-    add->setTooltip (L"Add message");
-    add->addListener (this);
+	// Create Add button
+	auto addIcon = SvgIconManager::getDrawable(IconType::UlBars, *this);
+	addMulti = new juce::DrawableButton("Add Multi", juce::DrawableButton::ImageFitted);
+	addMulti->setImages(addIcon.release());
+	addAndMakeVisible(addMulti);
+	addMulti->setTooltip(L"Add message");
+	addMulti->addListener(this);
+	addMulti->setMouseCursor(MouseCursor::PointingHandCursor);
 
-    addAndMakeVisible (remove = gui::createDrawableButton("Remove", BIN2STR(clear_svg)));
-    remove->setTooltip (L"Remove selected message");
-    remove->addListener (this);
+	// Create Remove button
+	removeMulti = gui::createDrawableButton("Remove", BIN2STR(clear_svg));
+	addAndMakeVisible(removeMulti);
+	removeMulti->setTooltip(L"Remove selected message");
+	removeMulti->addListener(this);
+	removeMulti->setMouseCursor(MouseCursor::PointingHandCursor);
 
+	// Create ListBox
+	listMulti = new ListBox("list", this);
+	addAndMakeVisible(listMulti);
+	listMulti->setRowHeight(14);
 
-    addAndMakeVisible (list = new ListBox ("list", this));
+	// Create Copy button
+	copy = gui::createDrawableButton("Copy", BIN2STR(copy_svg));
+	addAndMakeVisible(copy);
+	copy->setTooltip(L"Copy to clipboard");
+	copy->addListener(this);
+	copy->setMouseCursor(MouseCursor::PointingHandCursor);
 
-    addAndMakeVisible (copy = gui::createDrawableButton("Copy", BIN2STR(copy_svg)));
-    copy->setTooltip (L"Copy to clipboard");
-    copy->addListener (this);
+	// Create Paste button
+	paste = gui::createDrawableButton("Paste", BIN2STR(paste_svg));
+	addAndMakeVisible(paste);
+	paste->setTooltip(L"Paste from clipboard");
+	paste->addListener(this);
+	paste->setMouseCursor(MouseCursor::PointingHandCursor);
 
-    addAndMakeVisible (paste = gui::createDrawableButton("Paste", BIN2STR(paste_svg)));
-    paste->setTooltip (L"Paste from clipboard");
-    paste->addListener (this);
+	// Create Help button
+	auto helpIcon = SvgIconManager::getDrawable(IconType::SolidQuest, *this);
+	helpMmidi = new juce::DrawableButton("Help", juce::DrawableButton::ImageFitted);
+	helpMmidi->setImages(helpIcon.release());
+	addAndMakeVisible(helpMmidi);
+	helpMmidi->setTooltip(L"Click to see Multi MIDI message syntax");
+	helpMmidi->addListener(this);
+	helpMmidi->setMouseCursor(MouseCursor::PointingHandCursor);
 
-    addAndMakeVisible (insert = gui::createDrawableButton("Insert", BIN2STR(receive_svg)));
-    insert->setTooltip (L"Insert pre-defined");
-    insert->addListener (this);
-
-	list->setRowHeight (14);
-	add->setMouseCursor (MouseCursor::PointingHandCursor);
-	remove->setMouseCursor (MouseCursor::PointingHandCursor);
-	copy->setMouseCursor (MouseCursor::PointingHandCursor);
-	paste->setMouseCursor (MouseCursor::PointingHandCursor);
-	insert->setMouseCursor (MouseCursor::PointingHandCursor);
-	remove->setTooltip ("Remove selected");
 	loadAdditionalTemplates(File());
-    setSize (256, 96);
+	setSize(256, 96);
+
+	// Initialize button icons for current look and feel
+	updateButtonIcons();
 }
 
 CtrlrMultiMidiPropertyComponent::~CtrlrMultiMidiPropertyComponent()
 {
-    deleteAndZero (add);
-    deleteAndZero (remove);
-    deleteAndZero (list);
-    deleteAndZero (copy);
-    deleteAndZero (paste);
-    deleteAndZero (insert);
+	deleteAndZero(addMulti);
+	deleteAndZero(removeMulti);
+	deleteAndZero(listMulti);
+	deleteAndZero(copy);
+	deleteAndZero(paste);
+	deleteAndZero(helpMmidi);
 }
 
-void CtrlrMultiMidiPropertyComponent::paint (Graphics& g)
+void CtrlrMultiMidiPropertyComponent::lookAndFeelChanged()
 {
-    g.setGradientFill (ColourGradient (Colours::white,
-                                       (float) ((getWidth() / 2)), 0.0f,
-                                       Colour (0xffe2e2e2),
-                                       (float) ((getWidth() / 2)), 32.0f,
-                                       false));
-    g.fillRect (0, 0, getWidth() - 0, 32);
+	Component::lookAndFeelChanged();
+	updateButtonIcons();
 
-    g.setGradientFill (ColourGradient (Colour (0xffd6d6d6),
-                                       (float) ((getWidth() / 2)), 29.0f,
-                                       Colour (0xff767676),
-                                       (float) ((getWidth() / 2)), 32.0f,
-                                       false));
-    g.fillRect (0, 29, getWidth() - 0, 3);
+	if (listMulti)
+		listMulti->repaint();
+}
+
+void CtrlrMultiMidiPropertyComponent::paint(Graphics& g)
+{
+	// Use look-and-feel colors instead of hardcoded ones
+	auto bgColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+	auto lighterBg = bgColour.brighter(0.1f);
+	auto darkerBg = bgColour.darker(0.2f);
+
+	g.setGradientFill(ColourGradient(lighterBg,
+		(float)((getWidth() / 2)), 0.0f,
+		bgColour,
+		(float)((getWidth() / 2)), 32.0f,
+		false));
+	g.fillRect(0, 0, getWidth(), 32);
+
+	g.setGradientFill(ColourGradient(bgColour,
+		(float)((getWidth() / 2)), 29.0f,
+		darkerBg,
+		(float)((getWidth() / 2)), 32.0f,
+		false));
+	g.fillRect(0, 29, getWidth(), 3);
 }
 
 void CtrlrMultiMidiPropertyComponent::resized()
 {
-    add->setBounds (8, 4, 24, 24);
-    remove->setBounds (72, 4, 24, 24);
-    list->setBounds (0, 32, getWidth() - 0, getHeight() - 32);
-    copy->setBounds ((getWidth() - 32) + -32, 4, 24, 24);
-    paste->setBounds (getWidth() - 32, 4, 24, 24);
-    insert->setBounds (40, 4, 24, 24);
-}
-
-void CtrlrMultiMidiPropertyComponent::buttonClicked (Button* buttonThatWasClicked)
-{
-    if (buttonThatWasClicked == add)
-    {
-		CtrlrManagerWindowManager::showModalDialog("Add MIDI message", &questionWindow, false, this);
-		values.add (questionWindow.getValue().trim());
-		valueToControl = values.joinIntoString (":");
-    }
-    else if (buttonThatWasClicked == remove)
-    {
-		values.remove (list->getSelectedRow());
-		valueToControl = values.joinIntoString (":");
-    }
-    else if (buttonThatWasClicked == copy)
-    {
-		SystemClipboard::copyTextToClipboard (values.joinIntoString(":"));
-    }
-    else if (buttonThatWasClicked == paste)
-    {
-		valueToControl = SystemClipboard::getTextFromClipboard();
-		refresh();
-    }
-    else if (buttonThatWasClicked == insert)
-    {
-		PopupMenu m;
-		for (int i=0; i<templates.getAllKeys().size(); i++)
-		{
-			m.addItem (i+1, templates.getAllKeys() [i]);
-		}
-		const int ret = m.show();
-		if (ret > 0)
-		{
-			const String data = templates.getValue (templates.getAllKeys() [ret-1], "");
-			if (data != "")
-			{
-				valueToControl = data;
-				refresh();
-			}
-		}
-		else
-		{
-			return;
-		}
-    }
-
-	if (list)
-		list->updateContent();
-}
-
-void CtrlrMultiMidiPropertyComponent::mouseDown (const MouseEvent& e)
-{
-	Label *l = dynamic_cast<Label*>(e.eventComponent);
-
-	if (l)
-	{
-		const int id = l->getProperties().getWithDefault("dOb", -1);
-		list->selectRow (id, true, true);
-	}
-}
-
-void CtrlrMultiMidiPropertyComponent::mouseDoubleClick (const MouseEvent& e)
-{
-	Label *l = dynamic_cast<Label*>(e.eventComponent);
-
-	if (l)
-	{
-		const int id = l->getProperties().getWithDefault("dOb", -1);
-		list->selectRow (id, true, true);
-	}
+	addMulti->setBounds(8, 4, 24, 24);
+	helpMmidi->setBounds(40, 4, 24, 24);
+	removeMulti->setBounds(72, 4, 24, 24);
+	copy->setBounds((getWidth() - 32) + -32, 4, 24, 24);
+	paste->setBounds(getWidth() - 32, 4, 24, 24);
+	listMulti->setBounds(0, 32, getWidth() - 0, getHeight() - 32);
 }
 
 void CtrlrMultiMidiPropertyComponent::paintListBoxItem(int rowNumber, Graphics &g, int width, int height, bool rowIsSelected)
 {
+	// Just paint the background, no text (Labels handle text rendering)
 	if (rowIsSelected)
 	{
-		g.setColour (Colours::lightblue);
-        //g.setColour (findColour(ListBox::backgroundColourId));
-		g.fillAll();
+		g.fillAll(getLookAndFeel().findColour(juce::ListBox::backgroundColourId).contrasting(0.2f));
 	}
 	else
 	{
-        g.setColour (Colours::white);
-        //g.setColour (findColour(ListBox::backgroundColourId));
-		g.fillAll();
+		g.fillAll(getLookAndFeel().findColour(juce::ListBox::backgroundColourId));
+	}
+
+	// DON'T draw text here - the Label components do that
+}
+
+void CtrlrMultiMidiPropertyComponent::buttonClicked(Button* buttonThatWasClicked)
+{
+	if (buttonThatWasClicked == helpMmidi)
+	{
+		CtrlrSysexProcessor::showMidiHelp();
+	}
+	else if (buttonThatWasClicked == addMulti)
+	{
+		PopupMenu m;
+
+		// Add XML templates dynamically
+		StringArray templateKeys = templates.getAllKeys();
+		for (int i = 0; i < templateKeys.size(); ++i)
+			m.addItem(i + 1, templateKeys[i]);
+
+		m.addSeparator();
+
+		// Standard MIDI types
+		struct StandardType
+		{
+			const char* name;
+			const char* defaultCsv;
+		};
+
+		const StandardType standardTypes[] = {
+			{ "CC",              "CC,-2,-1" },
+			{ "Program Change",  "ProgramChange,-1" },
+			{ "SysEx",           "SysEx,F0 00 xx F7" },
+			{ "NRPN",            "CC,ByteValue,MSB7bitValue,99,-2:CC,ByteValue,LSB7bitValue,98,-2:CC,ByteValue,MSB7bitValue,6,-1:CC,ByteValue,LSB7bitValue,38,-1" },
+			{ "NRPN (Korg)",     "CC,ByteValue,MSB7bitValue,99,-2:CC,ByteValue,LSB7bitValue,98,-2:CC,ByteValue,LSB7bitValue,6,-1" },
+			{ "RPN",             "CC,ByteValue,MSB7bitValue,101,-2:CC,ByteValue,LSB7bitValue,100,-2:CC,ByteValue,MSB7bitValue,6,-1:CC,ByteValue,LSB7bitValue,38,-1" },
+			{ "NRPN Null",       "CC,ByteValue,LSB7bitValue,101,127:CC,ByteValue,LSB7bitValue,100,127" },
+			{ "Novation 8-bit Pair", "CC,ByteValue,CCCoarseMSB,-2:CC,ByteValue,CCFineLSB,-2" } // Added v5.6.35. Thanks to @dnaldoog. As used by Novation etc. for 8-bit MIDI values. Coarse is the MSB, fine is the LSB.
+		};
+
+		int standardStartId = templateKeys.size() + 1;
+		for (int i = 0; i < numElementsInArray(standardTypes); ++i)
+		{
+			if (i % 3 == 0)
+				m.addSeparator();
+			m.addItem(standardStartId + i, standardTypes[i].name);
+		}
+		m.addSeparator();
+
+		// Custom editor
+		int customId = standardStartId + numElementsInArray(standardTypes);
+		m.addItem(customId, "Custom...");
+
+		// Show popup and handle selection
+		int ret = m.show();
+
+		if (ret <= 0)
+			return; // cancelled
+
+		if (ret == customId) // Custom editor
+		{
+			CtrlrSysexProcessor sysexProcessor;
+			String newCsv = sysexProcessor.openAdvancedMessageEditor();
+
+			if (newCsv.isNotEmpty())
+			{
+				String currentValue = valueToControl.toString();
+				if (currentValue.isNotEmpty())
+					valueToControl = currentValue + ":" + newCsv;
+				else
+					valueToControl = newCsv;
+				refresh();
+			}
+		}
+		else if (ret <= templateKeys.size()) // XML template
+		{
+			String data = templates.getValue(templateKeys[ret - 1], "");
+			if (data.isNotEmpty())
+			{
+				String currentValue = valueToControl.toString();
+				if (currentValue.isNotEmpty())
+					valueToControl = currentValue + ":" + data;
+				else
+					valueToControl = data;
+				refresh();
+			}
+		}
+		else // Standard MIDI type
+		{
+			int index = ret - standardStartId;
+			if (index >= 0 && index < numElementsInArray(standardTypes))
+			{
+				String currentValue = valueToControl.toString();
+				if (currentValue.isNotEmpty())
+					valueToControl = currentValue + ":" + standardTypes[index].defaultCsv;
+				else
+					valueToControl = standardTypes[index].defaultCsv;
+				refresh();
+			}
+		}
+	}
+	else if (buttonThatWasClicked == removeMulti)
+	{
+		int selectedRow = listMulti->getSelectedRow();
+		if (selectedRow >= 0)
+		{
+			StringArray temp;
+			temp.addTokens(valueToControl.toString().trim(), ":", "\"\'");
+			if (selectedRow < temp.size())
+			{
+				temp.remove(selectedRow);
+				valueToControl = temp.joinIntoString(":");
+				refresh();
+			}
+		}
+	}
+	else if (buttonThatWasClicked == copy)
+	{
+		SystemClipboard::copyTextToClipboard(values.joinIntoString(":"));
+	}
+	else if (buttonThatWasClicked == paste)
+	{
+		valueToControl = SystemClipboard::getTextFromClipboard();
+		refresh();
 	}
 }
 
-Component *CtrlrMultiMidiPropertyComponent::refreshComponentForRow (int rowNumber, bool isRowSelected, Component *existingComponentToUpdate)
+void CtrlrMultiMidiPropertyComponent::updateButtonIcons()
 {
-	Label *l = (Label*) existingComponentToUpdate;
+	auto bgColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+	bool isDarkTheme = bgColour.getBrightness() < 0.5f;
+	auto iconColour = isDarkTheme ? juce::Colours::white : juce::Colours::black;
+
+	// Update Add button
+	if (addMulti)
+	{
+		auto icon = SvgIconManager::getDrawable(IconType::UlBars, *this);
+		if (icon)
+		{
+			icon->replaceColour(juce::Colours::black, iconColour);
+			addMulti->setImages(icon.get());
+		}
+	}
+
+	// Update Help button
+	if (helpMmidi)
+	{
+		auto icon = SvgIconManager::getDrawable(IconType::SolidQuest, *this);
+		if (icon)
+		{
+			icon->replaceColour(juce::Colours::black, iconColour);
+			helpMmidi->setImages(icon.get());
+		}
+	}
+
+	// Update Remove button (BIN2STR)
+	if (removeMulti)
+	{
+		String svgData = String(BIN2STR(clear_svg));
+		auto icon = juce::Drawable::createFromImageData(svgData.toRawUTF8(), svgData.length());
+		if (icon)
+		{
+			icon->replaceColour(juce::Colours::black, iconColour);
+			removeMulti->setImages(icon.get());
+		}
+	}
+
+	// Update Copy button (BIN2STR)
+	if (copy)
+	{
+		String svgData = String(BIN2STR(copy_svg));
+		auto icon = juce::Drawable::createFromImageData(svgData.toRawUTF8(), svgData.length());
+		if (icon)
+		{
+			icon->replaceColour(juce::Colours::black, iconColour);
+			copy->setImages(icon.get());
+		}
+	}
+
+	// Update Paste button (BIN2STR)
+	if (paste)
+	{
+		String svgData = String(BIN2STR(paste_svg));
+		auto icon = juce::Drawable::createFromImageData(svgData.toRawUTF8(), svgData.length());
+		if (icon)
+		{
+			icon->replaceColour(juce::Colours::black, iconColour);
+			paste->setImages(icon.get());
+		}
+	}
+}
+
+Component* CtrlrMultiMidiPropertyComponent::refreshComponentForRow(int rowNumber, bool isRowSelected,
+	Component* existingComponentToUpdate)
+{
+	Label* l = (Label*)existingComponentToUpdate;
 
 	if (l == 0)
 	{
-		l = new Label ("", values[rowNumber]);
-		l->setEditable (false, true, false);
-		l->setColour (Label::backgroundColourId, Colours::transparentBlack);
-		l->getProperties().set ("dOb", rowNumber);
-		l->addListener (this);
-		l->addMouseListener (this, false);
+		l = new Label("", values[rowNumber]);
+		l->setEditable(false, true, false);
+		l->setColour(Label::backgroundColourId, Colours::transparentBlack);
+		l->getProperties().set("dOb", rowNumber);
+		l->addListener(this);
+		l->addMouseListener(static_cast<juce::Component*>(this), false);
 	}
 	else
 	{
-		l->getProperties().set ("dOb", rowNumber);
-		l->setText (values[rowNumber], dontSendNotification);
-		l->addMouseListener (this, false);
+		l->getProperties().set("dOb", rowNumber);
+		l->setText(values[rowNumber], dontSendNotification);
+		l->addMouseListener(static_cast<juce::Component*>(this), false);
 	}
 
 	return l;
+}
+
+void CtrlrMultiMidiPropertyComponent::mouseDown(const MouseEvent &e)
+{
+	Label* l = dynamic_cast<Label*>(e.eventComponent);
+	if (l)
+	{
+		const int id = l->getProperties().getWithDefault("dOb", -1);
+		listMulti->selectRow(id, true, true);
+	}
+}
+
+void CtrlrMultiMidiPropertyComponent::mouseDoubleClick(const MouseEvent& e)
+{
+	Label* l = dynamic_cast<Label*>(e.eventComponent);
+	if (l)
+	{
+		const int id = l->getProperties().getWithDefault("dOb", -1);
+		listMulti->selectRow(id, true, true);
+	}
 }
 
 int CtrlrMultiMidiPropertyComponent::getNumRows()
@@ -1493,8 +1718,8 @@ void CtrlrMultiMidiPropertyComponent::refresh()
 {
 	values.clear();
 	values.addTokens (valueToControl.toString().trim(), ":", "\"\'");
-	list->updateContent();
-	list->repaint();
+	listMulti->updateContent();
+	listMulti->repaint();
 }
 
 void CtrlrMultiMidiPropertyComponent::loadAdditionalTemplates(const File &templateFile)
@@ -1579,288 +1804,278 @@ void CtrlrSliderPropertyComponent::resized()
 }
 
 //==============================================================================
-CtrlrSysExEditor::CtrlrSysExEditor (Value &_val, CtrlrPanel *_owner)
-    : val(_val),
-      messageLength (0),
-      label (0),
-      owner(_owner)
+// CtrlrSysExEditor Constructor
+CtrlrSysExEditor::CtrlrSysExEditor(Value &_val, CtrlrPanel *_owner)
+	: val(_val),
+	  messageLength(nullptr),
+	  label(nullptr),
+	  addTokenButton(nullptr),
+	  owner(_owner),
+	  lastFocusedLabel(nullptr)
 {
-    addAndMakeVisible (messageLength = new Slider (L"messageLength"));
-    messageLength->setRange (0, 512, 1);
-    messageLength->setSliderStyle (Slider::IncDecButtons);
-    messageLength->setTextBoxStyle (Slider::TextBoxLeft, false, 32, 20);
-    messageLength->addListener (this);
+	// Slider for message length
+	addAndMakeVisible(messageLength = new Slider("messageLength"));
+	messageLength->setRange(0, 512, 1);
+	messageLength->setSliderStyle(Slider::IncDecButtons);
+	messageLength->setTextBoxStyle(Slider::TextBoxLeft, false, 32, 20);
+	messageLength->addListener(this);
 
-    addAndMakeVisible (label = new Label ("Length", "Length"));
-    label->setFont (Font (14.0000f, Font::bold));
-    label->setJustificationType (Justification::centred);
-    label->setEditable (true, true, true);
-    label->addListener (this);
+	// Length label
+	addAndMakeVisible(label = new Label("Length", "Length"));
+	label->setFont(Font(14.0f, Font::bold));
+	label->setJustificationType(Justification::centred);
+	label->setEditable(true, true, true);
+	label->addListener(this);
 
-	splitMessage.addTokens (val.toString(), " :;", "\'\"");
-	setLength (splitMessage.size());
-    setSize (612, 256);
-}
-
-CtrlrSysExEditor::~CtrlrSysExEditor()
+	// Add Token button
+	addAndMakeVisible(addTokenButton = new TextButton("Add Token"));
+addTokenButton->onClick = [this]()
 {
-    //[Destructor_pre]. You can add your own custom destruction code here..
-    //[/Destructor_pre]
+	if (byteValueLabels.size() == 0)
+	{
+		// Show a warning dialog if there are no labels
+		AlertWindow::showMessageBoxAsync(
+			AlertWindow::WarningIcon,
+			"Add Token",
+			"No bytes available. Please add a value first before inserting a token."
+		);
+		return;
+	}
 
-    deleteAndZero (messageLength);
-    deleteAndZero (label);
+	// Determine target label
+	Label* target = lastFocusedLabel;
+	if (!target)
+		target = byteValueLabels[0]; // default to first label
 
+	// Highlight the focused label
+	updateLabelHighlights(target);
 
-    //[Destructor]. You can add your own custom destruction code here..
-    //[/Destructor]
+	// Show token menu
+	showTokenMenuForLabel(target);
+
+	// Keep the highlight after popup closes
+	lastFocusedLabel = target;
+};
+
+	// Split initial value into labels
+	splitMessage.addTokens(val.toString(), " :;", "\'\"");
+	setLength(splitMessage.size());
+
+	setSize(612, 256);
 }
 
 //==============================================================================
-void CtrlrSysExEditor::paint (Graphics& g)
+// Destructor
+CtrlrSysExEditor::~CtrlrSysExEditor()
 {
-    //[UserPrePaint] Add your own custom painting code here..
-    //[/UserPrePaint]
+	deleteAndZero(messageLength);
+	deleteAndZero(label);
+	deleteAndZero(addTokenButton);
+}
 
+//==============================================================================
+// Paint
+void CtrlrSysExEditor::paint(Graphics &g)
+{
 	Colour backGroundColor = findColour(TextEditor::backgroundColourId);
 	Colour lightBackGroundColor = findColour(TextEditor::outlineColourId);
-    g.fillAll (backGroundColor);
+	g.fillAll(backGroundColor);
 
-    g.setGradientFill (ColourGradient (backGroundColor,
-                                       (float) ((getWidth() / 2)), 0.0f,
-									   lightBackGroundColor,
-                                       (float) ((getWidth() / 2)), 32.0f,
-                                       false));
-    g.fillRect (0, 0, getWidth() - 0, 32);
+	g.setGradientFill(ColourGradient(backGroundColor, getWidth() / 2.0f, 0.0f,
+									 lightBackGroundColor, getWidth() / 2.0f, 32.0f, false));
+	g.fillRect(0, 0, getWidth(), 32);
 
-    g.setGradientFill (ColourGradient (Colour (0xffd6d6d6),
-                                       (float) ((getWidth() / 2)), 29.0f,
-                                       Colour (0xff767676),
-                                       (float) ((getWidth() / 2)), 32.0f,
-                                       false));
-    g.fillRect (0, 29, getWidth() - 0, 3);
-
-    //[UserPaint] Add your own custom painting code here..
-    //[/UserPaint]
+	g.setGradientFill(ColourGradient(Colour(0xffd6d6d6), getWidth() / 2.0f, 29.0f,
+									 Colour(0xff767676), getWidth() / 2.0f, 32.0f, false));
+	g.fillRect(0, 29, getWidth(), 3);
 }
 
+//==============================================================================
+// Resized
 void CtrlrSysExEditor::resized()
 {
-    messageLength->setBounds (72, 4, 88, 22);
-    label->setBounds (8, 8, 55, 16);
+	messageLength->setBounds(72, 4, 88, 22);
+	label->setBounds(8, 8, 55, 16);
+	addTokenButton->setBounds(170, 4, 80, 22);
+
 	int y;
-	int x=0;
-	for (int i=0; i<byteValueLabels.size(); i++)
+	int x = 0;
+	for (int i = 0; i < byteValueLabels.size(); i++)
 	{
-		y = 48 + ((i/16)*48);
-		byteValueLabels[i]->setBounds (16+(x*36), y, 32, 32);
+		y = 48 + ((i / 16) * 48);
+		byteValueLabels[i]->setBounds(16 + (x * 36), y, 32, 32);
 		x++;
-		if (x==16)
-			x=0;
+		if (x == 16) x = 0;
 	}
 
-	for (int i=0; i<rows.size(); i++)
+	for (int i = 0; i < rows.size(); i++)
 	{
-		rows[i]->setBounds (16, 40+(i*48), getWidth()-32, 8);
+		rows[i]->setBounds(16, 40 + (i * 48), getWidth() - 32, 8);
 	}
 }
 
-void CtrlrSysExEditor::sliderValueChanged (Slider* sliderThatWasMoved)
+//==============================================================================
+// Slider listener
+void CtrlrSysExEditor::sliderValueChanged(Slider* sliderThatWasMoved)
 {
-    if (sliderThatWasMoved == messageLength)
-    {
-		setLength ((int)messageLength->getValue());
-    }
+	if (sliderThatWasMoved == messageLength)
+		setLength((int)messageLength->getValue());
 }
 
-void CtrlrSysExEditor::labelTextChanged (Label* labelThatHasChanged)
+//==============================================================================
+// Add a byte label
+Label* CtrlrSysExEditor::addByte(const String &byteAsString)
 {
-    sendChangeMessage();
+	Label* byteLabel = new Label("byteLabel", byteAsString);
+	addAndMakeVisible(byteLabel);
+
+	byteLabel->setFont(Font(Font::getDefaultMonospacedFontName(), 15.0f, Font::plain));
+	byteLabel->setJustificationType(Justification::centred);
+	byteLabel->setEditable(true, true, false);
+
+	// Fully visible colors
+	byteLabel->setColour(Label::backgroundColourId, Colours::white);
+	byteLabel->setColour(Label::outlineColourId, Colours::black);
+	byteLabel->setColour(Label::textColourId, Colours::black);
+	byteLabel->setColour(TextEditor::highlightColourId, Colours::skyblue);
+	byteLabel->setColour(TextEditor::highlightedTextColourId, Colours::white);
+
+	byteLabel->addListener(this);
+	byteLabel->addMouseListener(this, false);
+
+	return byteLabel;
 }
 
-void CtrlrSysExEditor::mouseDown (const MouseEvent& e)
+
+//==============================================================================
+// Label focus tracking
+void CtrlrSysExEditor::labelTextChanged(Label* labelThatHasChanged)
 {
-	if (e.mods.isPopupMenu())
+	sendChangeMessage();
+}
+
+//==============================================================================
+// Mouse down for token menu
+void CtrlrSysExEditor::mouseDown(const MouseEvent& e)
+{
+	if (auto* l = dynamic_cast<Label*>(e.originalComponent))
 	{
-		Label *l = dynamic_cast<Label*>(e.eventComponent);
-		if (l!=0)
+		lastFocusedLabel = l; // store focus for Add Token button
+		updateLabelHighlights(l); // highlight clicked label
+	}
+}
+
+
+//==============================================================================
+void CtrlrSysExEditor::showTokenMenuForLabel(Label* l)
+{
+	if (!l) return;
+
+	PopupMenu m;
+
+	// --- Variables ---
+	m.addSectionHeader("Insert variable");
+	m.addItem(1, "MIDI Channel (7bits)");
+	m.addItem(2, "MIDI Channel (4bits)");
+	m.addItem(3, "LSB part of value (7bits)");
+	m.addItem(4, "MSB part of value (7bits)");
+	m.addItem(5, "LSB part of value (4bits)");
+	m.addItem(6, "MSB part of value (4bits)");
+	m.addItem(7, "Roland JV1010 upper byte");
+	m.addItem(8, "Roland JV1010 upper middle byte");
+	m.addItem(9, "Roland JV1010 lower middle byte");
+	m.addItem(10, "Roland JV1010 lower byte");
+
+	// --- 16-bit nibbles ---
+	m.addSectionHeader("16-bit value nibbles");
+	for (int i = 0; i < 4; ++i)
+		m.addItem(19 + i, "16-bit LSB nibble " + String(i));
+	for (int i = 0; i < 4; ++i)
+		m.addItem(23 + i, "16-bit MSB nibble " + String(i));
+
+	// --- Static items ---
+	m.addSectionHeader("Insert static");
+	m.addItem(11, "SysEx Start");
+	m.addItem(12, "SysEx EOM");
+	m.addSubMenu("Vendor ID", getVendorIdMenu());
+
+	// --- Program variables ---
+	m.addSectionHeader("Program variables");
+	m.addItem(8192, "Current program number");
+	m.addItem(8193, "Current bank number");
+
+	// --- Checksums ---
+	m.addSectionHeader("Checksums (tN)");
+	m.addItem(13, "2's Complement (Roland, Yamaha)");
+	m.addItem(14, "Exclusive OR (XOR) (Akai, Korg, Sequential)");
+	m.addItem(15, "Simple Summing (Waldorf, Lexicon, Oberheim)");
+	m.addItem(16, "XOR Byte 1 (Technics)");
+	m.addItem(17, "1's Complement (E-mu, Korg)");
+	m.addItem(18, "Ignore this byte on input");
+
+	// --- Global variables ---
+	PopupMenu km, lm, mm, nm;
+	for (int i = 0; i < 16; ++i)
+	{
+		km.addItem(20+i, "Global variable [k" + String::toHexString(i) + "]");
+		lm.addItem(37+i, "Global variable [o" + String::toHexString(i) + "]");
+		mm.addItem(53+i, "Global variable [p" + String::toHexString(i) + "]");
+		nm.addItem(69+i, "Global variable [n" + String::toHexString(i) + "]");
+	}
+	m.addSubMenu("Global variable[0]", km);
+	m.addSubMenu("Global variable[1]", lm);
+	m.addSubMenu("Global variable[2]", mm);
+	m.addSubMenu("Global variable[3]", nm);
+
+	// --- Show menu ---
+	const int ret = m.show();
+
+	// --- Handle selection ---
+	if      (ret == 1) l->setText("yy", sendNotification);
+	else if (ret == 2) l->setText("0y", sendNotification);
+	else if (ret == 3) l->setText("LS", sendNotification);
+	else if (ret == 4) l->setText("MS", sendNotification);
+	else if (ret == 5) l->setText("ls", sendNotification);
+	else if (ret == 6) l->setText("ms", sendNotification);
+	else if (ret == 7) l->setText("r1", sendNotification);
+	else if (ret == 8) l->setText("r2", sendNotification);
+	else if (ret == 9) l->setText("r3", sendNotification);
+	else if (ret == 10) l->setText("r4", sendNotification);
+	else if (ret == 11) l->setText("f0", sendNotification);
+	else if (ret == 12) l->setText("f7", sendNotification);
+	else if (ret == 13) l->setText("z5", sendNotification);
+	else if (ret == 14) l->setText("X5", sendNotification);
+	else if (ret == 15) l->setText("w5", sendNotification);
+	else if (ret == 16) l->setText("tc", sendNotification);
+	else if (ret == 17) l->setText("O5", sendNotification);
+	else if (ret == 18) l->setText("ii", sendNotification);
+	else if (ret >= 19 && ret < 27) l->setText("q" + String(ret-19), sendNotification);
+	else if (ret >= 27 && ret < 43) l->setText("k" + String::toHexString(ret-27), sendNotification);
+	else if (ret >= 43 && ret < 59) l->setText("o" + String::toHexString(ret-43), sendNotification);
+	else if (ret >= 59 && ret < 75) l->setText("p" + String::toHexString(ret-59), sendNotification);
+	else if (ret >= 75 && ret < 91) l->setText("n" + String::toHexString(ret-75), sendNotification);
+	else if (ret > 1024 && ret < 4096)
+	{
+		ValueTree vendor = owner->getCtrlrManagerOwner().getIDManager().getVendorTree().getChild(ret-1024);
+		const String vendorId = vendor.getProperty(Ids::id).toString();
+		if (vendorId.length() == 2) l->setText(vendorId, sendNotification);
+		else if (vendorId.length() == 6)
 		{
-			PopupMenu m;
-			m.addSectionHeader ("Insert variable");
-			m.addItem (1, "MIDI Channel (7bits)");
-			m.addItem (2, "MIDI Channel (4bits)");
-			m.addItem (3, "LSB part of value (7bits)");
-			m.addItem (4, "MSB part of value (7bits)");
-			m.addItem (5, "LSB part of value (4bits)");
-			m.addItem (6, "MSB part of value (4bits)");
-			m.addItem (7, "Roland JV1010 upper byte");
-			m.addItem (8, "Roland JV1010 upper middle byte");
-			m.addItem (9, "Roland JV1010 lower middle byte");
-			m.addItem (10, "Roland JV1010 lower byte");
-
-			m.addSectionHeader ("Insert static");
-
-			m.addItem (11, "SysEx Start");
-			m.addItem (12, "SysEx EOM");
-			m.addSubMenu ("Vendor ID", getVendorIdMenu());
-
-			m.addSectionHeader ("Program variables");
-			m.addItem (8192, "Current program number");
-			m.addItem (8193, "Current bank number");
-
-			m.addSectionHeader ("Checksums (tN) t=type N=num bytes to count");
-			m.addItem(13, "2's Complement (Roland, Yamaha)"); // Updated v5.6.34.
-			m.addItem(14, "Exclusive OR (XOR) (Akai, Korg, Sequential) "); // Added v5.6.34.
-			m.addItem (15, "Simple Summing (Waldorf, Lexicon, Oberheim)"); // Added v5.6.34.
-			m.addItem (16, "XOR Byte 1 (Technics)"); // Added v5.6.34.
-			m.addItem (17, "1's Complement (E-mu, Korg)"); // Added v5.6.34.
-			m.addItem (18, "Ignore this byte on input");
-			PopupMenu km,lm,mm,nm;
-
-			for (int i=0; i<16; i++)
+			int index = byteValueLabels.indexOf(l);
+			if (byteValueLabels[index+1] && byteValueLabels[index+2])
 			{
-				km.addItem (20+i, "Global variable [k"+String::toHexString(i)+"]");
-			}
-			m.addSubMenu ("Global variable[0]",km);
-
-			for (int i=0; i<16; i++)
-			{
-				lm.addItem (37+i, "Global variable [o"+String::toHexString(i)+"]");
-			}
-			m.addSubMenu ("Global variable[1]",lm);
-
-			for (int i=0; i<16; i++)
-			{
-				mm.addItem (53+i, "Global variable [p"+String::toHexString(i)+"]");
-			}
-			m.addSubMenu ("Global variable[2]",mm);
-
-			for (int i=0; i<16; i++)
-			{
-				nm.addItem (69+i, "Global variable [n"+String::toHexString(i)+"]");
-			}
-			m.addSubMenu ("Global variable[3]",nm);
-
-			const int ret = m.show();
-			switch (ret)
-			{
-			case 1:
-				l->setText("yy", sendNotification);
-				break;
-			case 2:
-				l->setText ("0y", sendNotification);
-				break;
-			case 3:
-				l->setText ("LS", sendNotification);
-				break;
-			case 4:
-				l->setText ("MS", sendNotification);
-				break;
-			case 5:
-				l->setText ("ls", sendNotification);
-				break;
-			case 6:
-				l->setText ("ms", sendNotification);
-				break;
-			case 7:
-				l->setText ("r1", sendNotification);
-				break;
-			case 8:
-				l->setText ("r2", sendNotification);
-				break;
-			case 9:
-				l->setText ("r3", sendNotification);
-				break;
-			case 10:
-				l->setText ("r4", sendNotification);
-				break;
-			case 11:
-				l->setText ("f0", sendNotification);
-				break;
-			case 12:
-				l->setText ("f7", sendNotification);
-				break;
-			case 13:
-				l->setText ("z5", sendNotification);
-				break;
-			case 14:
-				l->setText("X5", sendNotification); // Exclusive OR, Akai, Korg, Sequential
-				break;
-			case 15:
-				l->setText("w5", sendNotification); // Simple Summing, Waldorf, Lexicon, Oberheim
-				break;
-			case 16:
-				l->setText("tc", sendNotification); // Technics Matsushita, XOR Byte 1
-				break;
-			case 17:
-				l->setText("O5", sendNotification); //1s Complement, E-mu, Korg
-				break;
-			case 18:
-				l->setText("ii", sendNotification); // ignore this byte on input
-				break;
-			}
-
-			if (ret >= 19 && ret < 37)
-			{
-				l->setText ("k"+String::toHexString(ret-20), sendNotification);
-			}
-
-			if (ret >= 37 && ret < 53)
-			{
-				l->setText ("o"+String::toHexString(ret-37), sendNotification);
-			}
-
-			if (ret >= 53 && ret < 69)
-			{
-				l->setText ("p"+String::toHexString(ret-53), sendNotification);
-			}
-
-			if (ret >= 69 && ret < 86)
-			{
-				l->setText ("n"+String::toHexString(ret-69), sendNotification);
-			}
-
-			if (ret > 1024 && ret < 4096)
-			{
-				ValueTree vendor = owner->getCtrlrManagerOwner().getIDManager().getVendorTree().getChild (ret - 1024);
-				const String vendorId = vendor.getProperty(Ids::id).toString();
-				if (vendorId.length() == 2)
-				{
-					/* vendor is oldSkool */
-					l->setText (vendorId, sendNotification);
-				}
-
-				if (vendorId.length() == 6)
-				{
-					/* moder vendor id, 3 bytes
-					   check if the next bytes are available so we can fill them with data
-					   */
-
-					const int indexOfLabel = byteValueLabels.indexOf (l);
-					if (byteValueLabels[indexOfLabel+1] && byteValueLabels[indexOfLabel+2])
-					{
-						byteValueLabels[indexOfLabel]->setText (vendorId.substring   (0,2), dontSendNotification);
-						byteValueLabels[indexOfLabel+1]->setText (vendorId.substring (2,4), dontSendNotification);
-						byteValueLabels[indexOfLabel+2]->setText (vendorId.substring (4,6), dontSendNotification);
-					}
-					else
-					{
-						WARN("Not enough space to fit a 3 byte vendor ID, add some space.");
-					}
-				}
-			}
-
-			if (ret == 8192)
-			{
-				l->setText ("tp", sendNotification);
-			}
-			if (ret == 8193)
-			{
-				l->setText ("tb", sendNotification);
+				byteValueLabels[index]->setText(vendorId.substring(0,2), dontSendNotification);
+				byteValueLabels[index+1]->setText(vendorId.substring(2,4), dontSendNotification);
+				byteValueLabels[index+2]->setText(vendorId.substring(4,6), dontSendNotification);
 			}
 		}
 	}
+	else if (ret == 8192) l->setText("tp", sendNotification);
+	else if (ret == 8193) l->setText("tb", sendNotification);
 }
 
+//==============================================================================
+// Vendor menu
 const PopupMenu CtrlrSysExEditor::getVendorIdMenu()
 {
     PopupMenu m;
@@ -1873,23 +2088,21 @@ const PopupMenu CtrlrSysExEditor::getVendorIdMenu()
     return (m);
 }
 
+//==============================================================================
+// Set length
 void CtrlrSysExEditor::setLength (const int newLength)
 {
-
 	currentMessageLength = newLength;
-
 	messageLength->setValue (currentMessageLength, dontSendNotification);
 
 	if (byteValueLabels.size() < currentMessageLength)
 	{
 		for (int i=byteValueLabels.size(); i<currentMessageLength; i++)
-		{
-			byteValueLabels.add (addByte (splitMessage[i]));
-		}
+			byteValueLabels.add(addByte(splitMessage[i]));
 	}
 	else if (byteValueLabels.size() > currentMessageLength)
 	{
-		byteValueLabels.removeLast (byteValueLabels.size() - currentMessageLength);
+		byteValueLabels.removeLast(byteValueLabels.size() - currentMessageLength);
 	}
 
 	rows.clear();
@@ -1904,40 +2117,30 @@ void CtrlrSysExEditor::setLength (const int newLength)
 
 	sendChangeMessage();
 }
-
-Label *CtrlrSysExEditor::addByte(const String &byteAsString)
+void CtrlrSysExEditor::updateLabelHighlights(Label* focusedLabel)
 {
-	Label *byteLabel = new Label ("byteLabel", byteAsString);
-	addAndMakeVisible (byteLabel);
-    byteLabel->setFont (Font (Font::getDefaultMonospacedFontName(), 15.0000f, Font::plain));
-    byteLabel->setJustificationType (Justification::centredLeft);
-    byteLabel->setEditable (true, true, false);
-    byteLabel->setColour (Label::outlineColourId, Colours::white);
-    byteLabel->setColour (TextEditor::textColourId, findColour(TextEditor::textColourId));
-    byteLabel->setColour (TextEditor::backgroundColourId, findColour(TextEditor::backgroundColourId));
-	byteLabel->setColour (TextEditor::highlightColourId, findColour(TextEditor::focusedOutlineColourId));
-    byteLabel->addListener (this);
-	byteLabel->addMouseListener (this, false);
-
-	return (byteLabel);
+	for (auto* label : byteValueLabels)
+	{
+		if (label == focusedLabel)
+			label->setColour(Label::backgroundColourId, Colours::lightblue);
+		else
+			label->setColour(Label::backgroundColourId, Colours::white);
+	}
 }
-
+//==============================================================================
+// Get value
 const String CtrlrSysExEditor::getValue()
 {
 	String ret;
 	for (int i=0; i<byteValueLabels.size(); i++)
-	{
-		ret<< byteValueLabels[i]->getText()+" ";
-	}
-
-	return (ret.trim());
+		ret << byteValueLabels[i]->getText() + " ";
+	return ret.trim();
 }
 
-SysExRow::SysExRow(const int _n, const int _w, const int _gap) : n(_n), w(_w), gap(_gap)
-{
-}
-
-void SysExRow::paint (Graphics &g)
+//==============================================================================
+// SysExRow
+SysExRow::SysExRow(const int _n, const int _w, const int _gap) : n(_n), w(_w), gap(_gap) {}
+void SysExRow::paint(Graphics &g)
 {
 	g.setFont (Font (Font::getDefaultMonospacedFontName(), 8.0f, Font::plain));
 	g.setColour (findColour(TextEditor::textColourId));
@@ -2124,12 +2327,9 @@ void CtrlrSysExPropertyComponent::buttonClicked (Button* buttonThatWasClicked)
 		o.escapeKeyTriggersCloseButton	= true;
 		o.componentToCentreAround		= this;
 		o.launchAsync();
-
-		valueToControl = editor->getValue();
-		sysexPreview->setText (valueToControl.toString(), dontSendNotification);
-    }
-    else if (buttonThatWasClicked == copy)
-    {
+	}
+	else if (buttonThatWasClicked == copy)
+	{
 		SystemClipboard::copyTextToClipboard (valueToControl.toString());
     }
     else if (buttonThatWasClicked == paste)
@@ -2143,14 +2343,12 @@ void CtrlrSysExPropertyComponent::buttonClicked (Button* buttonThatWasClicked)
     }
 }
 
-void CtrlrSysExPropertyComponent::changeListenerCallback (ChangeBroadcaster *cb)
+void CtrlrSysExPropertyComponent::changeListenerCallback (ChangeBroadcaster* source)
 {
-	CtrlrSysExEditor *ed = dynamic_cast<CtrlrSysExEditor*>(cb);
-
-	if (ed != nullptr)
+	if (auto* editor = dynamic_cast<CtrlrSysExEditor*>(source))
 	{
-		valueToControl = ed->getValue();
-		refresh();
+		valueToControl = editor->getValue();
+		sysexPreview->setText (valueToControl.toString(), dontSendNotification);
 	}
 }
 

@@ -288,10 +288,45 @@ class CtrlrManager :    public ValueTree::Listener,
 		ApplicationCommandManager &getCommandManager()															{ return (commandManager); }
 		void panelFileOpened(const File &panelFile);
 		CtrlrModulator *getInvalidModulator()																	{ return (nullModulator); }  
+	
+		/** Detects if the current Linux session is running Wayland */
+		/** Not actually using right now but might come in handy in future*/
+		/** usage example:
+		 if (CtrlrManager::isWaylandSession())
+		 {
+		 // Wayland-specific handling
+		 }
+		 */
 		
+		static bool isWaylandSession()
+		{
+#if JUCE_LINUX
+			const char* session = std::getenv("XDG_SESSION_TYPE");
+			return session != nullptr && String(session) == "wayland";
+#else
+			return false;
+#endif
+		}
+		/** Detects if running under GNOME Shell (not GNOME Classic).
+		 GNOME Shell has issues with modal dialogs on Wayland in JUCE 6.x*/
+		static bool isGnomeShell()
+		{
+#if JUCE_LINUX
+			const char* session = std::getenv("GDMSESSION");
+			if (session != nullptr)
+			{
+				String sessionStr(session);
+				// If it's "gnome" but NOT "gnome-classic", it's GNOME Shell
+				return sessionStr.containsIgnoreCase("gnome") &&
+				!sessionStr.containsIgnoreCase("classic");
+			}
+#endif
+			return false;
+		}
+
 		/** Instance handlers **/
 		const String getInstanceName() const;
-        const String getInstanceNameForHost() const;
+		const String getInstanceNameForHost() const;
 		CtrlrInstance getInstanceMode() const;
 		const bool isSingleInstance() const;
 		XmlElement *saveState();

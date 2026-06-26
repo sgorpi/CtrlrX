@@ -103,3 +103,4 @@ Source/Misc/vst2sdk/
 .DS_Store                 # macOS directory metadata
 Builds/MacOSX/build/Release/libCtrlrX.a
 Builds/MacOSX/CtrlrX.xcodeproj/project.xcworkspace/xcuserdata/DYREC.xcuserdatad/UserInterfaceState.xcuserstate
+Source/Core/CtrlrRevision.h

@@ -253,7 +253,7 @@ jobs:
       # -----------------------------------------------------------------
       - name: Signed Packaging and Notarization (macOS)
         if: ${{ matrix.name == 'macOS' && env.HAVE_MACOS_SIGNING_SECRETS == 'true' }}
-        timeout-minutes: 5
+        timeout-minutes: 30
         run: |
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.au.pkg" --version $VERSION --component "${{ env.AU_PATH }}" --install-location "/Library/Audio/Plug-Ins/Components"  "Packaging/${{ env.PRODUCT_NAME }}.au.pkg"
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.vst3.pkg" --version $VERSION --component "${{ env.VST3_PATH }}" --install-location "/Library/Audio/Plug-Ins/VST3" "Packaging/${{ env.PRODUCT_NAME }}.vst3.pkg"
@@ -278,7 +278,7 @@ jobs:
       # -----------------------------------------------------------------
       - name: Unsigned Packaging (macOS)
         if: ${{ matrix.name == 'macOS' && env.HAVE_MACOS_SIGNING_SECRETS != 'true' }}
-        timeout-minutes: 5
+        timeout-minutes: 30
         run: |
           echo "WARNING: Codesigning secrets not found. Building unsigned package only."
           pkgbuild --identifier "${{ env.BUNDLE_ID }}.au.pkg" --version $VERSION --component "${{ env.AU_PATH }}" --install-location "/Library/Audio/Plug-Ins/Components"  "Packaging/${{ env.PRODUCT_NAME }}.au.pkg"
@@ -371,8 +371,6 @@ jobs:
         id: create_archive_unsigned
         shell: bash
         run: |
-          ARTIFACT_DIR="${{ env.ARTIFACTS_PATH }}/Standalone"
-
           # Define the internal folder name for the user's extraction
           INTERNAL_FOLDER_NAME="${{ env.ARTIFACT_NAME }}" # NO "-Signed" suffix
           
@@ -384,8 +382,8 @@ jobs:
           mkdir -p "tmp_linux_archive/$INTERNAL_FOLDER_NAME"
 
           # 2. Copy final assets into the INTERNAL folder
-          cp "${ARTIFACT_DIR}/${{ env.PRODUCT_NAME }}" "tmp_linux_archive/$INTERNAL_FOLDER_NAME/"
-          cp -r "build/CtrlrX_artefacts/Release/VST3/CtrlrX.vst3" "tmp_linux_archive/$INTERNAL_FOLDER_NAME/"
+          cp "${{ env.ARTIFACTS_PATH }}/Standalone/${{ env.PRODUCT_NAME }}" "tmp_linux_archive/$INTERNAL_FOLDER_NAME/"
+          cp -r "${{ env.ARTIFACTS_PATH }}/VST3/CtrlrX.vst3" "tmp_linux_archive/$INTERNAL_FOLDER_NAME/"
 
           # 3. Change into the temporary staging directory (which contains ONE subfolder)
           cd tmp_linux_archive
