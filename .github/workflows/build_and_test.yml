@@ -153,9 +153,27 @@ jobs:
 
       - name: Build
         run: cmake --build ${{ env.BUILD_DIR }} --config ${{ env.BUILD_TYPE }}
-      # - name: Test & Benchmarks
-      #   working-directory: ${{ env.BUILD_DIR }}
-      #   run: ctest --verbose --output-on-failure
+
+      - name: Test & Benchmarks
+        # for now, if tests fail, we do continue...
+        continue-on-error: true
+        working-directory: ${{ env.BUILD_DIR }}/Tests
+        env:
+          # Make GoogleTest emit a per-test JUnit report (build/Tests/results.xml) for the
+          # separate, non-blocking test_results checks below.
+          GTEST_OUTPUT: "xml:results.xml"
+        run: ctest --verbose --output-on-failure -C ${{ env.BUILD_TYPE}}
+
+      - name: Upload test results
+        # Only Linux feeds the checks for now. To add a platform later, OR in its
+        # matrix.name here (e.g. ... || matrix.name == 'macOS') — nothing else changes.
+        if: ${{ matrix.name == 'Linux' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.name }}
+          path: ${{ env.BUILD_DIR }}/Tests/results.xml
+          if-no-files-found: warn
+
 
       - name: Read in .env from CMake # see GitHubENV.cmake
         run: |
@@ -510,6 +528,49 @@ jobs:
       - name: Setup tmate session if failed
         uses: mxschmitt/action-tmate@v3
         if: ${{ failure() && (github.event_name == 'workflow_dispatch' && inputs.debug_enabled) || (runner.debug) }}
+
+
+  # Surface the test outcome as separate, non-required checks (so a red here does NOT
+  # block a PR — just don't add these to branch-protection required checks).
+  # Each matrix leg is its own check: "Tests" (all failures count) and
+  # "Tests (excluding known failures)" (only failures outside Tests/known_failures.txt count).
+  # Native job status is the check, so no checks:write permission is needed and it works
+  # on fork PRs.
+  test_results:
+    name: ${{ matrix.check_name }}
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false # a red "Tests" leg must not cancel the "excluding" leg
+      matrix:
+        include:
+          - check_name: Tests
+            allow_arg: ""
+          - check_name: Tests (excluding known failures)
+            allow_arg: "--allow Tests/known_failures.txt"
+
+    steps:
+      - name: Checkout test helpers
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: Tests
+          submodules: false
+
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          path: test-results
+
+      - name: Test summary
+        uses: test-summary/action@v2
+        with:
+          paths: "test-results/**/results.xml"
+
+      - name: Evaluate results
+        run: python3 Tests/ci_check_test_results.py ${{ matrix.allow_arg }} "test-results/**/results.xml"
 
 
   release:
