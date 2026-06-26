@@ -224,7 +224,9 @@ class CtrlrPanel:	public ValueTree::Listener,
 		CtrlrModulator* getModulatorByIndex (const int index);
 		CtrlrModulator* getModulatorByVstIndex (const int vstIndex);
 		CtrlrModulator* getModulatorByCustomIndex (const int customIndex);
+		// We give getModulator a default fallback value to prevent "too few arguments" errors.
 		CtrlrModulator* getModulator (const String& name) const;
+		CtrlrModulator* getModulator(const String& name, bool forwardToComponents) const;
 		int getNumModulators();
 		void bootstrapPanel(const bool setInitialProgram=true);
 		int cleanBogusProperties();
@@ -234,6 +236,7 @@ class CtrlrPanel:	public ValueTree::Listener,
 		void panelReceivedMidi(const MidiBuffer &buffer, const CtrlrMIDIDeviceType source = inputDevice);
 		void handleAsyncUpdate();
 		void sendSnapshotOnLoad();
+		bool isLoading();
 		bool getRestoreState();
 		bool getProgramState();
 		bool getBootstrapState();
@@ -405,4 +408,7 @@ class CtrlrPanel:	public ValueTree::Listener,
 		bool nrpnHeaderLatched = false;
 		int  nrpnLatchedNumber = -1;
 		String  nrpnLatchedFormula;  // tracks which formula type is active
+	    uint32 bootstrapStartTime; // Used to track how long the bootstrap process takes, and to prevent it from taking too long and causing instability. Added v5.6.34
+		bool isBootstrapTimerActive; // Added v5.6.36
+
 };

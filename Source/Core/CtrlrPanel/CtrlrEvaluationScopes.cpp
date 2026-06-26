@@ -14,11 +14,18 @@ String CtrlrPanelEvaluationScope::getScopeUID() const
 
 Expression CtrlrPanelEvaluationScope::getSymbolValue (const String& symbol) const
 {
-	if (owner.getModulator (symbol))
+	// owner is a CtrlrPanel. We find the modulator by matching its name property
+	// cleanly avoiding the multi-argument C++ signature of getModulator()
+	for (int i = 0; i < owner.getNumModulators(); ++i)
 	{
-		return (Expression (owner.getModulator (symbol)->getValueNonMapped()));
+		CtrlrModulator* m = owner.getModulatorByIndex(i);
+		if (m && m->getProperty(Ids::name).toString() == symbol)
+		{
+			return Expression(m->getValueNonMapped());
+		}
 	}
-	return (Expression());
+
+	return Expression();
 }
 
 // Global evaluation scope

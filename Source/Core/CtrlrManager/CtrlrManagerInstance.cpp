@@ -211,35 +211,6 @@ const bool CtrlrManager::isSingleInstance() const
 }
 
 
-Result CtrlrManager::addInstancePanel()
-{
-	if (ctrlrPlayerInstanceTree.isValid())
-	{
-		CtrlrPanel *panel = new CtrlrPanel(*this, getInstanceName(), ctrlrPanels.size());
-		ctrlrPanels.add (panel);
-
-		Result restoreResult = panel->restoreState (ctrlrPlayerInstanceTree);
-
-		if (!restoreResult.wasOk())
-		{
-			WARN("AddInstancePanel failed to restore the state of the panel");
-			ctrlrPanels.clear (true);
-			return (restoreResult);
-		}
-
-		managerTree.addChild (panel->getPanelTree(), -1, 0);
-		addPanel (panel->getEditor(true));
-
-		organizePanels();
-
-		return (Result::ok());
-	}
-	else
-	{
-		return (Result::fail("AddInstancePanel failed, the decoded instance tree is invalid"));
-	}
-}
-
 Result CtrlrManager::importInstanceResources(CtrlrNative *native)
 {
 	if (getCtrlrProperties().getProperties().getUserSettings())
