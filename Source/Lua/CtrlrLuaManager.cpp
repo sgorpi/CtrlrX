@@ -249,7 +249,11 @@ void CtrlrLuaManager::assignDefaultObjects(lua_State* L)
 	luabind::globals(L)["atc"] = &owner.getCtrlrManagerOwner().getAudioThumbnailCache();
 	luabind::globals(L)["converter"] = audioConverter;
 	luabind::globals(L)["resources"] = &owner.getResourceManager();
-	luabind::globals(L)["native"] = CtrlrNative::getNativeObject(owner.getCtrlrManagerOwner());
+	// Reuse the manager-owned native object (a non-owning pointer, like the globals around it).
+	// Do NOT call the static getNativeObject() factory here: it allocates a fresh CtrlrNative on
+	// every panel load that nothing frees. The owned instance is set unconditionally in
+	// CtrlrManager::initEmbeddedInstance() before any panel's Lua state is assigned.
+	luabind::globals(L)["native"] = &owner.getCtrlrManagerOwner().getNativeObject();
 	luabind::globals(L)["devices"] = &owner.getCtrlrManagerOwner().getCtrlrMIDIDeviceManager();
 }
 

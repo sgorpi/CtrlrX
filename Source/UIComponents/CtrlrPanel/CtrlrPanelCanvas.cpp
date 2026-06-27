@@ -45,7 +45,9 @@ CtrlrPanelCanvas::~CtrlrPanelCanvas()
 		}
 	}
 
-	getOwner().getPanelEditorTree().removeListener (this); // this is accessing free'd memory. Canvas has to be deleted before valueTree, but not sure where...
+	// Safe: panelEditorTree is declared ahead of the component ScopedPointers in CtrlrPanelEditor,
+	// so it outlives this canvas and is still alive here during ~CtrlrPanelEditor.
+	getOwner().getPanelEditorTree().removeListener (this);
     deleteAndZero (ctrlrPanelCanvasResizableBorder);
     setLookAndFeel (nullptr);
 }

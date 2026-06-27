@@ -234,7 +234,7 @@ private:
 		luaPanelFileDragDropHandlerCbk,
 		luaPanelFileDragEnterHandlerCbk,
 		luaPanelFileDragExitHandlerCbk;
-	int64 lastRMBMouseEventTime, lastLMBMouseEventTime;
+	int64 lastRMBMouseEventTime = 0, lastLMBMouseEventTime = 0;
 	OwnedArray <CtrlrPanelCanvasLayer> layers;
     ResizableBorderComponent* ctrlrPanelCanvasResizableBorder;
     CtrlrPanelCanvas (const CtrlrPanelCanvas&);

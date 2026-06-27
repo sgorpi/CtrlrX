@@ -286,10 +286,8 @@ void LGlobalFunctions::wrapForLua (lua_State *L)
 		class_<CtrlrNative>("CtrlrNative")
             .def("sendKeyPressEvent", (const Result (CtrlrNative::*) (const KeyPress &, const String &)) &CtrlrNative::sendKeyPressEvent)
 			.def("sendKeyPressEvent", (const Result (CtrlrNative::*) (const KeyPress &)) &CtrlrNative::sendKeyPressEvent)
-            .scope
-            [
-                def("getNativeObject", &CtrlrNative::getNativeObject)
-            ]
+            // The static getNativeObject() factory binding was removed: it allocated a fresh
+            // CtrlrNative on every call that nothing freed. Scripts use the `native` global instead.
 		,
 		def("jmax", (double (*) (const double, const double))&juce::jmax<double>),
 		def("jmax", (double (*) (const double, const double, const double))&juce::jmax<double>),
