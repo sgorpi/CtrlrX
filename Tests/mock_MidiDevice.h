@@ -11,6 +11,19 @@
 using ::testing::Return;
 using ::testing::_;
 
+// Teach GoogleTest/GoogleMock how to print a juce::MidiMessage. This MUST be visible before the
+// MockMidi class below, whose sendMidiEvent(int, int, juce::MidiMessage) mock instantiates the
+// argument printer used when gmock logs (un)expected calls. Without it, gtest falls back to
+// dumping the object's raw bytes, which reads the uninitialised padding of MidiMessage's union
+// and trips valgrind's "uninitialised value" check.
+namespace juce {
+    inline void PrintTo(const MidiMessage& m, std::ostream* os)
+    {
+        *os << m.getDescription().toStdString()
+            << " [" << juce::String::toHexString(m.getRawData(), m.getRawDataSize(), 1).toStdString() << "]";
+    }
+}
+
 class MockMidi;
 class InformMockMidiOfSubsystem;
 

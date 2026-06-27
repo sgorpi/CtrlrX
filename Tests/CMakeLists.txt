@@ -31,10 +31,12 @@ file(GLOB_RECURSE TestProcessorFiles CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_D
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/ PREFIX "" FILES ${MockFiles} ${TestProcessorFiles})
 
 add_executable(TestsProcessor ${MockFiles} ${TestProcessorFiles})
+# NOTE: link gtest/gmock (NOT gtest_main/gmock_main). TestsProcessor provides its own main()
+# in test_ProcessorMain.cpp so it can bracket the run with a juce::ScopedJuceInitialiser_GUI.
 target_link_libraries(TestsProcessor
     PRIVATE
-    gtest_main
-    gmock_main
+    gtest
+    gmock
     ${PROJECT_NAME})
 target_compile_definitions(TestsProcessor PRIVATE $<TARGET_PROPERTY:${PROJECT_NAME},COMPILE_DEFINITIONS>)
 target_include_directories(TestsProcessor PRIVATE $<TARGET_PROPERTY:${PROJECT_NAME},INCLUDE_DIRECTORIES>)

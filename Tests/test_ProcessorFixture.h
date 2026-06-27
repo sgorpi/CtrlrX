@@ -29,6 +29,8 @@ namespace juce {
             equal_data &= (lhs.getRawData()[idx] == rhs.getRawData()[idx]);
         return (lhs.getRawDataSize() == rhs.getRawDataSize()) && equal_data;
     }
+    // NOTE: PrintTo(const MidiMessage&, std::ostream*) is defined in mock_MidiDevice.h (included
+    // above), where it precedes the MockMidi class so gmock's argument printer picks it up.
 }
 
 
