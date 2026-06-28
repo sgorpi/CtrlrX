@@ -31,5 +31,4 @@ MidiRouting.pause_in_blocks_host_echo
 # not reliable today; the desired behavior is that a matched multi input fires multiMidiReceived
 # once. Acceptance criterion for the rework's input path.
 MidiLua.device_input_invokes_lua_multiMidiReceived_once
-MidiSysex.nrpn_latch_stream_emits_header_once_then_data_only
 
