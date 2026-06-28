@@ -8,6 +8,9 @@ class CtrlrLuaObjectWrapper
 	public:
 		CtrlrLuaObjectWrapper();
     CtrlrLuaObjectWrapper(luabind::object const& other);
+		CtrlrLuaObjectWrapper(const CtrlrLuaObjectWrapper& other);
+		CtrlrLuaObjectWrapper& operator= (const CtrlrLuaObjectWrapper& other);
+		~CtrlrLuaObjectWrapper();
 		operator luabind::object &();
 		operator luabind::object();
 		const luabind::object &getLuabindObject() const;

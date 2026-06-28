@@ -4,12 +4,30 @@
 
 CtrlrLuaObjectWrapper::CtrlrLuaObjectWrapper()
 {
-	new luabind::object();
+	o = new luabind::object();
 }
 
 CtrlrLuaObjectWrapper::CtrlrLuaObjectWrapper(luabind::object const& other)
 {
 	o = new luabind::object(other);
+}
+
+CtrlrLuaObjectWrapper::CtrlrLuaObjectWrapper(const CtrlrLuaObjectWrapper& other)
+{
+	o = new luabind::object(*other.o);
+}
+
+CtrlrLuaObjectWrapper& CtrlrLuaObjectWrapper::operator= (const CtrlrLuaObjectWrapper& other)
+{
+	if (this != &other)
+		*o = *other.o;
+
+	return *this;
+}
+
+CtrlrLuaObjectWrapper::~CtrlrLuaObjectWrapper()
+{
+	delete o;
 }
 
 CtrlrLuaObjectWrapper::operator luabind::object &()
