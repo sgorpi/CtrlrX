@@ -37,6 +37,21 @@ void ProcessorInstanceWithPanel::loadTestPanel()
 }
 
 
+// Regression test for the "opening a panel duplicates all modulators" bug: loading a
+// panel must restore each modulator exactly once. fixture_lua_nrpn.panel has 3 modulators;
+// the duplication bug made the panel report 6.
+TEST_F(ProcessorInstance, test_panel_load_does_not_duplicate_modulators)
+{
+    allowAndRecordDeviceSends();
+
+    CtrlrPanel* panel = loadPanel("fixture_lua_nrpn.panel");
+    ASSERT_NE(panel, nullptr);
+
+    EXPECT_EQ(panel->getNumModulators(), 3)
+        << "panel modulators were not loaded or duplicated on load";
+}
+
+
 TEST_P(ProcessorInstanceWithPanel, test_panel_loads_ok)
 {
     // first, set expectations, if we've implemented the mock for the OS's midi subsystem
