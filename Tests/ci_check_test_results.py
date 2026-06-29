@@ -70,11 +70,30 @@ def main():
     unexpected = sorted(failing - allowed)
     # Allowlisted names that ran and passed -> the list is stale.
     stale = sorted((allowed & all_names) - failing)
+    # Allowlisted names that ran and (still) failed -> known, expected failures.
+    known_failing = sorted(failing & allowed)
 
     emit("### {}".format("Tests (excluding known failures)" if args.allow else "Tests"))
     emit("- result files: {}".format(len(files)))
     emit("- testcases: {}".format(len(all_names)))
     emit("- failing: {} ({} allowlisted)".format(len(failing), len(failing & allowed)))
+
+    # Collapsible breakdown so a reader can tell the known/expected failures apart from a real
+    # problem without cross-referencing known_failures.txt. Only meaningful with an allowlist.
+    if args.allow:
+        emit("<details><summary>**Still failing (known): {}**</summary>".format(len(known_failing)))
+        for name in known_failing:
+            emit("- {}".format(name))
+        if not known_failing:
+            emit("- none")
+        emit("\n</details>")
+
+        emit("\n<details><summary>**Newly passing ({}) — remove from known_failures.txt**</summary>".format(len(stale)))
+        for name in stale:
+            emit("- {}".format(name))
+        if not stale:
+            emit("- none")
+        emit("\n</details>")
 
     for name in stale:
         emit("::warning::Allowlisted test now passes, remove from known_failures: {}".format(name))

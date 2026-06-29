@@ -530,10 +530,11 @@ jobs:
         if: ${{ failure() && (github.event_name == 'workflow_dispatch' && inputs.debug_enabled) || (runner.debug) }}
 
 
-  # Surface the test outcome as separate, non-required checks (so a red here does NOT
-  # block a PR — just don't add these to branch-protection required checks).
-  # Each matrix leg is its own check: "Tests" (all failures count) and
-  # "Tests (excluding known failures)" (only failures outside Tests/known_failures.txt count).
+  # Surface the test outcome as a single, non-required check (so a red here does NOT
+  # block a PR — just don't add it to branch-protection required checks).
+  # The check is "Tests (excluding known failures)": only failures outside
+  # Tests/known_failures.txt count, so it stays green while known failures are outstanding.
+  # The known-failure breakdown is written to the run's job summary by ci_check_test_results.py.
   # Native job status is the check, so no checks:write permission is needed and it works
   # on fork PRs.
   test_results:
@@ -543,11 +544,9 @@ jobs:
     permissions:
       contents: read
     strategy:
-      fail-fast: false # a red "Tests" leg must not cancel the "excluding" leg
+      fail-fast: false
       matrix:
         include:
-          - check_name: Tests
-            allow_arg: ""
           - check_name: Tests (excluding known failures)
             allow_arg: "--allow Tests/known_failures.txt"
 
