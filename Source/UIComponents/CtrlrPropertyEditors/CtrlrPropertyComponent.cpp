@@ -948,11 +948,6 @@ CtrlrFontPropertyComponent::CtrlrFontPropertyComponent (const Value &_valueToCon
 	kerningLabel->setJustificationType(Justification::centred);
 	kerningLabel->setColour(Label::textColourId, findColour(Label::textColourId));
 
-	addAndMakeVisible(horizontalScaleLabel = new Label("", "Scale"));
-    horizontalScaleLabel->setFont(Font(10.0f, Font::plain));
-    horizontalScaleLabel->setJustificationType(Justification::centred);
-    horizontalScaleLabel->setColour(Label::textColourId, findColour(Label::textColourId));
-
     addAndMakeVisible(horizontalScaleComboBox = new ComboBox(""));
     horizontalScaleComboBox->setEditableText(true); // Allow custom values
     horizontalScaleComboBox->addListener(this);
@@ -964,11 +959,6 @@ CtrlrFontPropertyComponent::CtrlrFontPropertyComponent (const Value &_valueToCon
     {
         horizontalScaleComboBox->addItem(String(value, 2), nextId++);
     }
-
-    addAndMakeVisible(kerningLabel = new Label("", "Kerning"));
-    kerningLabel->setFont(Font(10.0f, Font::plain));
-    kerningLabel->setJustificationType(Justification::centred);
-    kerningLabel->setColour(Label::textColourId, findColour(Label::textColourId));
 
     addAndMakeVisible(kerningComboBox = new ComboBox(""));
     kerningComboBox->setEditableText(true); // Allow custom values

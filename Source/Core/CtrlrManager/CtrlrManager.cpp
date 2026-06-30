@@ -189,11 +189,9 @@ CtrlrPanel *CtrlrManager::addPanel(const ValueTree &savedState, const bool showU
 	CtrlrPanel *panel = new CtrlrPanel(*this, getUniquePanelName("Ctrlr Panel"), ctrlrPanels.size());
 
 	ctrlrPanels.add (panel);
-
-    // Restore from a deep copy so the panel owns its own tree and does not share
-    // memory with other panels (issue #259). Restore exactly once: restoreState
-    // accumulates modulators, so a second call would duplicate them all.
-    panel->restoreState (savedState.createCopy());
+        
+    // ADDED DEEP COPY HERE: Breaks the shared memory link for standard panels
+    panel->restoreState (savedState.createCopy()); // Update 5.6.36. FIX for duplicated modulators on load. Issue #282
 	managerTree.addChild (panel->getPanelTree(), -1, 0);
 
 	if (showUI)
