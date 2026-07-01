@@ -27,6 +27,7 @@ recipes: a one-line goal, numbered **Steps** (the quick answer), then a **How it
 | Send/receive CC, NRPN, SysEx | [08 — Sending & Receiving MIDI](08-sending-receiving.md) |
 | Figure out why something isn't working | [09 — Debugging](09-debugging.md) |
 | Save, share, or run your panel as a plugin | [10 — Distribution & Advanced](10-distribution.md) |
+| Fix install / macOS / crash-on-startup issues | [10 — Troubleshooting & platform notes](10-distribution.md#troubleshooting--platform-notes) |
 | Learn Lua scripting | [Lua Guide](lua/01-lua-guide.md) · [Lua API Reference](lua/02-lua-reference.md) |
 
 ## The example panel

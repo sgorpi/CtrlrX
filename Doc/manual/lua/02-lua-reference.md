@@ -71,6 +71,8 @@ The panel. Reach controls, send MIDI, manage state.
 | `sendMidi(msg, ts)` | Send with a timestamp (`CtrlrMidiMessage`, `MidiMessage`, or `MidiBuffer`). |
 | `getGlobalVariable(i)` / `setGlobalVariable(i, v)` | Panel-wide integer variables. |
 | `getProgramState()` / `setProgramState(...)` | Capture / restore all control values (a patch). |
+| `getModulatorValuesAsData(...)` | Serialize many modulators' values into a `MemoryBlock` (bulk dumps — see [below](#bulk-modulator-data)). |
+| `setModulatorValuesFromData(...)` | Apply an incoming data block back onto the modulators ([below](#bulk-modulator-data)). |
 | `getRestoreState()` / `setRestoreState(...)` / `isRestoring()` | Load-time state flags. |
 | `getBootstrapState()` | Initial state. |
 | `isLoading()` | True while the panel is loading. |
@@ -180,6 +182,31 @@ panel:sendMidi(CtrlrMidiMessage("C0 05"), 0)         -- with timestamp
 
 > 🔗 Deeper: building Multi/NRPN/SysEx and receiving MIDI is in
 > [Chapter 8](../08-sending-receiving.md).
+
+## Bulk modulator data
+
+Serialize/deserialize many modulators at once for SysEx bulk dumps. Modulators are ordered by a
+**custom integer property** you set on each (see the
+[walkthrough in Chapter 8](../08-sending-receiving.md#bulk-dumps--many-modulators-in-one-message)).
+The `encoding` values live on `CtrlrPanel` (e.g. `CtrlrPanel.EncodeNormal`).
+
+```lua
+-- Serialize → MemoryBlock, then splice into a SysEx frame:
+local data = panel:getModulatorValuesAsData(indexProperty, encoding, bytesPerValue, useMapped)
+
+-- Apply an incoming block back onto the modulators:
+panel:setModulatorValuesFromData(dataSource, indexProperty, encoding, offset, bytesPerValue, useMapped)
+```
+
+| Method (signature) | Purpose |
+|---|---|
+| `getModulatorValuesAsData(indexProperty, encoding, bytesPerValue, useMapped)` | Pack every modulator carrying `indexProperty` (a non-negative int, 0-based) into a `MemoryBlock`, ordered by that index. `encoding` is a `CtrlrPanel.Encode*` value; `useMapped` (bool) picks raw vs [mapped](../05-value-mapping.md) values. |
+| `getModulatorValuesAsData(indexProperty, encoding, startIndex, endIndex, bytesPerValue, useMapped)` | Same, but only for index range `startIndex…endIndex`. |
+| `setModulatorValuesFromData(dataSource, indexProperty, encoding, offset, bytesPerValue, useMapped)` | Read `dataSource` (a `MemoryBlock`, e.g. `midi:getData()`) and write values back onto the indexed modulators. `offset` is signed: **negative** = header byte count to skip (modulators start at index 0); **positive** = modulator start index (data from byte 0). |
+
+> ⚠️ Gotcha: `bytesPerValue` must match the encoding — `1` for `EncodeNormal`, `2` for the two-byte
+> and nibble-pair encodings. The index property is stored as a **string of digits**; modulators
+> without it (or with a non-numeric value) are skipped.
 
 ## MIDI devices
 

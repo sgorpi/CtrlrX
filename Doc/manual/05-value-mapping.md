@@ -96,22 +96,41 @@ m:getMinNonMapped(),     m:getMaxNonMapped()
 
 ## Expression properties (math without Lua)
 
+> **TL;DR** — For computed mappings you don't need Lua. Each modulator has three **expression**
+> formulas (outgoing, incoming, controller). Type a formula in the property's box, hit the **🐞
+> validate button** to check it, and CtrlrX runs it on every value change. Full constant/function
+> reference is at the end of this section.
+
 For simple, computed mappings you don't need Lua at all. Each modulator has three **expression**
 properties (in the *Modulator* property group) that are evaluated as math formulas. They default to
 pass-through, so by default the modulator value *is* the MIDI value.
 
-| Property (label in the editor) | Direction | Default |
-|---|---|---|
-| **Expression to evaluate when calculating the midi message value from the modulator value** | modulator value → outgoing MIDI value | `modulatorValue` |
-| **Expression to evaluate when calculating the modulator value from the midi message value** | incoming MIDI value → modulator value | `midiValue` |
-| **Expression to evaluate when calculating the modulator value from midi controller message** | controller (MIDI-learn) input → modulator value | `value` |
+| Property (label in the editor) | Internal name | Direction | Default |
+|---|---|---|---|
+| **Expression to evaluate when calculating the midi message value from the modulator value** | `modulatorValueExpression` | modulator value → outgoing MIDI value | `modulatorValue` |
+| **Expression to evaluate when calculating the modulator value from the midi message value** | `modulatorValueExpressionReverse` | incoming MIDI value → modulator value | `midiValue` |
+| **Expression to evaluate when calculating the modulator value from midi controller message** | `modulatorControllerExpression` | controller (MIDI-learn) input → modulator value | `value` |
 
-**Variables you can use** in these formulas: `modulatorValue`, `modulatorMappedValue`, `midiValue`,
-`midiNumber`, `vstIndex` (plus `panel.<prop>` and `global.<n>` scopes).
+The first two are the ones you'll use most: the *forward* expression shapes what gets **sent** when
+the control moves, and the *reverse* expression shapes how an **incoming** MIDI value becomes the
+control's value. The third only applies when a hardware controller is mapped to the modulator via
+MIDI-learn; its `value` symbol is the raw incoming controller value.
 
-**Functions available**: `abs`, `ceil`, `floor`, `mod`, `fmod`, `pow`, `min`, `max`, the comparisons
-`eq`/`lt`/`lte`/`gt`/`gte`, the bit helpers `setBit`/`isBitSet`/`clearBit`/`getBitRangeAsInt`/
-`setBitRangeAsInt`, and `setGlobal`, plus ordinary arithmetic (`+ - * /`).
+### The formula box and the 🐞 validate button
+
+Each expression property is edited in a small **multi-line text box** with a **bug (🐞) button** next
+to it (tooltip: *"Compile expression, if it's valid set the property"*). The button is a quick
+syntax check:
+
+- Click it (or just leave the field / press Return) and CtrlrX **compiles** the formula.
+- **Valid** → the property is saved and you get an *"Expression is valid"* confirmation.
+- **Invalid** → the box turns **pink** and a *"Validation failed: …"* message shows the parse error.
+
+> ⚠️ Gotcha: the validate button checks that the formula **parses** — it does not preview the
+> computed result for a given input. To see actual numbers, watch the control in the
+> [MIDI Monitor](09-debugging.md) while you move it.
+
+![The three Expression property rows in the Modulator group, each a formula box with a 🐞 validate button](images/expression-editor.png)
 
 **Example** — halve the value on the way out and double it on the way back in:
 
@@ -122,6 +141,68 @@ reverse (from MIDI): midiValue * 2
 
 > 💡 Tip: Use expressions for linear/scaling/bit-twiddling. Reach for Lua (below) only when the
 > relationship is a lookup table or needs real logic.
+
+### Expression reference — constants
+
+These symbols resolve to the modulator's current state at evaluation time. `modulatorValue` is a
+linear array index and is always ≥ 0; the *mapped* variants pass through the modulator's value map
+(see above) and **can be negative**.
+
+| Constant | Value |
+|---|---|
+| `modulatorValue` | Current linear (non-mapped) value of the modulator — the index into its value array; always ≥ 0. |
+| `modulatorMappedValue` | Current value **after** the value map is applied (may be negative). |
+| `modulatorMin` / `modulatorMax` | The modulator's minimum / maximum non-mapped value. |
+| `modulatorMappedMin` / `modulatorMappedMax` | The minimum / maximum value **after** mapping. |
+| `midiValue` | The value currently held in the MIDI message tied to the modulator. |
+| `midiNumber` | The controller/number of that MIDI message (e.g. the CC number), if applicable. |
+| `vstIndex` | The VST/AU parameter index as the host sees it (integer). |
+| `value` | *(controller expression only)* the raw incoming controller value. |
+
+You can also read **another modulator's** value with `panel.<modulatorName>`, and panel **global
+variables** through the `global` scope (write them with the `setGlobal` function below).
+
+### Expression reference — functions
+
+Ordinary arithmetic (`+ - * /`, parentheses) works as expected. The built-in functions are:
+
+| Function | Args | Returns |
+|---|---|---|
+| `ceil(x)` | 1 | Smallest integer ≥ `x`. |
+| `floor(x)` | 1 | Largest integer ≤ `x`. |
+| `abs(x)` | 1 | Absolute value of `x`. |
+| `mod(a, b)` | 2 | Integer modulo `a % b` (e.g. `10 % 3 = 1`). |
+| `fmod(a, b)` | 2 | Floating-point remainder of `a / b`. |
+| `pow(a, b)` | 2 | `a` raised to the power `b` (`a^b`). |
+| `min(a, b)` / `max(a, b)` | 2 | The smaller / larger of the two. |
+| `eq(a, b, t, f)` | 4 | `t` if `a == b`, else `f`. |
+| `gt(a, b, t, f)` | 4 | `t` if `a > b`, else `f`. |
+| `gte(a, b, t, f)` | 4 | `t` if `a >= b`, else `f`. |
+| `lt(a, b, t, f)` | 4 | `t` if `a < b`, else `f`. |
+| `lte(a, b, t, f)` | 4 | `t` if `a <= b`, else `f`. |
+| `isBitSet(value, bit)` | 2 | `1` if `bit` is set in `value`, else `0`. |
+| `setBit(value, bit, on)` | 3 | `value` with `bit` set (`on` ≠ 0) or cleared, returned as an integer. |
+| `clearBit(value, bit)` | 2 | `value` with `bit` cleared. |
+| `getBitRangeAsInt(value, startBit, numBits)` | 3 | The `numBits` bits starting at `startBit`, as an integer. |
+| `setBitRangeAsInt(value, startBit, numBits, toSet)` | 4 | `value` with that bit range replaced by `toSet`. |
+| `setGlobal(index, newValue)` | 2 | Sets panel global variable `index` and returns `newValue` (so the expression can continue). |
+| `getModulatorByVstIndex(i)` | 1 | The current value of the modulator whose VST index is `i` (`-1` if none). |
+| `getModulatorByCustomIndex(i)` | 1 | The current value of the modulator whose custom index is `i` (`-1` if none). |
+
+The comparison functions (`eq`/`gt`/`gte`/`lt`/`lte`) are CtrlrX's substitute for an `if`: they take
+the two operands **plus** the value to return when the test passes and when it fails. For example:
+
+```
+gte(modulatorValue, 0, modulatorValue, 128 - modulatorValue)
+```
+
+returns `modulatorValue` when it is ≥ 0, and `128 - modulatorValue` otherwise.
+
+> 🔗 Deeper: the constants come from `CtrlrModulatorProcessor::getSymbolValue`
+> ([Source/Core/CtrlrModulator/CtrlrModulatorProcessor.cpp](../../Source/Core/CtrlrModulator/CtrlrModulatorProcessor.cpp))
+> and the functions from `evaluateFormulaFunction`
+> ([Source/Core/CtrlrPanel/CtrlrEvaluationScopes.cpp](../../Source/Core/CtrlrPanel/CtrlrEvaluationScopes.cpp)) —
+> both good places to look if a formula misbehaves.
 
 ## When you need an arbitrary lookup
 

@@ -143,7 +143,10 @@ end
 
 > 🔗 Deeper: the `source` enum on `luaModulatorValueChange` (initial / host / midiIn / controller /
 > gui / lua / program / link / unknown) lets you avoid feedback loops — e.g. *don't* re-send MIDI when
-> the change *came from* MIDI in. See the [Lua reference](lua/02-lua-reference.md#callback-hooks).
+> the change *came from* MIDI in. See the [Lua reference](lua/02-lua-reference.md#callback-hooks) and
+> the worked examples on the
+> [Source filter with LUA scripts](https://github.com/damiensellier/CtrlrX/wiki/Source-filter-with-LUA-scripts)
+> wiki page.
 
 ## Sending MIDI from Lua
 
@@ -156,6 +159,98 @@ panel:sendMidiMessageNow(CtrlrMidiMessage("B0 4A 7F"))  -- a CtrlrMidiMessage
 
 > 🔗 Deeper: `sendMidiMessageNow`, `sendMidi` (with a timestamp), and constructing `CtrlrMidiMessage`
 > objects are documented in the [Lua reference](lua/02-lua-reference.md#sending-midi).
+
+## Bulk dumps — many modulators in one message
+
+> **TL;DR** — Instead of packing a big SysEx dump byte by byte, tag the modulators with a **custom
+> index property**, then let CtrlrX serialize all their values into one block with
+> `panel:getModulatorValuesAsData(...)` (to send) and unpack an incoming dump with
+> `panel:setModulatorValuesFromData(...)` (to receive). You choose how each value is encoded.
+
+Many synths load/save a whole patch as a single SysEx "bulk dump": a header, then one byte (or a
+nibble pair, or two bytes…) per parameter, in a fixed order, then a checksum and `F7`. Wiring that up
+control-by-control is painful. CtrlrX gives you two panel methods that walk your modulators in a
+defined order and pack/unpack the data for you.
+
+The order is defined by a **custom property** you add to each modulator (any name — e.g. `dumpIndex`)
+holding a **non-negative integer** (`0`, `1`, `2`, …). Modulators without the property are skipped;
+the block is sized to `(highestIndex + 1) × bytesPerValue`.
+
+### Encoding types
+
+Both methods take a `byteEncoding` telling CtrlrX how each modulator value maps to bytes. Access them
+as `CtrlrPanel.<name>`:
+
+| Encoding | Layout |
+|---|---|
+| `EncodeNormal` | One 7-bit byte (0–127). |
+| `EncodeMSBFirst` *(alias `Encode7bitMSBFirst`)* | Two 7-bit bytes, MSB then LSB. |
+| `EncodeLSBFirst` *(alias `Encode7bitLSBFirst`)* | Two 7-bit bytes, LSB then MSB. |
+| `EncodeNibbleMsbFirst` *(alias `Encode4bitMsbFirst` / `EncodeMsbFirst`)* | Two 4-bit nibbles, MSB nibble first (unsigned). |
+| `EncodeNibbleLsbFirst` *(alias `Encode4bitLsbFirst` / `EncodeLsbFirst`)* | Two 4-bit nibbles, LSB nibble first (unsigned). |
+| `EncodeSignedNibbleMsbFirst` | Two 4-bit nibbles, MSB first, value treated as signed int8. |
+| `EncodeSignedNibbleLsbFirst` | Two 4-bit nibbles, LSB first, value treated as signed int8. |
+| `Encode16bitLsbFirst` | A 16-bit value as four 4-bit nibbles, least-significant first. |
+| `Encode16bitMsbFirst` | A 16-bit value as four 4-bit nibbles, most-significant first. |
+
+The `bytesPerValue` argument must match the encoding (1 for `EncodeNormal`, 2 for the two-byte /
+nibble-pair encodings, etc.).
+
+> 💡 Tip: The **last argument, `useMappedValues`**, chooses which value gets serialized — `false` uses
+> the raw modulator value, `true` uses the [mapped value](05-value-mapping.md). Use whichever matches
+> what your device expects in the dump.
+
+### Step 1 — tag the modulators (once)
+
+Decide the dump order and set the custom index on each modulator. You can do this from the
+[Lua console](09-debugging.md) once, and it's saved with the panel:
+
+```lua
+local dumpOrder = { "lfoDelay", "lfoRate", "vcfResonance", "vcfCutoff", "delay" }
+for i, name in ipairs(dumpOrder) do
+    -- store 0-based index as a string property named "dumpIndex"
+    panel:getModulatorByName(name):setProperty("dumpIndex", tostring(i - 1), false)
+end
+```
+
+To undo, remove the property again: `mod:removeProperty("dumpIndex")`.
+
+### Step 2 — send the dump
+
+```lua
+HEADER = "F0 41 00 00 11"   -- your device's dump header
+EOX    = "F7"
+
+local data = panel:getModulatorValuesAsData("dumpIndex", CtrlrPanel.EncodeNormal, 1, false)
+panel:sendMidiMessageNow(
+    CtrlrMidiMessage(string.format("%s %s %s", HEADER, data:toHexString(1), EOX)))
+```
+
+`getModulatorValuesAsData` returns a `MemoryBlock`; `toHexString(1)` renders it as space-separated
+hex to splice between your header and `F7`. (Add a checksum byte if your device needs one.)
+
+### Step 3 — receive a dump
+
+Assign this to the panel's **midi received** callback (`luaPanelMidiReceived`). Pass the **header
+size as a negative number** so CtrlrX skips those header bytes and starts filling modulator index 0:
+
+```lua
+panelMidiReceived = function(midi)
+    local headerSize = MemoryBlock(HEADER):getSize()
+    panel:setModulatorValuesFromData(midi:getData(), "dumpIndex",
+                                     CtrlrPanel.EncodeNormal, -headerSize, 1, false)
+end
+```
+
+> ⚠️ Gotcha: the `propertyOffset` argument is signed. A **negative** value is a *header byte count*
+> (skip that many bytes, modulators start at index 0); a **positive** value instead means "data starts
+> at byte 0, but modulator indices start at this offset". For skipping a SysEx header you almost always
+> want the negative form.
+
+> 🔗 Deeper: both methods and their overloads (including a start/end-index variant) are in the
+> [Lua reference](lua/02-lua-reference.md#bulk-modulator-data). See also the
+> [SysEx Token List](https://github.com/damiensellier/CtrlrX/wiki/SysEx-Token-List) wiki page for the
+> per-parameter token approach when you'd rather not script.
 
 ## Back to the example panel
 

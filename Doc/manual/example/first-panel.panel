@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<panel name="ExampleSynth Editor" panelShowDialogs="1" panelMessageTime="2000"
+<panel name="ExampleSynth Editor" panelShowDialogs="1" panelMessageTime="2000.0"
        panelAuthorName="your name" panelAuthorEmail="your email" panelAuthorDonateUrl=""
        panelAuthorUrl="https://your-website.com" panelAuthorDesc=""
        panelVersionMajor="1" panelVersionMinor="0" panelVersionName=""
@@ -8,14 +8,14 @@
        panelCertificateWinPassCode="" panelPlugType="Instrument|Synth"
        panelExportPublicKey="" panelExportServerAuthURL="https://localhost:8000/auth/authenticate"
        panelMidiSnapshotAfterLoad="0" panelMidiSnapshotAfterProgramChange="0"
-       panelMidiSnapshotDelay="10" panelMidiSnapshotShowProgress="0"
+       panelMidiSnapshotDelay="10.0" panelMidiSnapshotShowProgress="0"
        panelMidiInputDevice="-- None" panelMidiInputChannelDevice="1"
        panelMidiControllerDevice="-- None" panelMidiControllerChannelDevice="1"
        panelMidiOutputDevice="-- None" panelMidiOutputChannelDevice="1"
        panelMidiThruD2D="0" panelMidiThruD2DChannelize="0" panelMidiRealtimeIgnore="0"
-       panelMidiInputThreadPriority="7" panelMidiProgram="0" panelMidiBankLsb="0"
+       panelMidiInputThreadPriority="7.0" panelMidiProgram="0" panelMidiBankLsb="0"
        panelMidiBankMsb="0" panelMidiSendProgramChangeOnLoad="0" panelMidiProgramCalloutOnprogramChange="0"
-       panelMidiMatchCacheSize="32" panelMidiGlobalDelay="0" panelMidiPauseOut="0"
+       panelMidiMatchCacheSize="32.0" panelMidiGlobalDelay="0" panelMidiPauseOut="0"
        panelMidiPauseIn="0" panelOSCEnabled="0" panelOSCPort="-1" panelOSCProtocol="0"
        luaPanelMidiChannelChanged="-- None" luaPanelMidiReceived="-- None"
        luaPanelMidiMultiReceived="-- None" luaPanelLoaded="-- None"
@@ -25,11 +25,11 @@
        luaPanelSaveState="-- None" luaPanelRestoreState="-- None" luaPanelMidiSnapshotPost="-- None"
        luaPanelMidiSnapshotPre="-- None" luaAudioProcessBlock="-- None"
        luaPanelOSCReceived="-- None" panelFilePath="/CtrlrX/Doc/manual/example/first-panel.panel"
-       panelLastSaveDir="/CtrlrX/Doc/manual/example"
-       panelUID="8.Araba8XP+tE" panelInstanceUID="tzxl" panelInstanceManufacturerID="YvKW"
-       panelModulatorListColumns="-- None" panelModulatorListCsvDelimiter=","
-       panelModulatorListXmlRoot="ctrlrModulatorList" panelModulatorListXmlModulator="ctrlrModulator"
-       panelModulatorListSortOption="1" panelGlobalVariables="-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1"
+       panelLastSaveDir="/CtrlrX/Doc/manual/example" panelUID="8.Araba8XP+tE"
+       panelInstanceUID="tzxl" panelInstanceManufacturerID="YvKW" panelModulatorListColumns="-- None"
+       panelModulatorListCsvDelimiter="," panelModulatorListXmlRoot="ctrlrModulatorList"
+       panelModulatorListXmlModulator="ctrlrModulator" panelModulatorListSortOption="1.0"
+       panelGlobalVariables="-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1:-1"
        panelResources="-- None" panelPropertyDisplayIDs="0" panelIndex="0"
        panelIsDirty="0">
   <uiWindowManager/>
@@ -59,18 +59,18 @@
   </luaManager>
   <panelResources/>
   <uiPanelEditor uiPanelCanvasRectangle="0 0 600 400" name="ExampleSynth Editor"
-                 uiPanelEditMode="1" uiViewPortWidth="659" uiViewPortHeight="417"
+                 uiPanelEditMode="1" uiViewPortWidth="770" uiViewPortHeight="491"
                  uiPanelLock="0" uiPanelDisabledOnEdit="0" uiPanelMenuBarVisible="1"
                  uiPanelMenuBarHideOnExport="0" uiPanelProgramsMenuHideOnExport="0"
                  uiPanelMidiControllerMenuHideOnExport="0" uiPanelMidiThruMenuHideOnExport="0"
-                 uiPanelMidiChannelMenuHideOnExport="0" uiPanelViewPortSize="800"
-                 uiPanelPropertiesSize="300" uiViewPortResizable="1" uiViewPortShowScrollBars="1"
+                 uiPanelMidiChannelMenuHideOnExport="0" uiPanelViewPortSize="388"
+                 uiPanelPropertiesSize="374" uiViewPortResizable="1" uiViewPortShowScrollBars="1"
                  uiViewPortEnableResizeLimits="0" uiViewPortMinWidth="0" uiViewPortMinHeight="0"
                  uiViewPortMaxWidth="0" uiViewPortMaxHeight="0" uiViewPortEnableFixedAspectRatio="0"
                  uiViewPortFixedAspectRatio="1.5" uiPanelZoom="1.0" uiPanelViewPortBackgroundColour="b2efefef"
                  uiPanelBackgroundColour="ffefefef" uiPanelBackgroundColour1="ffefefef"
                  uiPanelBackgroundColour2="ffc7c7c7" uiPanelBackgroundGradientType="0"
-                 uiPanelImageResource="-- None" uiPanelImageAlpha="255" uiPanelImageLayout="64"
+                 uiPanelImageResource="-- None" uiPanelImageAlpha="255.0" uiPanelImageLayout="64"
                  uiPanelSnapActive="1" uiPanelSnapSize="8" uiPanelPropertiesOnRight="0"
                  luaPanelPaintBackground="-- None" luaViewPortResized="-- None"
                  luaPanelResized="-- None" luaPanelFileDragDropHandler="-- None"
@@ -84,7 +84,7 @@
                         uiPanelCanvasLayerIndex="0"/>
   </uiPanelEditor>
   <modulator modulatorCustomIndex="0" modulatorCustomIndexGroup="0" modulatorIsStatic="1"
-             name="mainTabs" modulatorVstExported="0">
+             name="mainTabs" modulatorVstExported="0" modulatorValue="0.0">
     <component componentVisibility="1" componentSentBack="0" componentMouseCursor="2"
                componentDisabled="0" componentIsLocked="0" componentSnapSize="0"
                componentGroupName="" componentGroupped="0" componentRadioGroupId="0"
@@ -105,8 +105,8 @@
                uiTabsOutlineGlobalColour="0x00000000" uiTabsFrontTabOutline="1.0"
                uiTabsFrontTabFont="&lt;Sans-Serif&gt;;16;0;0;0;0;1;3" uiTabsFrontTabTextColour="ff000000"
                uiTabsFrontTabOutlineColour="ff555555" uiTabsAddTab="0" uiTabsRemoveTab="0"
-               componentRectangle="40 32 256 256" uiType="uiTabs" componentLayerUid="63b86f860100000056ee35079f010000"
-               uiTabsCurrentTab="0">
+               componentRectangle="40 32 256 256" uiTabsCurrentTab="0" componentLayerUid="63b86f860100000056ee35079f010000"
+               uiType="uiTabs">
       <uiTabsTab uiTabsTabIndex="0.0" uiTabsTabName="Filter" uiTabsTabContentBackgroundColour="ffd9d9d9"
                  uiTabsTabBackgroundColour="ffd9d9d9" uiTabsTabBackgroundImage="-- None"
                  uiTabsTabBackgroundImageLayout="36" uiTabsTabBackgroundImageAlpha="255"/>
@@ -115,9 +115,10 @@
                  uiTabsTabBackgroundImageLayout="36" uiTabsTabBackgroundImageAlpha="255"/>
     </component>
   </modulator>
-  <modulator modulatorVstExported="1" vstIndex="0" modulatorIsStatic="0" modulatorGlobalVariable="-1"
+  <modulator modulatorVstExported="1" vstIndex="0" modulatorIsStatic="0" modulatorGlobalVariable="-1.0"
              modulatorMuteOnStart="0" modulatorMute="0" modulatorExcludeFromSnapshot="0"
-             modulatorValueExpression="modulatorValue" modulatorValueExpressionReverse="midiValue"
+             modulatorValueExpression="floor(modulatorValue * 100 / 127)"
+             modulatorValueExpressionReverse="floor(midiValue * 127 / 100)"
              modulatorControllerExpression="value" luaModulatorGetValueForMIDI="-- None"
              luaModulatorGetValueFromMIDI="-- None" modulatorLinkedToPanelProperty="-- None"
              modulatorLinkedToModulatorProperty="-- None" modulatorLinkedToModulator="-- None"
@@ -125,7 +126,7 @@
              modulatorBaseValue="0" modulatorCustomIndex="0" modulatorCustomName=""
              modulatorCustomIndexGroup="0" modulatorCustomNameGroup="" modulatorVstNameFormat="%n"
              luaModulatorValueChange="-- None" name="filterCutoff" modulatorMin="0.0"
-             modulatorMax="127.0" modulatorValue="">
+             modulatorMax="127.0" modulatorValue="0.0">
     <midi midiMessageType="9" midiMessageChannelOverride="0" midiMessageChannel="1"
           midiMessageCtrlrNumber="1" midiMessageCtrlrValue="0" midiMessageCtrlrNumberSize="0"
           midiMessageLatchAndStream="0" midiMessageMultiList="" midiMessageSysExFormula=""/>
@@ -135,34 +136,33 @@
                componentVisibleName="Cutoff" componentLabelVisible="1" componentLabelAlwaysOnTop="1"
                componentLabelPosition="top" componentLabelWidth="0" componentLabelHeight="14"
                componentLabelJustification="centred" componentLabelFont="&lt;Sans-Serif&gt;;12;0;0;0;0;1;3"
-               componentLabelColour="ff000000" componentEffect="0" componentEffectRadius="1"
+               componentLabelColour="ff000000" componentEffect="0" componentEffectRadius="1.0"
                componentEffectColour="0xff000000" componentEffectOffsetX="0"
                componentEffectOffsetY="0" componentExcludedFromLabelDisplay="0"
                componentValueDecimalPlaces="0" componentLuaMouseMoved="-- None"
                componentLuaMouseDown="-- None" componentLuaMouseUp="-- None"
                componentLuaMouseDrag="-- None" componentLuaMouseDoubleClick="-- None"
                componentLuaMouseEnter="-- None" componentLuaMouseExit="-- None"
-               uiSliderMin="0" uiSliderMax="127" uiSliderInterval="1" uiSliderDecimalPlaces="0"
+               uiSliderMin="0" uiSliderMax="127.0" uiSliderInterval="1.0" uiSliderDecimalPlaces="0"
                uiSliderValueSuffix="" uiSliderSetNotificationOnlyOnRelease="0"
                uiSliderDoubleClickEnabled="1" uiSliderDoubleClickValue="0" uiSliderVelocitySensitivity="1.0"
                uiSliderVelocityThreshold="1" uiSliderVelocityOffset="0.0" uiSliderVelocityMode="0"
                uiSliderVelocityModeKeyTrigger="1" uiSliderSpringMode="0" uiSliderSpringValue="0"
-               uiSliderMouseWheelInterval="1" uiSliderLookAndFeel="Default"
+               uiSliderMouseWheelInterval="1.0" uiSliderLookAndFeel="Default"
                uiSliderLookAndFeelIsCustom="0" uiSliderPopupBubble="0" uiSliderStyle="RotaryVerticalDrag"
                uiSliderRotaryOutlineColour="ffffffff" uiSliderRotaryFillColour="ff42a2c8"
                uiSliderThumbColour="ffa9a9a9" uiSliderTrackColour="ff42a2c8"
                uiSliderIncDecButtonColour="ffffffff" uiSliderIncDecTextColour="ff000000"
-               uiSliderTrackCornerSize="5" uiSliderThumbCornerSize="3" uiSliderThumbWidth="0"
+               uiSliderTrackCornerSize="5.0" uiSliderThumbCornerSize="3.0" uiSliderThumbWidth="0"
                uiSliderThumbHeight="0" uiSliderThumbFlatOnLeft="0" uiSliderThumbFlatOnRight="0"
                uiSliderThumbFlatOnTop="0" uiSliderThumbFlatOnBottom="0" uiSliderValuePosition="4"
                uiSliderValueWidth="64" uiSliderValueHeight="10" uiSliderValueTextJustification="centred"
                uiSliderValueFont="&lt;Sans-Serif&gt;;12;0;0;0;0;1;3" uiSliderValueTextColour="ff000000"
                uiSliderValueHighlightColour="66a9a9a9" uiSliderValueBgColour="0x00ffffff"
-               uiSliderValueOutlineColour="0x00ffffff" uiType="uiSlider" componentRectangle="8 8 72 96"
-               componentLayerUid="63b86f860100000056ee35079f010000" componentTabName="mainTabs"
-               componentTabId="0"/>
+               uiSliderValueOutlineColour="0x00ffffff" componentTabId="0" componentTabName="mainTabs"
+               componentLayerUid="63b86f860100000056ee35079f010000" componentRectangle="8 8 72 96"
+               uiType="uiSlider"/>
   </modulator>
-  <panelCustomData/>
   <modulator modulatorVstExported="1" vstIndex="1" modulatorIsStatic="0" modulatorGlobalVariable="-1"
              modulatorMuteOnStart="0" modulatorMute="0" modulatorExcludeFromSnapshot="0"
              modulatorValueExpression="modulatorValue" modulatorValueExpressionReverse="midiValue"
@@ -194,7 +194,7 @@
                uiButtonLookAndFeel="Default" uiButtonLookAndFeelIsCustom="0"
                uiButtonTextColourOn="0xff000000" uiButtonColourOff="0x80000000"
                uiToggleButtonFocusOutline="0x60000000" uiToggleButtontickColour="0xff000000"
-               componentRectangle="104 32 88 48" uiType="uiToggleButton" componentLayerUid="63b86f860100000056ee35079f010000"
-               componentTabName="mainTabs" componentTabId="0"/>
+               componentRectangle="104 32 88 48" componentTabId="0" componentTabName="mainTabs"
+               componentLayerUid="63b86f860100000056ee35079f010000" uiType="uiToggleButton"/>
   </modulator>
 </panel>

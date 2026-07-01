@@ -77,6 +77,25 @@ Two mechanisms let a panel keep data:
 
 > 🔗 Deeper: all of these are in the [Lua reference](lua/02-lua-reference.md#callback-hooks).
 
+## Troubleshooting & platform notes
+
+Most day-to-day issues are covered in [Chapter 9](09-debugging.md). The items below are
+**install- and platform-level** problems — mostly macOS security and file-location questions — that
+are documented in detail on the project wiki:
+
+| Symptom | Where to look |
+|---|---|
+| macOS won't open CtrlrX ("unidentified developer" / quarantined) | [Whitelisting Ctrlr on macOS & avoiding quarantine](https://github.com/damiensellier/CtrlrX/wiki/Whitelisting-Ctrlr-on-macOS-and-avoid-quarantine) |
+| An **exported** instance is rejected for a broken/invalid signature on macOS | [Replacing a CtrlrX exported instance's corrupted codesigning](https://github.com/damiensellier/CtrlrX/wiki/Replacing-CtrlrX-exported-instance-corrupted-codesigning-on-macOS) |
+| The AU won't validate / doesn't show in the DAW | [AudioUnit validation test — command line](https://github.com/damiensellier/CtrlrX/wiki/AudioUnit-Validation-Test-Command-Line) |
+| Images/artwork missing after moving a panel from old Ctrlr to CtrlrX | [Fixing missing panel resources when migrating](https://github.com/damiensellier/CtrlrX/wiki/FIX-for-missing-panel-resources-%28images-etc%29-when-migrating-from-Ctrlr-to-CtrlrX) |
+| Native file dialogs misbehave on macOS Big Sur and later | [Uncheck OS-native dialog windows (macOS Big Sur+)](https://github.com/damiensellier/CtrlrX/wiki/Uncheck-OS-native-dialog-widows-(macOS-BigSur-&-above)) |
+| CtrlrX crashes immediately on startup | [Reset Ctrlr if it crashes on startup](https://github.com/damiensellier/CtrlrX/wiki/Reset-CTRLR-if-it-crashes-on-startup) |
+| Where are my settings stored? | [Ctrlr.settings file location](https://github.com/damiensellier/CtrlrX/wiki/Ctrlr.settings-file-location) |
+
+> 🔗 Deeper: the full, up-to-date list lives in the
+> [CtrlrX wiki](https://github.com/damiensellier/CtrlrX/wiki).
+
 ## Where to go from here
 
 You now have the full building loop: lay out controls, map them to MIDI, script behavior, debug, and

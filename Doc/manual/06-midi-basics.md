@@ -63,6 +63,29 @@ changes made on the synth itself).
 > ⚠️ Gotcha: If your newly-connected device doesn't appear in the list, CtrlrX may need to rescan.
 > Re-open the MIDI menu; if it's still missing, restart CtrlrX.
 
+## MIDI Thru: passing messages between ports
+
+Beyond sending its own controls, CtrlrX can **forward** MIDI straight through — e.g. let notes from
+your master keyboard (an Input device) reach the synth (the Output device) while the panel is open.
+Open the **MIDI Settings** dialog (MIDI menu) and choose the **Routing** tab. Each route is a
+checkbox, with an optional *Change MIDI Channel* toggle beside it that re-channels the forwarded
+message to the destination's channel:
+
+| Route (as labelled) | Forwards |
+|---|---|
+| **IN Device → OUT Device** | Incoming hardware MIDI straight to your synth. |
+| **CTRL Device → OUT Device** | Your controller keyboard to the synth. |
+| **HOST → OUT Device** | MIDI from the plugin host (DAW) to the synth. |
+| **HOST → HOST** | Host MIDI back out to the host. |
+| **In Device → Host** | Incoming hardware MIDI up to the host. |
+
+> 💡 Tip: Leave all thru routes **off** for a plain editor panel — turn one on only when you actually
+> want CtrlrX to act as a MIDI patchbay (e.g. play the synth from a keyboard through the open panel).
+
+> 🔗 Deeper: the full routing matrix and channelize behaviour are described on the
+> [Ctrlr MIDI Thru capabilities](https://github.com/damiensellier/CtrlrX/wiki/Ctrlr-MIDI-Thru-capabilities)
+> wiki page.
+
 ## Testing without hardware: a virtual MIDI port
 
 You don't need a synth to learn — create a **loopback** port and watch CtrlrX talk to itself.

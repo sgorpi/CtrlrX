@@ -94,6 +94,9 @@ When something doesn't work, walk this list:
 > ⚠️ Gotcha: After reorganizing methods into folders in the Lua editor, you may need to **save and
 > reopen the panel** to see the new structure.
 
+> 🔗 Deeper: Find more info, FAQ and examples in the
+> [CtrlrX wiki](https://github.com/damiensellier/CtrlrX/wiki).
+
 ---
 
 [← 08 Sending & Receiving](08-sending-receiving.md) | [Index](README.md) | Next: [10 — Distribution & Advanced →](10-distribution.md)
