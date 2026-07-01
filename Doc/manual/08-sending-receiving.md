@@ -252,6 +252,87 @@ end
 > [SysEx Token List](https://github.com/damiensellier/CtrlrX/wiki/SysEx-Token-List) wiki page for the
 > per-parameter token approach when you'd rather not script.
 
+## Keeping a patch image (shadow state)
+
+> **TL;DR** — The bulk methods treat *your modulators* as the source of truth. Sometimes it's easier
+> to keep the device's full patch as one **`MemoryBlock`** ("the image"), patch a byte or two into it
+> from a callback, and send it (or a region) — handy when the patch has bytes with no on-screen
+> control, or when the device only accepts whole-patch/regional writes.
+
+A `MemoryBlock` is a general-purpose byte buffer, not just a bulk-dump helper. You can hold the whole
+patch as one, mutate part of it in place, and ship it. The pieces you'll use:
+
+| Do this | With |
+|---|---|
+| Make a fixed-size, zeroed image | `MemoryBlock(size, true)` |
+| Change one byte | `block:setByte(offset, value)` |
+| Change a packed bit-field | `block:setBitRange(startBit, numBits, value)` |
+| Replace a region from another block | `block:copyFrom(src, destOffset, n)` / `block:replaceWith(src)` |
+| Take a slice | `block:getRange(start, n)` |
+| Render to hex for a SysEx frame | `block:toHexString(1)` |
+
+### Two models, side by side
+
+| | **Values live in modulators** | **Shadow patch image** |
+|---|---|---|
+| Source of truth | The modulators (see [bulk dumps](#bulk-dumps--many-modulators-in-one-message)) | A `MemoryBlock` you keep |
+| Rebuild the dump | `getModulatorValuesAsData(...)` on demand | already assembled |
+| Best when | every byte maps 1:1 to a control | the patch has name strings, reserved/flag bytes, or the device wants whole-patch/region writes |
+
+### Recipe
+
+```lua
+-- 1. In the panel "loaded" callback, create the image once, at full size:
+patch = MemoryBlock(64, true)                  -- 64 zeroed bytes
+
+-- 2. On a control change (luaModulatorValueChange), patch just that byte and
+--    send a single-parameter SysEx carrying its offset + value:
+onKnob = function(mod, value)
+    local off = tonumber(mod:getProperty("dumpIndex"))
+    patch:setByte(off, value)
+    panel:sendMidiMessageNow(CtrlrMidiMessage(
+        string.format("F0 7D 10 %02X %02X F7", off, value)))
+end
+
+-- 3. On an incoming full dump (luaPanelMidiReceived), store the body as the new
+--    image and mirror it onto the modulators:
+onDump = function(midi)
+    local data = midi:getData()
+    patch:replaceWith(data:getRange(5, tonumber(data:getSize()) - 6))   -- strip 5-byte header + F7
+    panel:setModulatorValuesFromData(data, "dumpIndex", CtrlrPanel.EncodeNormal, -5, 1, false)
+end
+
+-- 4. Send the whole image back to the device:
+sendAll = function()
+    panel:sendMidiMessageNow(CtrlrMidiMessage(
+        string.format("F0 7D 00 %s F7", patch:toHexString(1))))
+end
+```
+
+### Where the image lives
+
+The image is a plain Lua value, so give it a home:
+
+- **For the session** — a **global / module-level** variable (like `patch` above), created in the
+  panel-loaded callback. It persists across callbacks as long as the panel is open.
+- **Saved with the panel** — serialize it into the panel's save-state `ValueTree` (a `MemoryBlock`
+  won't fit in a panel *global variable*, which only stores integers):
+  ```lua
+  luaPanelSaveState    = function(s) s:setProperty("patch", patch:toBase64Encoding(), nil) end
+  luaPanelRestoreState = function(s)
+      local b64 = s:getProperty("patch")
+      if b64 then patch = MemoryBlock(); patch:fromBase64Encoding(b64) end
+  end
+  ```
+
+> ⚠️ Gotcha: `getByte`/`setByte` are lenient about bounds — an out-of-range `getByte` returns `0`
+> silently instead of erroring. Allocate the image to its full size up front (`MemoryBlock(size,
+> true)`) and treat it as fixed-length so a bad offset doesn't pass unnoticed.
+
+> 🔗 Deeper: the full `MemoryBlock` method set (byte/bit/region edits, base64, zlib/gzip, Lua-table
+> conversion) is in the [Lua reference](lua/02-lua-reference.md#memoryblock); the save/restore state
+> callbacks are covered in [Chapter 10](10-distribution.md#global-variables--persistent-state).
+
 ## Back to the example panel
 
 Wire `filterCutoff` to **CC 74 / ch 1** and `filterOn` to **CC 75 / ch 1** (max value 1). Open the

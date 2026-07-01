@@ -28,6 +28,8 @@
 - [Component-specific methods](#component-specific-methods)
 - [CtrlrMidiMessage](#ctrlrmidimessage)
 - [Sending MIDI](#sending-midi)
+- [Bulk modulator data](#bulk-modulator-data)
+- [MemoryBlock](#memoryblock)
 - [CtrlrMIDIDeviceManager & CtrlrMIDIDevice](#midi-devices)
 - [CtrlrLuaUtils (`utils`)](#ctrlrluautils-utils)
 - [CtrlrLuaMultiTimer (`timer`)](#ctrlrluamultitimer-timer)
@@ -207,6 +209,34 @@ panel:setModulatorValuesFromData(dataSource, indexProperty, encoding, offset, by
 > ⚠️ Gotcha: `bytesPerValue` must match the encoding — `1` for `EncodeNormal`, `2` for the two-byte
 > and nibble-pair encodings. The index property is stored as a **string of digits**; modulators
 > without it (or with a non-numeric value) are skipped.
+
+## MemoryBlock
+
+A general-purpose, mutable byte buffer (JUCE `MemoryBlock`). Used for SysEx payloads, bulk dumps, and
+[patch images](../08-sending-receiving.md#keeping-a-patch-image-shadow-state) — anywhere you need raw
+bytes.
+
+**Construct** — `MemoryBlock()` (empty), `MemoryBlock(size, zero)` (sized; `zero=true` fills with 0),
+`MemoryBlock("F0 7D … F7")` (from a hex string), `MemoryBlock({0xF0, 0x7D})` (from a Lua byte table),
+or `MemoryBlock(otherBlock)` (copy).
+
+| Method | Purpose |
+|---|---|
+| `getSize()` / `setSize(n)` / `ensureSize(n)` | Byte count / resize. |
+| `getByte(pos)` / `setByte(pos, v)` | Read / write one byte. |
+| `getBitRange(startBit, numBits)` / `setBitRange(startBit, numBits, v)` | Read / write a packed bit-field. |
+| `getRange(start, n)` | Return a slice as a new `MemoryBlock`. |
+| `copyFrom(src, destOffset, n)` / `copyTo(dst, srcOffset, n)` | Copy a region in / out. |
+| `replaceWith(block)` | Replace the whole contents. |
+| `insert(block, pos)` / `append(block)` / `removeSection(start, n)` / `fillWith(byte)` | Structural edits. |
+| `toHexString(groupSize)` | Space-grouped hex string (use `1` for `"F0 7D …"`). |
+| `toString()` / `loadFromHexString(s)` | Text form / parse hex. |
+| `toLuaTable(t)` / `insertIntoTable(t)` / `MemoryBlock.fromLuaTable(t)` | Convert to / from a Lua byte table. |
+| `toBase64Encoding()` / `fromBase64Encoding(s)` | Round-trip to a base64 string (handy for saving in state). |
+| `compressZlib()` / `decompressZlib()` / `compressGzip()` / `decompressGzip()` | Return a compressed / decompressed copy. |
+
+> ⚠️ Gotcha: `getByte`/`setByte` don't throw on a bad index — an out-of-range `getByte` returns `0`.
+> Size the block up front (`MemoryBlock(size, true)`) and treat it as fixed-length.
 
 ## MIDI devices
 

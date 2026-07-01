@@ -43,10 +43,16 @@ patch names and Lua to send/receive SysEx bulk dumps. A common workflow for hard
 2. Show patches in a list; on selection, send that patch's SysEx to the device.
 3. Save/load banks to `.syx` files on disk (via `uiFileListBox` and Lua file I/O).
 
+Each stored patch is naturally a **`MemoryBlock`** — the device's raw SysEx image. Rather than
+scattering the values across modulators, many librarians keep each patch as one block and mirror it
+onto the controls only when it's selected. That "keep the whole patch as an image, edit part of it"
+approach is [Keeping a patch image (shadow state)](08-sending-receiving.md#keeping-a-patch-image-shadow-state)
+in Chapter 8.
+
 > 🔗 Deeper: the building blocks are `uiListBox`/`uiFileListBox` ([Chapter 4](04-gui-elements.md)),
-> SysEx send/receive ([Chapter 8](08-sending-receiving.md)), and Lua `File`/resource APIs
-> ([Lua reference](lua/02-lua-reference.md)). The `panel:getProgramState()` /
-> `setProgramState()` methods help capture/restore values.
+> SysEx send/receive and the patch-image pattern ([Chapter 8](08-sending-receiving.md)), and Lua
+> `File`/`MemoryBlock` APIs ([Lua reference](lua/02-lua-reference.md#memoryblock)). The
+> `panel:getProgramState()` / `setProgramState()` methods help capture/restore values.
 
 ## Running as a plugin & host automation
 
