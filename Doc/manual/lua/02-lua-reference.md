@@ -10,9 +10,6 @@
 > - For the exhaustive, always-correct list, ask the running app: `how()` and `what(obj)` ([Chapter 9](../09-debugging.md)).
 > - Non-`Ctrlr…` classes (File, Colour, Graphics, …) are JUCE classes — see the [JUCE API docs](https://docs.juce.com/master/index.html).
 
-[← Lua Guide](01-lua-guide.md) · [Manual Index](../README.md)
-
----
 
 > ⚠️ **Accuracy note.** These names were taken from the luabind registrations in this source tree
 > (`Source/Lua/CtrlrLuaManager.cpp`, `Source/MIDI/CtrlrMidiMessage.cpp`,
@@ -71,13 +68,44 @@ The panel. Reach controls, send MIDI, manage state.
 | `getPanelEditor()` | The editor (size, canvas) — editing context. |
 | `sendMidiMessageNow(msg)` | Send a `CtrlrMidiMessage` or a hex string immediately. |
 | `sendMidi(msg, ts)` | Send with a timestamp (`CtrlrMidiMessage`, `MidiMessage`, or `MidiBuffer`). |
-| `getGlobalVariable(i)` / `setGlobalVariable(i, v)` | Panel-wide integer variables. |
+| `getGlobalVariable(i)` / `setGlobalVariable(i, v)` | Panel-wide integer variables. **64 of them, indices `0`–`63`.** `setGlobalVariable` **silently ignores** an out-of-range index (and only 0–63 are saved with the panel); `getGlobalVariable` returns `0` for an out-of-range index. |
 | `getProgramState()` / `setProgramState(...)` | Capture / restore all control values (a patch). |
 | `getModulatorValuesAsData(...)` | Serialize many modulators' values into a `MemoryBlock` (bulk dumps — see [below](#bulk-modulator-data)). |
 | `setModulatorValuesFromData(...)` | Apply an incoming data block back onto the modulators ([below](#bulk-modulator-data)). |
-| `getRestoreState()` / `setRestoreState(...)` / `isRestoring()` | Load-time state flags. |
-| `getBootstrapState()` | Initial state. |
-| `isLoading()` | True while the panel is loading. |
+| `getRestoreState()` / `isRestoring()` | True while the panel is **loading/restoring** state (e.g. a DAW project). `isRestoring()` is the readable alias for `getRestoreState()`. The same pair exists on a modulator ([below](#ctrlrmodulator)). |
+| `getProgramState()` | True while a **program/preset** is being applied. |
+| `getBootstrapState()` | True during the initial **bootstrap** (first construction) — a *separate* one-time startup state. |
+| `setRestoreState(...)` | Set the restore flag (rarely needed from scripts). |
+| `isLoading()` *(5.6.36+)* | **The single "is the panel busy loading right now?" check.** Combines restore + program + bootstrap states (plus a short post-bootstrap cooldown). Not present in earlier versions of CtrlrX. |
+
+> ⚠️ **Guarding a method so it doesn't fire during load** (the common reason to check these). A method
+> that sends MIDI or touches other controls usually should **do nothing** while the panel is still
+> loading a project, applying a preset, or booting. How you write that guard depends on your CtrlrX
+> version:
+>
+> ```lua
+> -- Version-proof guard: uses isLoading() on 5.6.36+, falls back to the older
+> -- flags on current releases. Put this at the top of methods that shouldn't
+> -- run during boot / DAW load / preset change.
+> local function panelIsLoading()
+>     if panel.isLoading ~= nil then          -- 5.6.36+ : one comprehensive check
+>         return panel:isLoading()
+>     end
+>     -- Older releases: combine the individual flags yourself.
+>     return panel:getBootstrapState()
+>         or panel:getRestoreState()          -- == panel:isRestoring()
+>         or panel:getProgramState()
+> end
+>
+> myMethod = function(mod, value, source)
+>     if panelIsLoading() then return end
+>     -- ...safe to send MIDI / update other controls here...
+> end
+> ```
+>
+> **`isLoading()` is new since CtrlrX version `5.6.36`**; on earlier version it will fail, so use 
+> the fallback above (or just the three older flags). In 5.6.36+ the auto-generated method template
+> already inserts `if panel:isLoading() then return end` for you.
 
 > 💡 Tip: `sendMidiMessageNow` accepts a plain hex string — `panel:sendMidiMessageNow("B0 4A 7F")` —
 > as well as a `CtrlrMidiMessage` object.
@@ -238,6 +266,50 @@ or `MemoryBlock(otherBlock)` (copy).
 > ⚠️ Gotcha: `getByte`/`setByte` don't throw on a bad index — an out-of-range `getByte` returns `0`.
 > Size the block up front (`MemoryBlock(size, true)`) and treat it as fixed-length.
 
+### Future-proofing for LuaJIT/FFI (fast raw access)
+
+Today's CtrlrX runs Lua through **LuaBind**, which has **no FFI** (Foreign Function Interface) and exposes 
+**no raw-pointer accessor** — you read/write a block only through the methods above. A migration to **LuaJIT** is in
+progress on a separate branch; once it lands, LuaJIT's **FFI** plus a `getRawAddress` method would let
+scripts touch a block's bytes *directly*, which is dramatically faster for large bulk dumps.
+
+You don't have to choose one or the other. Write **version-proof** helpers that use the fast FFI path
+when it's available and fall back to `getByte`/`setByte` otherwise — the same script then runs on both
+current and future builds:
+
+```lua
+-- Detect whether the fast path (LuaJIT FFI + MemoryBlock:getRawAddress) is usable.
+local hasFFI, ffi = pcall(require, "ffi")
+local FFI_IS_SAFE = false
+if hasFFI then
+    local testBlock = MemoryBlock(1, true)
+    local ok, usable = pcall(function()
+        return testBlock.getRawAddress ~= nil and testBlock:getRawAddress() ~= nil
+    end)
+    FFI_IS_SAFE = ok and usable or false
+end
+
+-- Crash-safe accessors: fast pointer access when available, methods otherwise.
+local function mbGet(block, idx)
+    if FFI_IS_SAFE then
+        return ffi.cast("uint8_t*", block:getRawAddress())[idx]
+    end
+    return block:getByte(idx)
+end
+
+local function mbSet(block, idx, val)
+    if FFI_IS_SAFE then
+        ffi.cast("uint8_t*", block:getRawAddress())[idx] = val
+    else
+        block:setByte(idx, val)
+    end
+end
+```
+
+On current LuaBind builds `require("ffi")` fails (or `getRawAddress` is absent), `FFI_IS_SAFE` stays
+`false`, and everything routes through the safe method calls. On a future LuaJIT build the capability
+check passes and the same code uses direct pointer access. *(Credit: pattern from @dnaldoog on PR #286.)*
+
 ## MIDI devices
 
 `devices` is a `CtrlrMIDIDeviceManager`.
@@ -295,7 +367,8 @@ Attach a method to one of these via the modulator/panel/component callback dropd
 ([Chapter 7](../07-making-responsive.md)). Names come from
 `Source/Resources/XML/CtrlrLuaMethodTemplates.xml`.
 
-**Panel-level**
+
+### Panel-level callback hooks
 
 | Callback | Fires when |
 |---|---|
@@ -319,7 +392,8 @@ Attach a method to one of these via the modulator/panel/component callback dropd
 | `luaAudioProcessBlock(midiBuffer, posInfo)` | Audio block (plugin). |
 | `luaPanelFileDragDropHandler` / `…DragEnterHandler` / `…DragExitHandler` | File drag & drop on the panel. |
 
-**Modulator-level**
+
+### Modulator-level callback hooks
 
 | Callback | Fires when |
 |---|---|
@@ -327,10 +401,51 @@ Attach a method to one of these via the modulator/panel/component callback dropd
 | `luaModulatorGetValueForMIDI(...)` | Convert value → MIDI (custom). |
 | `luaModulatorGetValueFromMIDI(...)` | Convert MIDI → value (custom). |
 
-The `source` argument (avoid feedback loops): `0` initial, `1` host, `2` MIDI in, `3` controller,
-`4` GUI, `5` Lua, `6` program, `7` link, `8` unknown.
+#### Filtering by `source` (why the third argument matters)
 
-**Component-level**
+`luaModulatorValueChange` fires for **every** value change — no matter *what* caused it. The `source`
+argument tells you the cause, so your method can **react to some changes and ignore others**. This is
+essential the moment your callback sends MIDI, because otherwise you create a **feedback loop**:
+
+1. The user turns a knob → your callback runs → it sends MIDI to the synth.
+2. The synth (or a MIDI-thru path) echoes that value back → CtrlrX applies it to the modulator →
+   your callback runs *again* → it sends MIDI *again* → … a storm of duplicated messages.
+
+Filtering breaks the loop: only send MIDI when the change came from the **GUI** (the user), and stay
+quiet when it came from **MIDI in** (the echo).
+
+```lua
+-- assigned to a modulator's "value changed" callback (luaModulatorValueChange)
+myKnobChanged = function(mod, value, source)
+    -- 4 = changed by the GUI (user). Ignore MIDI-in echoes (2) and everything else.
+    if source == 4 then
+        panel:sendMidiMessageNow(string.format("B0 4A %02X", value))
+    end
+end
+```
+
+`source` values — pass an integer; the same names are also registered as constants
+(`CtrlrModulator.changedByMidiIn`, etc.):
+
+| Value | Constant | Meaning |
+|---|---|---|
+| `0` | `initialValue` | Set during load / initialisation. |
+| `1` | `changedByHost` | The plugin host (automation). |
+| `2` | `changedByMidiIn` | Incoming MIDI matched this modulator. |
+| `3` | `changedByMidiController` | A MIDI-learn controller. |
+| `4` | `changedByGUI` | The user moved the on-screen control. |
+| `5` | `changedByLua` | A Lua script set the value. |
+| `6` | `changedByProgram` | A program/patch change. |
+| `7` | `changedByLink` | A linked modulator. |
+| `8` | `changeByUnknown` | Unknown / other. |
+
+> 🔗 Deeper: the enum is `CtrlrModulatorValue::LastChangeSource`
+> ([CtrlrModulatorProcessor.h](../../../Source/Core/CtrlrModulator/CtrlrModulatorProcessor.h)),
+> registered for Lua in `CtrlrLuaManager.cpp`. Worked examples:
+> [Source filter with LUA scripts](https://github.com/damiensellier/CtrlrX/wiki/Source-filter-with-LUA-scripts).
+
+
+### Component-level callback hooks
 
 | Group | Callbacks |
 |---|---|

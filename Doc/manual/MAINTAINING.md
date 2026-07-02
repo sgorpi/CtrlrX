@@ -137,6 +137,8 @@ Lua/console workflows that have no distinct UI.
   `#bulk-dumps--many-`). Test cross-file `file.md#anchor` links against the actual heading.
 - **Source accuracy spot-check**: re-open the source file for at least the trickiest new claim.
 - **Reciprocal Lua-reference anchors exist** for any `lua/02-lua-reference.md#...` link you added.
+- **Table of contents (TOC) is up-to-date**: All sections of a chapter are listed in the TOC and 
+  the TOC does not contain stale links to sections.
 - Don't claim completeness you haven't checked; if a screenshot is deferred, say so.
 
 ---
@@ -164,3 +166,4 @@ Lua/console workflows that have no distinct UI.
 - Keep everything **GitHub-renderable** (the manual is read straight from the repo tree, e.g.
   `.../tree/documentation/Doc/manual#readme`). Avoid HTML where Markdown suffices.
 - Commit only when asked; don't push or touch the PR without explicit approval.
+- The app is cross-platform, if examples rely on specific OS features then give examples for all platforms.

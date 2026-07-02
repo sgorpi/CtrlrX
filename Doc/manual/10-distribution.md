@@ -10,7 +10,14 @@
 > - Used as a **VST/AU plugin**, controls with a **VST index** become host-automatable parameters.
 > - **Global variables** and **state callbacks** persist data with the panel.
 
-[← 09 Debugging](09-debugging.md) · [Index](README.md)
+## Contents
+
+- [Saving and export formats](#saving-and-export-formats)
+- [Snapshots, programs, and a librarian](#snapshots-programs-and-a-librarian)
+- [Running as a plugin & host automation](#running-as-a-plugin--host-automation)
+- [Global variables & persistent state](#global-variables--persistent-state)
+- [Troubleshooting & platform notes](#troubleshooting--platform-notes)
+- [Where to go from here](#where-to-go-from-here)
 
 ---
 
@@ -76,7 +83,11 @@ Two mechanisms let a panel keep data:
   panel:setGlobalVariable(0, 42)
   local v = panel:getGlobalVariable(0)
   ```
-  A change fires the `luaPanelGlobalChanged(index, value)` callback.
+  A change fires the `luaPanelGlobalChanged(index, value)` callback. There are **64 of them**, at
+  fixed indices **0–63**, and they store **integers only**. Setting an index outside 0–63 is silently
+  ignored; only 0–63 are saved with the panel. These are the same globals a
+  [SysEx formula](08-sending-receiving.md#sysex-messages-formulas--tokens) can read with its
+  `k…`/`o…`/`p…`/`n…` tokens, and a [value expression](05-value-mapping.md) can set with `setGlobal`.
 - **State callbacks** — `luaPanelSaveState(tree)` / `luaPanelRestoreState(tree)` let you stash and
   restore arbitrary data in the panel's saved state (and `luaCtrlrSaveState`/`luaCtrlrResoreState`
   at the Ctrlr level).

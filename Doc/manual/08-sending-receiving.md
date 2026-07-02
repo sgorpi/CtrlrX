@@ -9,7 +9,15 @@
 > - **SysEx** messages use a **formula**: a byte template with tokens that get filled in at send time.
 > - **Receiving**: CtrlrX matches incoming MIDI to a modulator (by type/channel/number) and updates it automatically; use callbacks for custom handling.
 
-[← 07 Making Responsive](07-making-responsive.md) · [Index](README.md) · Next: [09 — Debugging →](09-debugging.md)
+## Contents
+
+- [Multi messages (14-bit, NRPN/RPN, sequences)](#multi-messages-14-bit-nrpnrpn-sequences)
+- [SysEx messages (formulas & tokens)](#sysex-messages-formulas--tokens)
+- [Receiving MIDI](#receiving-midi)
+- [Sending MIDI from Lua](#sending-midi-from-lua)
+- [Bulk dumps — many modulators in one message](#bulk-dumps--many-modulators-in-one-message)
+- [Keeping a patch image (shadow state)](#keeping-a-patch-image-shadow-state)
+- [Back to the example panel](#back-to-the-example-panel)
 
 ---
 
@@ -73,37 +81,82 @@ CC,123,0 : CC,120,0
 ## SysEx messages (formulas & tokens)
 
 System Exclusive lets a device expose parameters that have no standard MIDI message. Set **MIDI
-message type = SysEx** and write a **SysEx formula**: the raw bytes of the message, with **tokens**
-where dynamic data goes.
+message type = SysEx** and write a **SysEx formula**: the raw bytes of the message written as
+two-character **hex** (e.g. `F0 7D 12 … F7`), with short **token codes** wherever a byte should be
+filled in dynamically at send time.
 
-A formula is mostly literal hex bytes, plus tokens such as:
+The tokens are **short codes you type into the formula** — *not* long names. Each code stands for a
+byte (or bytes) that CtrlrX substitutes when the message is sent: `xx` becomes the modulator's value,
+`yy` becomes the MIDI channel, a checksum code becomes the computed checksum, and so on. You can type
+them by hand, or (in the SysEx editor) click a byte cell and use **Add Token** to insert the right
+code from a menu.
 
-| Token | Inserts |
+The codes you'll use most:
+
+| Code | Byte it inserts |
 |---|---|
-| `ByteValue` | The modulator's value as one byte. |
-| `MSB7bitValue` / `LSB7bitValue` | The value's high / low 7 bits (for >127 values). |
-| `MSB4bitValue` / `LSB4bitValue` | 4-bit nibbles of the value. |
-| `ByteChannel` / `ByteChannel4Bit` | The MIDI channel. |
-| `CurrentProgram` / `CurrentBank` | The current program / bank number. |
-| `GlobalVariable` | A panel global variable. |
-| `Checksum…` (`Xor`, `OnesComplement`, `SummingSimple`, `Technics`, `RolandJP8080`) | A computed checksum over the message. |
-| `RolandSplitByte1..4`, `Nibble16bitLsb/Msb0..3` | Device-specific byte/nibble splits. |
-| `LUAToken` / `FormulaToken` | A value computed by Lua / a sub-formula. |
-| `Ignore` | A placeholder byte. |
+| `xx` | The modulator's value as one 7-bit byte. |
+| `MS` / `LS` | The value's high / low **7 bits** (for values > 127, e.g. a 14-bit parameter). |
+| `ms` / `ls` | The value's high / low **4-bit** nibble. |
+| `yy` | The MIDI channel (7-bit). `0y` packs it into a low nibble (4-bit). |
+| `r1`–`r4` | Roland-style address/value **byte splits** (e.g. JV/JD series). |
+| `q0`–`q3` / `Q0`–`Q3` | A 16-bit value as four 4-bit nibbles, LSB-first / MSB-first. |
+| `tp` / `tb` | The current program / bank number. |
+| `k…` / `o…` / `p…` / `n…` | The current value of a panel [global variable](10-distribution.md#global-variables--persistent-state) (see note below). |
+| `ii` | Ignore this byte when *matching incoming* SysEx (wildcard). |
+| `f0` / `f7` | Literal SysEx start `F0` / end `F7` (typing `F0`/`F7` works too). |
+| `Xn` `zn` `wn` `On` `tc` | A **checksum** over the *n* bytes preceding it — XOR (`Xn`), 2's-complement (`zn`; Roland/Yamaha), simple sum (`wn`), 1's-complement (`On`, an o, not a zero), Technics (`tc`). |
+| `u…` / `v…` | A byte computed by Lua / by a sub-formula. |
 
-**Conceptual example** — a single-parameter SysEx for a fictional device (manufacturer `7D`, set
-parameter `0x12` to the knob value, with an XOR checksum):
+> 💡 The digit after a checksum code is how many preceding bytes it covers. `X3` = XOR of the 3
+> bytes immediately before the checksum byte.
+
+> 💡 **Global-variable tokens** (`k…` / `o…` / `p…` / `n…`). A panel has **64 global variables** — a
+> shared array of integers (indices 0–63) that your Lua methods and value expressions read and write
+> with `panel:getGlobalVariable(i)` / `panel:setGlobalVariable(i, v)` (see
+> [Chapter 10](10-distribution.md#global-variables--persistent-state)). One of these tokens inserts the
+> *current value* of one global as a byte in the message. The **letter selects a bank of 16** and the
+> **trailing hex digit (`0`–`f`) selects within it**:
+>
+> | Token | Global index |
+> |---|---|
+> | `k0`–`kf` | 0–15 |
+> | `o0`–`of` | 16–31 |
+> | `p0`–`pf` | 32–47 |
+> | `n0`–`nf` | 48–63 |
+>
+> So `k5` emits the value of global `5`; `o0` emits global `16`. This is how you put a value into a
+> SysEx message that **isn't** the modulator's own value — e.g. a device ID, a bank/part number, or a
+> shared "current edit buffer" index your script maintains. Easiest is **Add Token → Global variable**,
+> which writes the correct code for you.
+
+**Example 1** — a fictional device (manufacturer `7D`), set parameter `0x12` to the knob value, with
+an XOR checksum over the three bytes before it:
 
 ```
-F0 7D 12 ByteValue ChecksumXor F7
+F0 7D 12 xx X3 F7
 ```
 
-When the knob moves, CtrlrX substitutes `ByteValue` and computes `ChecksumXor`, then sends the
-complete `F0 … F7` message.
+When the knob moves, CtrlrX substitutes `xx` with the value and replaces `X3` with `7D ^ 12 ^ value`,
+then sends the complete `F0 … F7` message.
 
-> 🔗 Deeper: SysEx parsing/building lives in `CtrlrSysexProcessor` / `CtrlrSysexToken`
-> ([Source/Core/](../../Source/Core/CtrlrSysexProcessor.h)). For complex devices, compute bytes in Lua
-> and send them with `panel:sendMidiMessageNow(...)` (see below and the
+**Example 2** — a 14-bit parameter split into MSB + LSB bytes (set **Maximum value = 16383**):
+
+```
+F0 43 10 4A MS LS F7
+```
+
+Here `MS`/`LS` carry the high/low 7 bits of the value.
+
+> ⚠️ These short codes are the **SysEx formula** vocabulary and are *different* from the enum values
+> (`ByteValue`, `MSB7bitValue`, …) used in the source code. In a SysEx formula, type `xx`, not `ByteValue`.
+
+> 🔗 Deeper: the code→byte mapping is `CtrlrSysexProcessor::sysExIdentifyToken`
+> ([Source/Core/](../../Source/Core/CtrlrSysexProcessor.cpp)); token substitution/checksums live in the
+> same file and `CtrlrSysexToken`. The full list (including every checksum and split) is on the
+> [SysEx Token List](https://github.com/damiensellier/CtrlrX/wiki/SysEx-Token-List) wiki page. For
+> devices too gnarly for the token language, compute bytes in Lua and send them with
+> `panel:sendMidiMessageNow(...)` (see below and the
 > [Lua reference](lua/02-lua-reference.md#sending-midi)).
 
 ## Receiving MIDI

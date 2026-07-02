@@ -9,7 +9,16 @@
 > - Add a knob (**uiSlider**) and a switch (**uiToggleButton**) to a tab.
 > - Save. You now have a panel skeleton — [Chapter 7](07-making-responsive.md) makes it send MIDI.
 
-[← 02 Core Concepts](02-core-concepts.md) · [Index](README.md) · Next: [04 — GUI Elements →](04-gui-elements.md)
+## Contents
+
+- [Step 1 — Create and name the panel](#step-1--create-and-name-the-panel)
+- [Step 2 — Set the panel size](#step-2--set-the-panel-size)
+- [Step 3 — Add a tabs container](#step-3--add-a-tabs-container)
+- [Step 4 — Add a knob](#step-4--add-a-knob)
+- [Step 5 — Add a switch](#step-5--add-a-switch)
+- [Step 6 — Try Panel mode](#step-6--try-panel-mode)
+- [Step 7 — Save](#step-7--save)
+- [What you have now](#what-you-have-now)
 
 ---
 

@@ -10,7 +10,14 @@
 > - Set them under the **MIDI** menu. No hardware? Use a **virtual/loopback MIDI port** to test.
 > - Then open **Tools → MIDI Monitor** to watch messages flow.
 
-[← 05 Value Mapping](05-value-mapping.md) · [Index](README.md) · Next: [07 — Making Elements Responsive →](07-making-responsive.md)
+## Contents
+
+- [A 60-second MIDI primer](#a-60-second-midi-primer)
+- [The three device roles](#the-three-device-roles)
+- [Connect a device](#connect-a-device)
+- [MIDI Thru: passing messages between ports](#midi-thru-passing-messages-between-ports)
+- [Testing without hardware: a virtual MIDI port](#testing-without-hardware-a-virtual-midi-port)
+- [Watch the traffic: the MIDI Monitor](#watch-the-traffic-the-midi-monitor)
 
 ---
 

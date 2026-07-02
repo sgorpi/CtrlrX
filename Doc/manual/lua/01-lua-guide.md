@@ -10,7 +10,14 @@
 > - Inside a method you have ready-made globals: `panel`, `utils`, `timer`, `devices`, and more.
 > - This page teaches the language; the [API Reference](02-lua-reference.md) lists what CtrlrX exposes.
 
-[← Manual Index](../README.md) · Next: [Lua API Reference →](02-lua-reference.md)
+## Contents
+
+- [Why Lua, and which version](#why-lua-and-which-version)
+- [How Lua fits into CtrlrX](#how-lua-fits-into-ctrlrx)
+- [Lua in 10 minutes (for programmers)](#lua-in-10-minutes-for-programmers)
+- [A few CtrlrX-specific habits](#a-few-ctrlrx-specific-habits)
+- [Sending MIDI from a method (using variables)](#sending-midi-from-a-method-using-variables)
+- [A complete small example](#a-complete-small-example)
 
 ---
 

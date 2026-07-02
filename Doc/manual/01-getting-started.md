@@ -9,7 +9,14 @@
 > - A **panel** is the document you build — it holds your controls, their MIDI mappings, and any Lua scripts.
 > - Launch the standalone, create a new panel, and you're ready for [Chapter 3](03-first-panel.md).
 
-[← Index](README.md) · Next: [02 — Core Concepts →](02-core-concepts.md)
+## Contents
+
+- [What is CtrlrX?](#what-is-ctrlrx)
+- [Standalone vs. plugin](#standalone-vs-plugin)
+- [Installing / launching](#installing--launching)
+- [First launch](#first-launch)
+- [Create a new panel](#create-a-new-panel)
+- [Where to go next](#where-to-go-next)
 
 ---
 

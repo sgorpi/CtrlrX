@@ -10,7 +10,14 @@
 > - A **value map** translates raw values ↔ display text/values. Combos and fixed sliders use it for named choices.
 > - In Lua: `getValue()`/`setValue()` for raw, `getValueMapped()`/`setValueMapped()` for mapped.
 
-[← 04 GUI Elements](04-gui-elements.md) · [Index](README.md) · Next: [06 — MIDI Basics →](06-midi-basics.md)
+## Contents
+
+- [Raw range: Minimum and Maximum](#raw-range-minimum-and-maximum)
+- [Mapped vs. non-mapped values](#mapped-vs-non-mapped-values)
+- [Value maps (named choices and lookup tables)](#value-maps-named-choices-and-lookup-tables)
+- [Reading and writing values in Lua](#reading-and-writing-values-in-lua)
+- [Expression properties (math without Lua)](#expression-properties-math-without-lua)
+- [When you need an arbitrary lookup](#when-you-need-an-arbitrary-lookup)
 
 ---
 

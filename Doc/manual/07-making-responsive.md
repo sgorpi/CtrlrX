@@ -10,7 +10,11 @@
 > - For logic: attach a **Lua method** to a callback (e.g. *modulator value changed*).
 > - The two combine freely: a control can send MIDI *and* trigger a script.
 
-[← 06 MIDI Basics](06-midi-basics.md) · [Index](README.md) · Next: [08 — Sending & Receiving MIDI →](08-sending-receiving.md)
+## Contents
+
+- [Path A — send MIDI](#path-a--send-midi)
+- [Path B — run a Lua method](#path-b--run-a-lua-method)
+- [Combining both](#combining-both)
 
 ---
 

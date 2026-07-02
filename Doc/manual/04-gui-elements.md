@@ -10,7 +10,15 @@
 > - **Static** elements (labels, image, arrow, group, tabs, progress bar) don't produce a MIDI value.
 > - Jump to the table for your category below.
 
-[← 03 Your First Panel](03-first-panel.md) · [Index](README.md) · Next: [05 — Value Mapping →](05-value-mapping.md)
+## Contents
+
+- [Sliders](#sliders)
+- [Buttons](#buttons)
+- [Statics](#statics)
+- [Groups and views](#groups-and-views)
+- [Misc](#misc)
+- [Properties every modulator shares](#properties-every-modulator-shares)
+- [Choosing the right control — quick guide](#choosing-the-right-control--quick-guide)
 
 ---
 

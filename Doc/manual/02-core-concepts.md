@@ -10,7 +10,15 @@
 > - The **Properties** panel edits the selected modulator. The **Modulator list** lets you reach controls you can't click.
 > - **Resources** are the images/fonts your panel uses. **Layers/Groups/Tabs** organize controls.
 
-[← 01 Getting Started](01-getting-started.md) · [Index](README.md) · Next: [03 — Your First Panel →](03-first-panel.md)
+## Contents
+
+- [Modulator vs. component (the one distinction to learn)](#modulator-vs-component-the-one-distinction-to-learn)
+- [Edit mode vs. Panel mode](#edit-mode-vs-panel-mode)
+- [The editor at a glance](#the-editor-at-a-glance)
+- [The Modulator list](#the-modulator-list)
+- [Resources: images and fonts](#resources-images-and-fonts)
+- [Organizing a panel: groups, tabs, and layers](#organizing-a-panel-groups-tabs-and-layers)
+- [The mental model, end to end](#the-mental-model-end-to-end)
 
 ---
 

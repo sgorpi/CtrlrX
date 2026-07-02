@@ -10,7 +10,13 @@
 > - `how()` lists all classes bound to Lua; `what(obj)` lists the methods of one object.
 > - Most "it doesn't work" cases are: wrong mode, unassigned Lua method, or a MIDI device not selected.
 
-[← 08 Sending & Receiving](08-sending-receiving.md) · [Index](README.md) · Next: [10 — Distribution & Advanced →](10-distribution.md)
+## Contents
+
+- [Tool 1 — the MIDI Monitor](#tool-1--the-midi-monitor)
+- [Tool 2 — the Lua console](#tool-2--the-lua-console)
+- [Tool 3 — introspection: `how()` and `what()`](#tool-3--introspection-how-and-what)
+- [Reading Lua errors](#reading-lua-errors)
+- [The usual suspects — a checklist](#the-usual-suspects--a-checklist)
 
 ---
 
