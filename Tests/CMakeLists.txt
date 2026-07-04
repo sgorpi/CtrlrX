@@ -10,6 +10,10 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Provides gtest_discover_tests(), which registers every TEST_F/TEST_P as its own ctest
+# case so `ctest -j` can run them in parallel, each in its own process (true isolation).
+include(GoogleTest)
+
 message(STATUS "Tests enabled")
 
 # Copy the test panel to the build directory
@@ -23,6 +27,11 @@ configure_file("fixture_lua_midi_received.panel" "fixture_lua_midi_received.pane
 configure_file("fixture_lua_multi_received.panel" "fixture_lua_multi_received.panel" COPYONLY)
 configure_file("fixture_lua_send.panel" "fixture_lua_send.panel" COPYONLY)
 configure_file("fixture_lua_nrpn.panel" "fixture_lua_nrpn.panel" COPYONLY)
+configure_file("fixture_lua_lifecycle.panel" "fixture_lua_lifecycle.panel" COPYONLY)
+configure_file("fixture_lua_bindings.panel" "fixture_lua_bindings.panel" COPYONLY)
+configure_file("fixture_lua_gui.panel" "fixture_lua_gui.panel" COPYONLY)
+configure_file("fixture_lua_valuechange.panel" "fixture_lua_valuechange.panel" COPYONLY)
+configure_file("fixture_lua_invalid.panel" "fixture_lua_invalid.panel" COPYONLY)
 
 # find all test sources
 file(GLOB_RECURSE MockFiles CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mock*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/mock*.h")
@@ -48,5 +57,11 @@ if ((DEFINED ENV{CI}))
     target_compile_definitions(TestsProcessor PUBLIC CI=1)
 endif ()
 
-add_test(NAME TestsProcessor COMMAND TestsProcessor)
+# Register each GoogleTest case (including every parameterised TEST_P/.../0,/1 instance) as an
+# individual ctest test, named with its exact gtest fully-qualified name -- the same strings used
+# in known_failures.txt. PRE_TEST enumerates at ctest time rather than running the freshly-built
+# binary during `cmake --build`. Run with `ctest -jN` for parallel, per-process isolation.
+gtest_discover_tests(TestsProcessor
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES TIMEOUT 120)
 

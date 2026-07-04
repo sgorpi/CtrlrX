@@ -159,10 +159,15 @@ jobs:
         continue-on-error: true
         working-directory: ${{ env.BUILD_DIR }}/Tests
         env:
-          # Make GoogleTest emit a per-test JUnit report (build/Tests/results.xml) for the
-          # separate, non-blocking test_results checks below.
-          GTEST_OUTPUT: "xml:results.xml"
-        run: ctest --verbose --output-on-failure -C ${{ env.BUILD_TYPE}}
+          # Each test is its own ctest case (gtest_discover_tests), so `-j` runs them in parallel,
+          # each in its own process (isolation). GTEST_OUTPUT points at a directory;
+          # test_ProcessorMain.cpp gives each run a unique <fqn>.xml (build/Tests/test-results/*.xml)
+          # so the parallel runs don't clash. Those per-test JUnit files feed the separate,
+          # non-blocking test_results checks below.
+          GTEST_OUTPUT: "xml:test-results/"
+        run: |
+          rm -rf test-results && mkdir -p test-results
+          ctest -j"$(nproc)" --output-on-failure -C ${{ env.BUILD_TYPE }}
 
       - name: Upload test results
         # Only Linux feeds the checks for now. To add a platform later, OR in its
@@ -171,7 +176,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.name }}
-          path: ${{ env.BUILD_DIR }}/Tests/results.xml
+          path: ${{ env.BUILD_DIR }}/Tests/test-results/
           if-no-files-found: warn
 
 
@@ -566,10 +571,10 @@ jobs:
       - name: Test summary
         uses: test-summary/action@v2
         with:
-          paths: "test-results/**/results.xml"
+          paths: "test-results/**/*.xml"
 
       - name: Evaluate results
-        run: python3 Tests/ci_check_test_results.py ${{ matrix.allow_arg }} "test-results/**/results.xml"
+        run: python3 Tests/ci_check_test_results.py ${{ matrix.allow_arg }} "test-results/**/*.xml"
 
 
   release:
