@@ -1,11 +1,17 @@
+// The CoreMIDI / CoreFoundation system headers must be included BEFORE JuceHeader.h: they pull in
+// MacTypes.h, whose global `Point` type would otherwise clash with juce::Point ("reference to
+// 'Point' is ambiguous"). JUCE's own juce_mac_CoreMidi.mm relies on the same ordering. Guard with
+// the compiler-predefined __APPLE__ (JUCE_MAC isn't known until JuceHeader.h is included).
+#ifdef __APPLE__
+ #include <CoreMIDI/CoreMIDI.h>
+ #include <CoreFoundation/CoreFoundation.h>
+ #include <Block.h>
+#endif
+
 #include "mock_MidiDevice.h"
 #if JUCE_MAC
 
 InformMockMidiOfSubsystem mockMidiSubsystem;
-
-#include <CoreMIDI/CoreMIDI.h>
-#include <CoreFoundation/CoreFoundation.h>
-#include <Block.h>
 
 // JUCE's universal_midi_packets headers are included only inside juce_audio_devices.cpp, so they
 // are not visible through <JuceHeader.h>. Pull the (header-only) converter chain in directly; the
@@ -48,6 +54,12 @@ InformMockMidiOfSubsystem mockMidiSubsystem;
  */
 
 namespace ump = juce::universal_midi_packets;
+
+// The EventList/UMP CoreMIDI entry points and MIDIReceiveBlock are API_AVAILABLE(macos(11.0)).
+// JUCE gates them behind @available; this mock calls them directly, and the CI runner is always
+// macOS 14, so silence the (default-error) unguarded-availability diagnostic for the whole TU.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
 
 namespace
 {
@@ -107,7 +119,7 @@ namespace
         if (blocks.empty())
             return;
 
-        alignas (4) juce::uint8 storage[65536];
+        alignas (8) juce::uint8 storage[65536];
         auto* list = reinterpret_cast<MIDIEventList*> (storage);
         MIDIEventPacket* packet = MIDIEventListInit (list, kMIDIProtocol_1_0);
 
@@ -345,5 +357,7 @@ OSStatus MIDISourceCreateWithProtocol (MIDIClientRef, CFStringRef, MIDIProtocolI
 }
 
 } // extern "C"
+
+#pragma clang diagnostic pop
 
 #endif // JUCE_MAC
