@@ -131,10 +131,6 @@ namespace
                                        view.size(), view.data());
         });
 
-        std::fprintf (stderr, "[cmidi] deliverToBlocks: %d block(s), msg=%s\n",
-                      (int) blocks.size(), msg.getDescription().toRawUTF8());
-        std::fflush (stderr);
-
         for (auto block : blocks)
             if (block != nullptr)
                 block (list, nullptr);
@@ -175,12 +171,6 @@ namespace
     {
         RegisterCoreMidiMock()
         {
-            juce::SystemStats::setApplicationCrashHandler ([] (void*)
-            {
-                std::fprintf (stderr, "[cmidi] CRASH backtrace:\n%s\n",
-                              juce::SystemStats::getStackBacktrace().toRawUTF8());
-                std::fflush (stderr);
-            });
             g_startMillis = juce::Time::getMillisecondCounter();
             MockMidi::setSubsystemInputNotifier (dispatchInjectedInput);
         }

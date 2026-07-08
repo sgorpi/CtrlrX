@@ -113,12 +113,9 @@ TEST_F(MidiRouting, d2h_injected_cc_reaches_host_once)
     MockMidi::getInstance()->injectMidiInput(cc);
     pumpInputThreads();
 
-    // Drain host output across several blocks (the D2H thru goes through the MidiMessageCollector).
-    // The message's release is time-based and CtrlrX's MIDI timestamping is load-sensitive (and
-    // 'time' isn't mocked), so on a loaded/slow runner the message can be delayed by extra blocks
-    // rather than lost. Drain a generous, bounded number of blocks, stopping as soon as it arrives.
+    // Drain host output across a few blocks (the D2H thru goes through the MidiMessageCollector).
     std::vector<juce::MidiMessage> host;
-    for (int i = 0; i < 40 && count_equal(host, cc) == 0; i++)
+    for (int i = 0; i < 5; i++)
     {
         midiMessages.clear();
         std::this_thread::sleep_for(std::chrono::milliseconds(23));
