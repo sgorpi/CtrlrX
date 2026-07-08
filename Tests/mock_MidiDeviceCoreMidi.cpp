@@ -131,6 +131,10 @@ namespace
                                        view.size(), view.data());
         });
 
+        std::fprintf (stderr, "[cmidi] deliverToBlocks: %d block(s), msg=%s\n",
+                      (int) blocks.size(), msg.getDescription().toRawUTF8());
+        std::fflush (stderr);
+
         for (auto block : blocks)
             if (block != nullptr)
                 block (list, nullptr);
