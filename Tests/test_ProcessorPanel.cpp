@@ -25,7 +25,7 @@ class PrintToStdOutListener : public CtrlrLog::Listener {
 
 void ProcessorInstanceWithPanel::loadTestPanel()
 {
-    const std::string test_panel = std::get<0>(GetParam());
+    const std::string test_panel = "fixtures/" + std::get<0>(GetParam());
     ASSERT_TRUE(file_exists(test_panel));
     
     // to get some extra output for the Release build:

@@ -16,22 +16,12 @@ include(GoogleTest)
 
 message(STATUS "Tests enabled")
 
-# Copy the test panel to the build directory
-configure_file("fixture_host2host_cc.panel" "fixture_host2host_cc.panel" COPYONLY)
-configure_file("fixture_host2device_cc.panel" "fixture_host2device_cc.panel" COPYONLY)
-configure_file("fixture_device_input_cc.panel" "fixture_device_input_cc.panel" COPYONLY)
-configure_file("fixture_nrpn_stream.panel" "fixture_nrpn_stream.panel" COPYONLY)
-configure_file("fixture_sysex_token.panel" "fixture_sysex_token.panel" COPYONLY)
-configure_file("fixture_program_change.panel" "fixture_program_change.panel" COPYONLY)
-configure_file("fixture_lua_midi_received.panel" "fixture_lua_midi_received.panel" COPYONLY)
-configure_file("fixture_lua_multi_received.panel" "fixture_lua_multi_received.panel" COPYONLY)
-configure_file("fixture_lua_send.panel" "fixture_lua_send.panel" COPYONLY)
-configure_file("fixture_lua_nrpn.panel" "fixture_lua_nrpn.panel" COPYONLY)
-configure_file("fixture_lua_lifecycle.panel" "fixture_lua_lifecycle.panel" COPYONLY)
-configure_file("fixture_lua_bindings.panel" "fixture_lua_bindings.panel" COPYONLY)
-configure_file("fixture_lua_gui.panel" "fixture_lua_gui.panel" COPYONLY)
-configure_file("fixture_lua_valuechange.panel" "fixture_lua_valuechange.panel" COPYONLY)
-configure_file("fixture_lua_invalid.panel" "fixture_lua_invalid.panel" COPYONLY)
+# Copy the test fixture panels to the build directory
+file(GLOB FixtureFiles CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/*.panel")
+foreach(FixtureFile ${FixtureFiles})
+    get_filename_component(FixtureName "${FixtureFile}" NAME)
+    configure_file("${FixtureFile}" "fixtures/${FixtureName}" COPYONLY)
+endforeach()
 
 # find all test sources
 file(GLOB_RECURSE MockFiles CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mock*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/mock*.h")

@@ -26,7 +26,7 @@
  * store that check's id in a `first-fail` modulator and bump a `fail-count` modulator. The C++
  * test asserts fail-count == 0 and prints first-fail, so a broken binding names itself.
  *
- * Fixtures (generated, see Tests/fixture_lua_*.panel):
+ * Fixtures (generated, see Tests/fixtures/fixture_lua_*.panel):
  *  - fixture_lua_lifecycle   : luaPanelBeforeLoad / luaPanelLoaded -> counters + mode arg
  *  - fixture_lua_bindings    : run -> runSelfTest over globals + panel/modulator getters
  *  - fixture_lua_gui         : run -> runGuiTest over component getters/setters (nil-guarded)

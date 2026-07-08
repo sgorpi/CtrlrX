@@ -24,7 +24,7 @@
  *
  * Accepted failures are listed in Tests/known_failures.txt.
  *
- * Fixtures (generated minimal panels, see Tests/fixture_lua_*.panel):
+ * Fixtures (generated minimal panels, see Tests/fixtures/fixture_lua_*.panel):
  *  - fixture_lua_midi_received : luaPanelMidiReceived -> counter + round-trip sentinel
  *  - fixture_lua_multi_received: luaPanelMidiMultiReceived -> counter
  *  - fixture_lua_send          : modulator luaModulatorValueChange -> the send variants

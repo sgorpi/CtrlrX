@@ -176,11 +176,11 @@ protected:
         return out;
     }
 
-    // Load a panel from the build dir (where fixtures are copied) and return the newest panel.
+    // Load a panel from Tests/fixtures (copied into <build>/Tests/fixtures/) and return the newest panel.
     CtrlrPanel* loadPanel(const std::string& file)
     {
         EXPECT_NO_THROW(processor->openFileFromCli(
-            juce::File::getCurrentWorkingDirectory().getChildFile(file)));
+            juce::File::getCurrentWorkingDirectory().getChildFile("fixtures/" + file)));
         const int n = processor->getManager().getNumPanels();
         return n > 0 ? processor->getManager().getPanel(n - 1) : nullptr;
     }
