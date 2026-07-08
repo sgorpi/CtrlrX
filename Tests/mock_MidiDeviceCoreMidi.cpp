@@ -55,8 +55,6 @@ InformMockMidiOfSubsystem mockMidiSubsystem;
 
 namespace ump = juce::universal_midi_packets;
 
-// TEMP diagnostic breadcrumbs to localize the macOS all-tests SegFault (remove once fixed).
-#define CMIDI_TRACE(x) do { std::fprintf (stderr, "[cmidi] " x "\n"); std::fflush (stderr); } while (0)
 
 // The EventList/UMP CoreMIDI entry points and MIDIReceiveBlock are API_AVAILABLE(macos(11.0)).
 // JUCE gates them behind @available; this mock calls them directly, and the CI runner is always
@@ -173,7 +171,6 @@ namespace
     {
         RegisterCoreMidiMock()
         {
-            CMIDI_TRACE ("RegisterCoreMidiMock ctor");
             juce::SystemStats::setApplicationCrashHandler ([] (void*)
             {
                 std::fprintf (stderr, "[cmidi] CRASH backtrace:\n%s\n",
@@ -193,71 +190,60 @@ extern "C" {
 
 OSStatus MIDIClientCreate (CFStringRef, MIDINotifyProc, void*, MIDIClientRef* outClient)
 {
-    CMIDI_TRACE ("MIDIClientCreate");
     if (outClient != nullptr) *outClient = 1;
     return noErr;
 }
 
-ItemCount MIDIGetNumberOfSources (void)      { CMIDI_TRACE("GetNumSources"); return (ItemCount) mockNumEndpoints(); }
-ItemCount MIDIGetNumberOfDestinations (void) { CMIDI_TRACE("GetNumDest"); return (ItemCount) mockNumEndpoints(); }
+ItemCount MIDIGetNumberOfSources (void)      { return (ItemCount) mockNumEndpoints(); }
+ItemCount MIDIGetNumberOfDestinations (void) { return (ItemCount) mockNumEndpoints(); }
 
 MIDIEndpointRef MIDIGetSource (ItemCount i)
 {
-    CMIDI_TRACE ("GetSource");
     return (i < (ItemCount) mockNumEndpoints()) ? (MIDIEndpointRef) (kSourceBase + i) : 0;
 }
 MIDIEndpointRef MIDIGetDestination (ItemCount i)
 {
-    CMIDI_TRACE ("GetDestination");
     return (i < (ItemCount) mockNumEndpoints()) ? (MIDIEndpointRef) (kDestBase + i) : 0;
 }
 
 OSStatus MIDIEndpointGetEntity (MIDIEndpointRef, MIDIEntityRef* outEntity)
 {
-    CMIDI_TRACE ("EndpointGetEntity");
     if (outEntity != nullptr) *outEntity = 0; // 0 -> JUCE takes the "virtual endpoint" branch
     return noErr;
 }
 
-OSStatus MIDIObjectGetStringProperty (MIDIObjectRef obj, CFStringRef propertyID, CFStringRef* str)
+// IMPORTANT: we deliberately do NOT CFStringCompare against the kMIDIProperty* constants.
+// In this executable those constants are bad/unresolved pointers -- JUCE only ever passes them
+// through to CoreMIDI functions (which we mock) and never dereferences them, so JUCE is unaffected,
+// but a CFStringCompare here segfaults inside CFStringGetLength. Since JUCE queries only a single
+// string property (kMIDIPropertyName) and two integer properties (kMIDIPropertyUniqueID and
+// kMIDIPropertyProtocolID), we can answer by the object ref alone and ignore propertyID entirely.
+OSStatus MIDIObjectGetStringProperty (MIDIObjectRef obj, CFStringRef /*propertyID*/, CFStringRef* str)
 {
-    CMIDI_TRACE ("GetStringProperty");
     if (str == nullptr)
         return kMIDIUnknownProperty;
 
-    if (CFStringCompare (propertyID, kMIDIPropertyName, 0) == kCFCompareEqualTo)
-    {
-        char name[64];
-        nameForRef (obj, name, sizeof (name));
-        *str = CFStringCreateWithCString (kCFAllocatorDefault, name, kCFStringEncodingUTF8);
-        CMIDI_TRACE ("GetStringProperty done");
-        return noErr;
-    }
-    return kMIDIUnknownProperty;
+    // Only kMIDIPropertyName is ever requested here -> return the endpoint name.
+    char name[64];
+    nameForRef (obj, name, sizeof (name));
+    *str = CFStringCreateWithCString (kCFAllocatorDefault, name, kCFStringEncodingUTF8);
+    return noErr;
 }
 
-OSStatus MIDIObjectGetIntegerProperty (MIDIObjectRef obj, CFStringRef propertyID, SInt32* outValue)
+OSStatus MIDIObjectGetIntegerProperty (MIDIObjectRef obj, CFStringRef /*propertyID*/, SInt32* outValue)
 {
-    CMIDI_TRACE ("GetIntegerProperty");
     if (outValue == nullptr)
         return kMIDIUnknownProperty;
 
-    if (CFStringCompare (propertyID, kMIDIPropertyUniqueID, 0) == kCFCompareEqualTo)
-    {
-        *outValue = (SInt32) obj; // stable, unique per endpoint -> round-trips as the identifier
-        return noErr;
-    }
-    if (CFStringCompare (propertyID, kMIDIPropertyProtocolID, 0) == kCFCompareEqualTo)
-    {
-        *outValue = kMIDIProtocol_1_0;
-        return noErr;
-    }
-    return kMIDIUnknownProperty;
+    // Returning the (unique) object ref satisfies kMIDIPropertyUniqueID (round-trips as the
+    // identifier) and, being != kMIDIProtocol_2_0, makes getProtocolForEndpoint() report MIDI 1.0
+    // for the kMIDIPropertyProtocolID query -- exactly what we want.
+    *outValue = (SInt32) obj;
+    return noErr;
 }
 
 OSStatus MIDIObjectGetDataProperty (MIDIObjectRef, CFStringRef, CFDataRef*)
 {
-    CMIDI_TRACE ("GetDataProperty");
     // Decline -> JUCE leaves 'connections' null and falls back to getEndpointInfo("no connections").
     return kMIDIUnknownProperty;
 }
