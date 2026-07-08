@@ -174,6 +174,12 @@ namespace
         RegisterCoreMidiMock()
         {
             CMIDI_TRACE ("RegisterCoreMidiMock ctor");
+            juce::SystemStats::setApplicationCrashHandler ([] (void*)
+            {
+                std::fprintf (stderr, "[cmidi] CRASH backtrace:\n%s\n",
+                              juce::SystemStats::getStackBacktrace().toRawUTF8());
+                std::fflush (stderr);
+            });
             g_startMillis = juce::Time::getMillisecondCounter();
             MockMidi::setSubsystemInputNotifier (dispatchInjectedInput);
         }
@@ -224,6 +230,7 @@ OSStatus MIDIObjectGetStringProperty (MIDIObjectRef obj, CFStringRef propertyID,
         char name[64];
         nameForRef (obj, name, sizeof (name));
         *str = CFStringCreateWithCString (kCFAllocatorDefault, name, kCFStringEncodingUTF8);
+        CMIDI_TRACE ("GetStringProperty done");
         return noErr;
     }
     return kMIDIUnknownProperty;
