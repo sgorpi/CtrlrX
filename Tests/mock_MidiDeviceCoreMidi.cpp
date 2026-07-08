@@ -55,6 +55,9 @@ InformMockMidiOfSubsystem mockMidiSubsystem;
 
 namespace ump = juce::universal_midi_packets;
 
+// TEMP diagnostic breadcrumbs to localize the macOS all-tests SegFault (remove once fixed).
+#define CMIDI_TRACE(x) do { std::fprintf (stderr, "[cmidi] " x "\n"); std::fflush (stderr); } while (0)
+
 // The EventList/UMP CoreMIDI entry points and MIDIReceiveBlock are API_AVAILABLE(macos(11.0)).
 // JUCE gates them behind @available; this mock calls them directly, and the CI runner is always
 // macOS 14, so silence the (default-error) unguarded-availability diagnostic for the whole TU.
@@ -170,6 +173,7 @@ namespace
     {
         RegisterCoreMidiMock()
         {
+            CMIDI_TRACE ("RegisterCoreMidiMock ctor");
             g_startMillis = juce::Time::getMillisecondCounter();
             MockMidi::setSubsystemInputNotifier (dispatchInjectedInput);
         }
@@ -183,30 +187,35 @@ extern "C" {
 
 OSStatus MIDIClientCreate (CFStringRef, MIDINotifyProc, void*, MIDIClientRef* outClient)
 {
+    CMIDI_TRACE ("MIDIClientCreate");
     if (outClient != nullptr) *outClient = 1;
     return noErr;
 }
 
-ItemCount MIDIGetNumberOfSources (void)      { return (ItemCount) mockNumEndpoints(); }
-ItemCount MIDIGetNumberOfDestinations (void) { return (ItemCount) mockNumEndpoints(); }
+ItemCount MIDIGetNumberOfSources (void)      { CMIDI_TRACE("GetNumSources"); return (ItemCount) mockNumEndpoints(); }
+ItemCount MIDIGetNumberOfDestinations (void) { CMIDI_TRACE("GetNumDest"); return (ItemCount) mockNumEndpoints(); }
 
 MIDIEndpointRef MIDIGetSource (ItemCount i)
 {
+    CMIDI_TRACE ("GetSource");
     return (i < (ItemCount) mockNumEndpoints()) ? (MIDIEndpointRef) (kSourceBase + i) : 0;
 }
 MIDIEndpointRef MIDIGetDestination (ItemCount i)
 {
+    CMIDI_TRACE ("GetDestination");
     return (i < (ItemCount) mockNumEndpoints()) ? (MIDIEndpointRef) (kDestBase + i) : 0;
 }
 
 OSStatus MIDIEndpointGetEntity (MIDIEndpointRef, MIDIEntityRef* outEntity)
 {
+    CMIDI_TRACE ("EndpointGetEntity");
     if (outEntity != nullptr) *outEntity = 0; // 0 -> JUCE takes the "virtual endpoint" branch
     return noErr;
 }
 
 OSStatus MIDIObjectGetStringProperty (MIDIObjectRef obj, CFStringRef propertyID, CFStringRef* str)
 {
+    CMIDI_TRACE ("GetStringProperty");
     if (str == nullptr)
         return kMIDIUnknownProperty;
 
@@ -222,6 +231,7 @@ OSStatus MIDIObjectGetStringProperty (MIDIObjectRef obj, CFStringRef propertyID,
 
 OSStatus MIDIObjectGetIntegerProperty (MIDIObjectRef obj, CFStringRef propertyID, SInt32* outValue)
 {
+    CMIDI_TRACE ("GetIntegerProperty");
     if (outValue == nullptr)
         return kMIDIUnknownProperty;
 
@@ -240,6 +250,7 @@ OSStatus MIDIObjectGetIntegerProperty (MIDIObjectRef obj, CFStringRef propertyID
 
 OSStatus MIDIObjectGetDataProperty (MIDIObjectRef, CFStringRef, CFDataRef*)
 {
+    CMIDI_TRACE ("GetDataProperty");
     // Decline -> JUCE leaves 'connections' null and falls back to getEndpointInfo("no connections").
     return kMIDIUnknownProperty;
 }
