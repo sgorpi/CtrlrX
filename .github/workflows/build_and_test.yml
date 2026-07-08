@@ -9,6 +9,11 @@ on:
         required: false
         default: false
   push:
+    # platform_midi_mocks iterates on the MIDI subsystem mocks via the slim tests_only.yml;
+    # skip the expensive full build/pluginval/packaging here on that branch. Revert this
+    # branches-ignore when merging the mocks back into basic_test_coverage.
+    branches-ignore:
+      - platform_midi_mocks
   pull_request:
 
 # When pushing new commits, cancel any running builds on that branch
