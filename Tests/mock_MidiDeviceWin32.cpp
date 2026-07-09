@@ -33,7 +33,7 @@ InformMockMidiOfSubsystem mockMidiSubsystem;
  * MMSYSERR_NOTSUPPORTED so JUCE uses the device name as its identifier (matching fixture lookup).
  *
  * JUCE 8 (juce_Midi_windows.cpp, upstream 8.0.0-Maintenance) uses the identical winmm
- * midiIn*/midiOut* surface intercepted below (incl. GetDevCaps A/W), and JUCE_USE_WINRT_MIDI still
+ * midiIn / midiOut surface intercepted below (incl. GetDevCaps A/W), and JUCE_USE_WINRT_MIDI still
  * defaults off, so the Win32MidiService path is taken -- this mock covers JUCE 8 as-is.
  */
 
