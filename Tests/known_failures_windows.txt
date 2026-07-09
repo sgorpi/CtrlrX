@@ -1,0 +1,23 @@
+# Known-failing tests on Windows, allowlisted so the "Tests - Windows (excluding known failures)"
+# CI check stays green while these are outstanding. Same format as known_failures_linux.txt: one
+# fully-qualified GoogleTest name per line (JUnit classname + "." + name). Blank lines and lines
+# starting with "#" are ignored.
+#
+# Genuine CtrlrX Windows platform bugs surfaced by mock_MidiDeviceWin32.cpp are catalogued here;
+# failures attributable to the mock itself must be fixed in the mock, not allowlisted.
+#
+# The cross-platform known failures also fail on Windows (they are subsystem-independent):
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_notes/0
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_notes/1
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_cc_as_defined_in_panel/0
+TestPanelGroup/ProcessorInstanceWithPanel.test_panel_midi_block_processing_with_cc_as_defined_in_panel/1
+ProcessorInstance.midi_block_processing_without_panel
+MidiRouting.h2d_host_cc_reaches_device_once_and_host_once
+MidiRouting.pause_in_blocks_host_echo
+MidiLua.device_input_invokes_lua_multiMidiReceived_once
+
+# NOTE: a couple of Lua.* tests (e.g. Lua.lua_global_objects_and_panel_bindings_available,
+# Lua.lua_gui_component_getters_setters_return_sensible_values) can intermittently hit the ctest
+# 120s TIMEOUT under runner load (time is not mocked). A timed-out test emits no JUnit XML, so it is
+# invisible to ci_check_test_results.py and cannot be allowlisted here; recorded only for awareness.
+# It does not reproduce deterministically.

@@ -65,6 +65,7 @@ jobs:
           - name: Windows
             os: windows-2022
             pluginval-binary: ./pluginval.exe
+            extra-flags: ""
 
     steps:
       # Setup MSVC toolchain and developer command prompt (Windows)
@@ -170,9 +171,8 @@ jobs:
           ctest -j"$(nproc)" --output-on-failure -C ${{ env.BUILD_TYPE }}
 
       - name: Upload test results
-        # Only Linux feeds the checks for now. To add a platform later, OR in its
-        # matrix.name here (e.g. ... || matrix.name == 'macOS') — nothing else changes.
-        if: ${{ matrix.name == 'Linux' }}
+        # All platforms upload their per-test JUnit XML; each is consumed by the
+        # matching leg of the test_results matrix below (via test-results-<name>).
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.name }}
@@ -537,14 +537,19 @@ jobs:
 
   # Surface the test outcome as a single, non-required check (so a red here does NOT
   # block a PR — just don't add it to branch-protection required checks).
-  # The check is "Tests (excluding known failures)": only failures outside
-  # Tests/known_failures.txt count, so it stays green while known failures are outstanding.
+  # The check is "Tests - <platform> (excluding known failures)": only failures outside
+  # the per-platform Tests/known_failures_<platform>.txt count, so it stays green while
+  # known failures are outstanding.
   # The known-failure breakdown is written to the run's job summary by ci_check_test_results.py.
   # Native job status is the check, so no checks:write permission is needed and it works
   # on fork PRs.
   test_results:
     name: ${{ matrix.check_name }}
     needs: build_and_test
+    # Run whenever build_and_test actually ran, whether it passed or failed, so that
+    # a build/packaging failure on ONE platform (pluginval, installer, codesign, ...)
+    # doesn't suppress test reporting for the others.
+    if: ${{ !cancelled() && needs.build_and_test.result != 'skipped' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -552,8 +557,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - check_name: Tests (excluding known failures)
-            allow_arg: "--allow Tests/known_failures.txt"
+          - check_name: Tests - Linux (excluding known failures)
+            build_job_matrix_name: Linux
+            known_failures: "--allow Tests/known_failures_linux.txt"
+          - check_name: Tests - macOS (excluding known failures)
+            build_job_matrix_name: macOS
+            known_failures: "--allow Tests/known_failures_macos.txt"
+          - check_name: Tests - Windows (excluding known failures)
+            build_job_matrix_name: Windows
+            known_failures: "--allow Tests/known_failures_windows.txt"
 
     steps:
       - name: Checkout test helpers
@@ -565,7 +577,7 @@ jobs:
       - name: Download test results
         uses: actions/download-artifact@v4
         with:
-          pattern: test-results-*
+          pattern: test-results-${{ matrix.build_job_matrix_name }}*
           path: test-results
 
       - name: Test summary
@@ -574,7 +586,7 @@ jobs:
           paths: "test-results/**/*.xml"
 
       - name: Evaluate results
-        run: python3 Tests/ci_check_test_results.py ${{ matrix.allow_arg }} "test-results/**/*.xml"
+        run: python3 Tests/ci_check_test_results.py ${{ matrix.known_failures }} "test-results/**/*.xml"
 
 
   release:

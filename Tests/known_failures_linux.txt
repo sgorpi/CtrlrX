@@ -1,4 +1,4 @@
-# Known-failing tests, allowlisted so the "Tests (excluding known failures)" CI check
+# Known-failing tests, allowlisted so the "Tests - Linux (excluding known failures)" CI check
 # stays green while these are outstanding. The "Tests" check still reports them as red.
 #
 # Format: one fully-qualified GoogleTest name per line, exactly as gtest prints it after
