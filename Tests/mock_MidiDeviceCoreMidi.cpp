@@ -51,6 +51,19 @@ InformMockMidiOfSubsystem mockMidiSubsystem;
  * Endpoint numbering matches the ALSA mock exactly: a flattened list of
  * getNumDevices()*getNumPorts() endpoints named "Device %02d, port %02d", flat index
  * <-> (idx / numPorts, idx % numPorts). Fake MIDIEndpointRefs encode direction + flat index.
+ *
+ * JUCE 8 (juce_CoreMidi_mac.mm, upstream 8.0.0-Maintenance) coverage, reviewed best-effort:
+ *  - Its legacy device provider still enumerates via MIDIGetNumberOfSources/Destinations +
+ *    MIDIGetSource/Destination, and getConnectedEndpointInfo still declines the connection-data
+ *    property and falls back to getEndpointInfo -> (entity == 0) virtual -> getMidiObjectInfo.
+ *    That is exactly the path mocked here, and returning entity == 0 from MIDIEndpointGetEntity
+ *    short-circuits all the JUCE 8 entity/device getters (MIDIDeviceGetEntity, MIDIEntityGetSource/
+ *    Destination, MIDIEntityGetNumberOf*, MIDIDeviceGetNumberOfEntities), so they never need mocks.
+ *  - Send/receive use the same EventList/UMP calls mocked here.
+ *  - GAP: JUCE 8 also has an Obj-C MIDIUMPEndpointManager enumeration provider gated behind
+ *    @available(macOS 15). This mock shadows the C CoreMIDI API, not that manager, so on a
+ *    macOS 15+ runner JUCE 8 would enumerate through it and bypass this mock. Out of scope for the
+ *    macos-14 CI target; revisit when the Tests/ suite is ported to the JUCE 8 branch.
  */
 
 namespace ump = juce::universal_midi_packets;
