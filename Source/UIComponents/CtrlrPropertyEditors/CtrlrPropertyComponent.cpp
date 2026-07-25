@@ -171,6 +171,28 @@ Component *CtrlrPropertyComponent::getPropertyComponent()
         propertyLineImprovedLegibility = panel->getOwner().getManagerTree().getProperty(Ids::ctrlrPropertyLineImprovedLegibility, false); // Added v5.6.34.
     }
     
+    if (propertyName == Ids::componentBubbleHelpTrigger) // Added v5.6.36. Thanks to @dnaldoog
+	{
+        possibleChoices = new StringArray();
+        possibleValues = new Array<var>();
+        
+        // Automatically parse the "defaults" attribute from the XML line
+        String defaultsString = identifierDefinition.getProperty("defaults").toString();
+        StringArray pairs;
+        pairs.addTokens(defaultsString, ",", "");
+        
+        for (int i = 0; i < pairs.size(); ++i)
+        {
+            StringArray kv;
+            kv.addTokens(pairs[i], "=", "");
+            if (kv.size() == 2)
+            {
+                possibleChoices->add(kv[0].trim());
+                possibleValues->add(kv[1].trim().getIntValue());
+            }
+        }
+    }
+	
     switch (propertyType)
 	{
 		case CtrlrIDManager::ReadOnly:

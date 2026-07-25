@@ -94,6 +94,7 @@ void CtrlrFontManager::fillCombo (ComboBox &comboToFill, const bool showOsFonts,
 {
 	comboToFill.clear();
 	int i = 0;
+	allFontCount = 0;
 
 	if (showJuceFonts)
 	{

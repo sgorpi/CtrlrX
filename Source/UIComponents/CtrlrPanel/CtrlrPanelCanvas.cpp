@@ -45,7 +45,9 @@ CtrlrPanelCanvas::~CtrlrPanelCanvas()
 		}
 	}
 
-	getOwner().getPanelEditorTree().removeListener (this); // this is accessing free'd memory. Canvas has to be deleted before valueTree, but not sure where...
+	// Safe: panelEditorTree is declared ahead of the component ScopedPointers in CtrlrPanelEditor,
+	// so it outlives this canvas and is still alive here during ~CtrlrPanelEditor.
+	getOwner().getPanelEditorTree().removeListener (this);
     deleteAndZero (ctrlrPanelCanvasResizableBorder);
     setLookAndFeel (nullptr);
 }
@@ -959,53 +961,200 @@ const CtrlrPanelCanvas::Direction CtrlrPanelCanvas::keyPressToDirection(const Ke
 	return (None);
 }
 
-void CtrlrPanelCanvas::alignSelection(const EditMenuItems direction)
+void CtrlrPanelCanvas::alignSelection(const EditMenuItems direction) // Updated v5.6.36. Thanks to @dnaldoog. Align/Resize to first selection between components
 {
-    if (getOwner().getSelection() == nullptr)
-        return;
-
-	if (getOwner().getSelection()->getNumSelected() > 0)
-	{
+	if (getOwner().getSelection() == nullptr)
+		return;
+	
+	if (getOwner().getSelection()->getNumSelected() > 0) {
 		RectangleList<int> rlist;
 		int y1, y2, x1, x2;
-		for (int i=0; i<getSelection().getNumSelected(); i++)
-		{
-			rlist.add (getSelection().getSelectedItem(i)->getBounds());
+		for (int i = 0; i < getSelection().getNumSelected(); i++) {
+			rlist.add(getSelection().getSelectedItem(i)->getBounds());
 		}
-
-		switch (direction)
-		{
+		// Helper comparator structs for JUCE Array::sort
+		struct ComponentXComparator {
+			static int compareElements(CtrlrComponent *first, CtrlrComponent *second) {
+				return (first->getX() < second->getX()) ? -1 : ((first->getX() > second->getX()) ? 1 : 0);
+			}
+		};
+		
+		struct ComponentYComparator {
+			static int compareElements(CtrlrComponent *first, CtrlrComponent *second) {
+				return (first->getY() < second->getY()) ? -1 : ((first->getY() > second->getY()) ? 1 : 0);
+			}
+		};
+		switch (direction) {
 			case AlignToTop:
-				for (int i=0; i<getSelection().getNumSelected(); i++)
-				{
-					getSelection().getSelectedItem(i)->setBounds(getSelection().getSelectedItem(i)->getBounds().withY(rlist.getBounds().getY()));
+				for (int i = 0; i < getSelection().getNumSelected(); i++) {
+					getSelection().getSelectedItem(i)->setBounds(
+																 getSelection().getSelectedItem(i)->getBounds().withY(rlist.getBounds().getY()));
 				}
 				break;
-
+				
 			case AlignToBottom:
-				for (int i=0; i<getSelection().getNumSelected(); i++)
-				{
-					y1 = rlist.getBounds().getY() + rlist.getBounds().getHeight();	// y position of the lower edge
-					y2 = y1 - getSelection().getSelectedItem(i)->getHeight();		// new y position of the element
-					getSelection().getSelectedItem(i)->setBounds (getSelection().getSelectedItem(i)->getBounds().withY(y2));
+				for (int i = 0; i < getSelection().getNumSelected(); i++) {
+					y1 = rlist.getBounds().getY() + rlist.getBounds().getHeight(); // y position of the lower edge
+					y2 = y1 - getSelection().getSelectedItem(i)->getHeight();	   // new y position of the element
+					getSelection().getSelectedItem(i)->setBounds(getSelection().getSelectedItem(i)->getBounds().withY(y2));
 				}
 				break;
-
+				
 			case AlignToLeft:
-				for (int i=0; i<getSelection().getNumSelected(); i++)
-				{
-					getSelection().getSelectedItem(i)->setBounds(getSelection().getSelectedItem(i)->getBounds().withX(rlist.getBounds().getX()));
+				for (int i = 0; i < getSelection().getNumSelected(); i++) {
+					getSelection().getSelectedItem(i)->setBounds(
+																 getSelection().getSelectedItem(i)->getBounds().withX(rlist.getBounds().getX()));
 				}
 				break;
-
+				
 			case AlignToRight:
-				for (int i=0; i<getSelection().getNumSelected(); i++)
-				{
-					x1 = rlist.getBounds().getX() + rlist.getBounds().getWidth();	// x position of the right edge
-					x2 = x1 - getSelection().getSelectedItem(i)->getWidth();		// new x position of the element
+				for (int i = 0; i < getSelection().getNumSelected(); i++) {
+					x1 = rlist.getBounds().getX() + rlist.getBounds().getWidth(); // x position of the right edge
+					x2 = x1 - getSelection().getSelectedItem(i)->getWidth();	  // new x position of the element
 					getSelection().getSelectedItem(i)->setBounds(getSelection().getSelectedItem(i)->getBounds().withX(x2));
 				}
 				break;
+				
+			case DistributeHorizontally: {
+				const int numSelected = getSelection().getNumSelected();
+				if (numSelected < 3)
+					break;
+				
+				juce::Array<CtrlrComponent *> sortedItems;
+				for (int i = 0; i < numSelected; ++i) {
+					if (auto *item = getSelection().getSelectedItem(i))
+						sortedItems.add(item);
+				}
+				
+				// JUCE 6 compatible sort call:
+				ComponentXComparator compX;
+				sortedItems.sort(compX);
+				
+				// 2. Find total inner space between first item's right edge and last item's left edge
+				const int firstRightX = sortedItems.getFirst()->getRight();
+				const int lastLeftX = sortedItems.getLast()->getX();
+				const int totalAvailableSpace = lastLeftX - firstRightX;
+				
+				// 3. Subtract total width of all middle items
+				int middleItemsWidth = 0;
+				for (int i = 1; i < sortedItems.size() - 1; ++i) {
+					middleItemsWidth += sortedItems[i]->getWidth();
+				}
+				
+				const int totalGapSpace = totalAvailableSpace - middleItemsWidth;
+				const int numberOfGaps = sortedItems.size() - 1;
+				
+				// Calculate gap size as a double to handle fractional pixel distribution cleanly
+				const double gapSize = (double)totalGapSpace / numberOfGaps;
+				
+				// 4. Reposition middle items
+				double currentX = firstRightX;
+				for (int i = 1; i < sortedItems.size() - 1; ++i) {
+					currentX += gapSize;
+					sortedItems[i]->setTopLeftPosition(juce::roundToInt(currentX), sortedItems[i]->getY());
+					currentX += sortedItems[i]->getWidth();
+				}
+				
+				break;
+			}
+				
+			case DistributeVertically: {
+				const int numSelected = getSelection().getNumSelected();
+				if (numSelected < 3)
+					break;
+				
+				juce::Array<CtrlrComponent *> sortedItems;
+				for (int i = 0; i < numSelected; ++i) {
+					if (auto *item = getSelection().getSelectedItem(i))
+						sortedItems.add(item);
+				}
+				
+				// JUCE 6 compatible sort call:
+				ComponentYComparator compY;
+				sortedItems.sort(compY);
+				
+				// 2. Find total inner space between first item's bottom edge and last item's top edge
+				const int firstBottomY = sortedItems.getFirst()->getBottom();
+				const int lastTopY = sortedItems.getLast()->getY();
+				const int totalAvailableSpace = lastTopY - firstBottomY;
+				
+				// 3. Subtract total height of all middle items
+				int middleItemsHeight = 0;
+				for (int i = 1; i < sortedItems.size() - 1; ++i) {
+					middleItemsHeight += sortedItems[i]->getHeight();
+				}
+				
+				const int totalGapSpace = totalAvailableSpace - middleItemsHeight;
+				const int numberOfGaps = sortedItems.size() - 1;
+				
+				const double gapSize = (double)totalGapSpace / numberOfGaps;
+				
+				// 4. Reposition middle items
+				double currentY = firstBottomY;
+				for (int i = 1; i < sortedItems.size() - 1; ++i) {
+					currentY += gapSize;
+					sortedItems[i]->setTopLeftPosition(sortedItems[i]->getX(), juce::roundToInt(currentY));
+					currentY += sortedItems[i]->getHeight();
+				}
+				
+				break;
+			}
+				
+			case MatchWidth: {
+				const int numSelected = getSelection().getNumSelected();
+				if (numSelected < 2)
+					break; // Need at least a reference component and 1 target component
+				
+				// Use the first selected component as the target width template
+				if (auto *targetModel = getSelection().getSelectedItem(0)) {
+					const int targetWidth = targetModel->getWidth();
+					
+					for (int i = 1; i < numSelected; ++i) {
+						if (auto *comp = getSelection().getSelectedItem(i)) {
+							comp->setSize(targetWidth, comp->getHeight());
+						}
+					}
+				}
+				break;
+			}
+				
+			case MatchHeight: {
+				const int numSelected = getSelection().getNumSelected();
+				if (numSelected < 2)
+					break;
+				
+				// Use the first selected component as the target height template
+				if (auto *targetModel = getSelection().getSelectedItem(0)) {
+					const int targetHeight = targetModel->getHeight();
+					
+					for (int i = 1; i < numSelected; ++i) {
+						if (auto *comp = getSelection().getSelectedItem(i)) {
+							comp->setSize(comp->getWidth(), targetHeight);
+						}
+					}
+				}
+				break;
+			}
+				
+			case MatchSize: {
+				const int numSelected = getSelection().getNumSelected();
+				if (numSelected < 2)
+					break;
+				
+				// Use the first selected component as both target width and height
+				if (auto *targetModel = getSelection().getSelectedItem(0)) {
+					const int targetWidth = targetModel->getWidth();
+					const int targetHeight = targetModel->getHeight();
+					
+					for (int i = 1; i < numSelected; ++i) {
+						if (auto *comp = getSelection().getSelectedItem(i)) {
+							comp->setSize(targetWidth, targetHeight);
+						}
+					}
+				}
+				break;
+			} // Closes MatchSize scope
+				
 			case Copy:
 			case Cut:
 			case Paste:
@@ -1016,9 +1165,9 @@ void CtrlrPanelCanvas::alignSelection(const EditMenuItems direction)
 			case GroupCreate:
 			case GroupDestroy:
 				break;
-		}
-	}
-}
+		} // Closes switch
+	} // Closes if (getNumSelected() > 0)
+} // Closes function
 
 CtrlrComponentSelection &CtrlrPanelCanvas::getSelection()
 {

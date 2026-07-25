@@ -431,7 +431,7 @@ void CtrlrModulator::allModulatorsInitialized()
 		getComponent()->allModulatorsInitialized();
 	}
 
-	if (owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingle || owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingleRestriced)
+	if (owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingle || owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingleRestricted)
 	{
 		processor.setValueGeneric (CtrlrModulatorValue (getProperty(Ids::modulatorValue), CtrlrModulatorValue::changedByProgram), true);
 	}
@@ -586,7 +586,7 @@ bool CtrlrModulator::isDelayedProperty(const Identifier &name)
 	if (name == Ids::modulatorVstExported)
 		return (true);
 
-	if (name == Ids::modulatorValue && (owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingle || owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingleRestriced))
+	if (name == Ids::modulatorValue && (owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingle || owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingleRestricted))
 		return (true);
 
 	return (false);

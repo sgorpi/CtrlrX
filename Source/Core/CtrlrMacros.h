@@ -266,7 +266,7 @@ enum CtrlrInstance
 {
 	InstanceSingle,
 	InstanceMulti,
-	InstanceSingleRestriced,
+	InstanceSingleRestricted,
 	InstanceSingleEngine,
 	InstanceMultiEngine,
 	InstanceSingleRestrictedEngine

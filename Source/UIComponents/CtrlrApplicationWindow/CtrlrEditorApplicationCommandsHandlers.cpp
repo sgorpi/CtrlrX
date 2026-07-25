@@ -238,12 +238,30 @@ bool CtrlrEditor::perform (const InvocationInfo &info) // Updated v5.6.34. Will 
             }
             break;
 
-        case CtrlrEditor::doZoomOut:
+        case CtrlrEditor::doZoomOut: // Updated v5.6.36. Thanks to @dnaldoog.
             if (getActivePanelEditor())
             {
-                double newZoomFactor = (double)getActivePanelEditor()->getProperty(Ids::uiPanelZoom) - 0.1;
-                if (newZoomFactor < MINZOOM || newZoomFactor >MAXZOOM)
+                // FIX: Get the property, but default to 1.0 if it doesn't exist yet
+                double currentZoom = getActivePanelEditor()->getProperty(Ids::uiPanelZoom);
+                if (currentZoom <= 0.0) currentZoom = 1.0;
+                double newZoomFactor = currentZoom - 0.1;
+                _DBG("ZoomOut Triggered inside VM. Current: " + juce::String(currentZoom) + " New: " + juce::String(newZoomFactor));
+
+                // If it trips the bounds guard, log it so we know!
+                if (newZoomFactor < MINZOOM || newZoomFactor > MAXZOOM)
+                {
+                    _DBG("ZoomOut rejected: Out of bounds (MINZOOM: " + juce::String(MINZOOM) + ")");
                     return true;
+                }
+                getActivePanelEditor()->setProperty(Ids::uiPanelZoom, newZoomFactor);
+            }
+            break;
+
+        case CtrlrEditor::doZoomZero: // Added v5.6.36. Thanks to @dnaldoog
+            if (getActivePanelEditor())
+            {
+                double newZoomFactor = 1.0; // Reset to 100% zoom
+                _DBG("Resetting zoom factor to: " + String(newZoomFactor));
                 getActivePanelEditor()->setProperty(Ids::uiPanelZoom, newZoomFactor);
             }
             break;
@@ -324,6 +342,7 @@ bool CtrlrEditor::perform (const InvocationInfo &info) // Updated v5.6.34. Will 
             break;
 
         case CtrlrEditor::doRefreshDeviceList:
+            AlertWindow::showMessageBoxAsync(AlertWindow::InfoIcon, "Refresh devices", "Device list refreshed");
             performMidiDeviceRefresh();
             break;
 

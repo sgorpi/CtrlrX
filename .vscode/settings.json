@@ -1,0 +1,5 @@
+{
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "modifications",
+  "C_Cpp.formatting": "clangFormat"
+}

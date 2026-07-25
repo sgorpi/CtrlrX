@@ -320,6 +320,13 @@ void CtrlrGroup::setOwned (CtrlrComponent *componentToOwn, const int subIndexInG
     if (componentToOwn == nullptr) // Updated v5.6.36
         return;
 
+    // A group must not adopt itself or any ancestor of its own content. Corrupt/cyclic panel data
+    // (componentGroupName forming a loop: a group grouped into itself, or two groups grouped into
+    // each other) would otherwise add an ancestor under content -> a parent/child cycle in the
+    // component tree -> infinite Component::internalHierarchyChanged recursion -> stack overflow.
+    if (componentToOwn == (CtrlrComponent*) this || componentToOwn->isParentOf (&content))
+        return;
+
     if (shouldOwnThisComponent)
     {
 		content.addAndMakeVisible (componentToOwn);

@@ -16,6 +16,11 @@ public:
         startTimer(10); // 10ms interval
     }
 
+    ~LinuxFadeInWindow() override
+    {
+        stopTimer();
+    }
+
     void timerCallback() override
     {
         if (!comp) { stopTimer(); return; }
@@ -61,7 +66,7 @@ CtrlrChildWindow::CtrlrChildWindow(CtrlrWindowManager &_owner)
     centreWithSize(getWidth(), getHeight());
 
     // fade-in
-    new LinuxFadeInWindow(this);
+    fadeInTimer.reset(new LinuxFadeInWindow(this));
 
 #else
     setContentOwned(containerComponent, true);

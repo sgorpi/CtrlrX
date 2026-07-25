@@ -2,6 +2,7 @@
 #define __CTRLR_PANEL_MODULATOR_LIST__
 
 #include "CtrlrPanelModulatorListTree.h"
+#include "CtrlrPanel/CtrlrPanel.h" // Added v5.6.36. Thanks to @dnaldoog
 
 class CtrlrModulatorListSorter
 {
@@ -18,6 +19,7 @@ class CtrlrModulatorListSorter
 class CtrlrPanelModulatorList  : public CtrlrChildWindowContent,
                                  public TableListBoxModel,
 								 public CtrlrPanel::Listener,
+								 public TableHeaderComponent::Listener,
 								 public juce::Timer
 {
 	public:
@@ -74,6 +76,18 @@ class CtrlrPanelModulatorList  : public CtrlrChildWindowContent,
 		void menuItemSelected(int menuItemID, int topLevelMenuIndex);
 		void handleColumnSelection(const int itemId);
 		void handleSortSelection(const int itemId);
+	
+		static const String getPropertyCategory(const String &propertyName); // Added v5.6.36. Thanks to @dnaldoog
+		static const Colour getCategoryColour(const String &category); // Added v5.6.36. Thanks to @dnaldoog
+		static const String generateLuaUsage(const String &propertyName, bool includeGetter, bool includeSetter); // Added v5.6.36. Thanks to @dnaldoog
+
+		void tableColumnsChanged(TableHeaderComponent *) override; // Added v5.6.36. Thanks to @dnaldoog
+		void tableColumnsResized(TableHeaderComponent *) override; // Added v5.6.36. Thanks to @dnaldoog
+		void tableSortOrderChanged(TableHeaderComponent *) override; // Added v5.6.36. Thanks to @dnaldoog
+		void tableColumnDraggingChanged(TableHeaderComponent *, int) override; // Added v5.6.36. Thanks to @dnaldoog
+
+		void saveColumnState(); // Added v5.6.36. Thanks to @dnaldoog
+	
 		JUCE_LEAK_DETECTOR(CtrlrPanelModulatorList)
 
 	private:

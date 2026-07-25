@@ -91,7 +91,12 @@ public:
 		AlignToRight	= 2057,
 		FitToRect		= 2058,
 		GroupCreate		= 2059,
-		GroupDestroy	= 2060
+		GroupDestroy	= 2060,
+		DistributeHorizontally	= 2061, // Added v5.6.36. Thanks to @dnaldoog. Align/Resize to first selection between components
+		DistributeVertically	= 2062,
+		MatchWidth		= 2063,
+		MatchHeight		= 2064,
+		MatchSize		= 2065
 	};
 
 	enum Direction
@@ -234,7 +239,7 @@ private:
 		luaPanelFileDragDropHandlerCbk,
 		luaPanelFileDragEnterHandlerCbk,
 		luaPanelFileDragExitHandlerCbk;
-	int64 lastRMBMouseEventTime, lastLMBMouseEventTime;
+	int64 lastRMBMouseEventTime = 0, lastLMBMouseEventTime = 0;
 	OwnedArray <CtrlrPanelCanvasLayer> layers;
     ResizableBorderComponent* ctrlrPanelCanvasResizableBorder;
     CtrlrPanelCanvas (const CtrlrPanelCanvas&);

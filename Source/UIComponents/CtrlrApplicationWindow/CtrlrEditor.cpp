@@ -47,7 +47,7 @@ CtrlrEditor::CtrlrEditor (CtrlrProcessor *_ownerFilter, CtrlrManager &_owner)
     
     if (!JUCEApplication::isStandaloneApp()) // If Ctrlr is !NOT run as a standalone app but as a plugin or shared lib
     {
-        if (owner.getInstanceMode() != InstanceSingleRestriced) // is !NOT restricted instance of the plugin
+        if (owner.getInstanceMode() != InstanceSingleRestricted) // is !NOT restricted instance of the plugin
         {
             addAndMakeVisible(&resizer);
             resizer.setAlwaysOnTop(false);
@@ -58,7 +58,7 @@ CtrlrEditor::CtrlrEditor (CtrlrProcessor *_ownerFilter, CtrlrManager &_owner)
     
     if (owner.getProperty (Ids::ctrlrEditorBounds).toString() != "") // ctrlrEditorBounds is Editor size. AAX Plugin crashes here, passes without it
     {
-        if (owner.getInstanceMode() != InstanceSingle && owner.getInstanceMode() != InstanceSingleRestriced)
+        if (owner.getInstanceMode() != InstanceSingle && owner.getInstanceMode() != InstanceSingleRestricted)
         {
             editorRect = VAR2RECT(owner.getProperty(Ids::ctrlrEditorBounds)); // Size of full Editor window including top tabs and 1px borders
         }
@@ -88,7 +88,7 @@ CtrlrEditor::CtrlrEditor (CtrlrProcessor *_ownerFilter, CtrlrManager &_owner)
                 editorRect.setHeight (editorRect.getHeight());
             }
             
-            if (!JUCEApplication::isStandaloneApp() && owner.getInstanceMode() == InstanceSingleRestriced)
+            if (!JUCEApplication::isStandaloneApp() && owner.getInstanceMode() == InstanceSingleRestricted)
             {
                 setResizable(vpResizable, true);
                 
@@ -368,7 +368,7 @@ CtrlrPanel *CtrlrEditor::getActivePanel()
 
 bool CtrlrEditor::isRestricted()
 {
-	return (owner.getInstanceMode() == InstanceSingleRestriced);
+	return (owner.getInstanceMode() == InstanceSingleRestricted);
 }
 
 CtrlrPanelEditor *CtrlrEditor::getActivePanelEditor()
@@ -387,7 +387,7 @@ bool CtrlrEditor::isPanelActive(const bool checkRestrictedInstance)
 	{
 		if (checkRestrictedInstance)
 		{
-			if (owner.getInstanceMode() == InstanceSingleRestriced)
+			if (owner.getInstanceMode() == InstanceSingleRestricted)
 			{
 				return (false);
 			}

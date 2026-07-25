@@ -55,7 +55,7 @@ void CtrlrDocumentPanel::activeDocumentChanged()
     
     if (getCurrentTabbedComponent()) {
         
-        if (owner.getInstanceMode() == InstanceSingleRestriced) // Added v5.6.31. Hides tabs on exported restricted instances
+        if (owner.getInstanceMode() == InstanceSingleRestricted) // Added v5.6.31. Hides tabs on exported restricted instances
         {
             getCurrentTabbedComponent()->setTabBarDepth(0); // Tab height for horizontal bar
             getCurrentTabbedComponent()->getTabbedButtonBar().setMinimumTabScaleFactor(0); // Min tab width ratio

@@ -50,7 +50,7 @@ void CtrlrManager::setEmbeddedDefaults()
     setProperty (Ids::uiLuaConsoleInputRemoveAfterRun, true);
      
     // Added v5.6.31
-    if (getInstanceMode() == InstanceSingle || getInstanceMode() == InstanceSingleRestriced) // Added v5.6.31. Force LnF V3 for Main & Child Windows if panel is Legacy
+    if (getInstanceMode() == InstanceSingle || getInstanceMode() == InstanceSingleRestricted) // Added v5.6.31. Force LnF V3 for Main & Child Windows if panel is Legacy
     {
         ValueTree ed = getInstanceTree().getChildWithName(Ids::uiPanelEditor);
         
@@ -177,7 +177,7 @@ Result CtrlrManager::initEmbeddedInstance()
 
 const String CtrlrManager::getInstanceNameForHost() const
 {
-	if (getInstanceMode() == InstanceSingle || getInstanceMode() == InstanceSingleRestriced)
+	if (getInstanceMode() == InstanceSingle || getInstanceMode() == InstanceSingleRestricted)
 	{
         #if JucePlugin_Build_AAX
             // This code runs ONLY when building for AAX.
@@ -207,7 +207,7 @@ const String CtrlrManager::getInstanceName() const
 
 const bool CtrlrManager::isSingleInstance() const
 {
-	return (ctrlrPlayerInstanceMode == InstanceSingle || ctrlrPlayerInstanceMode == InstanceSingleRestriced);
+	return (ctrlrPlayerInstanceMode == InstanceSingle || ctrlrPlayerInstanceMode == InstanceSingleRestricted);
 }
 
 

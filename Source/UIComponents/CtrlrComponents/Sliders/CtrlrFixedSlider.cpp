@@ -87,6 +87,7 @@ CtrlrFixedSlider::CtrlrFixedSlider (CtrlrModulator &owner)
         setProperty (Ids::uiSliderRotaryOutlineColour, "0xff0000ff");  // 0xff0000ff
         setProperty (Ids::uiSliderRotaryFillColour, "0xff0000ff"); // 0xff0000ff
         setProperty (Ids::uiSliderTrackColour, "0xff0f0f0f"); // 0xff0f0f0f
+        setProperty (Ids::uiSliderBackgroundColour, "0x00000000"); // Added v5.5.36 for linear bar slider
         setProperty (Ids::uiSliderThumbColour, "0xffff0000"); // 0xffff0000
     }
     else
@@ -96,6 +97,7 @@ CtrlrFixedSlider::CtrlrFixedSlider (CtrlrModulator &owner)
         setProperty (Ids::uiSliderRotaryFillColour, (String)findColour(Slider::rotarySliderFillColourId).toString());
         setProperty (Ids::uiSliderTrackColour, (String)findColour(Slider::rotarySliderFillColourId).toString());
         setProperty (Ids::uiSliderThumbColour, (String)findColour(Slider::thumbColourId).toString());
+        setProperty (Ids::uiSliderBackgroundColour, (String)findColour(Slider::backgroundColourId).toString()); // Added v5.5.36 for linear bar slider
     }
  
     setProperty (Ids::uiSliderIncDecButtonColour, (String)findColour (Slider::backgroundColourId).toString());
@@ -210,19 +212,22 @@ void CtrlrFixedSlider::setComponentValue (const double newValue, const bool send
 
 void CtrlrFixedSlider::sliderContentChanged()
 {
-    String values = getProperty (Ids::uiFixedSliderContent);
-    if (values.isNotEmpty()) {
-        valueMap->copyFrom (owner.getProcessor().setValueMap (values));
-        double max       =  valueMap->getNonMappedMax();
-        const double min = valueMap->getNonMappedMin();
-        // For JUCE MAX must be >= min
-        if (max <= min) {
-            // samething between 0.5 and 1 times the interval
-            // to avoid rounding errors
-            max = min + 0.66;
-        }
-        ctrlrSlider->setRange (min, max, 1);
-    }
+	valueMap->copyFrom (owner.getProcessor().setValueMap (getProperty(Ids::uiFixedSliderContent)));
+	
+	// ctrlrSlider->setRange (valueMap->getNonMappedMin(), valueMap->getNonMappedMax(), 1); // Removed v5.6.36
+	
+	// UPDATED v5.6.36. @Thanks to @dnaldoog
+	// FIX for startup/panel-loading crash (juce_NormalisableRange.h:242 assertion failure)
+	// that occurs when legacy or complex panels (like the Roland JD-990) initialize sliders with flat (min == max),
+	// inverted, or empty ranges.
+	// Get the limits from the value map
+	const double minVal = valueMap->getNonMappedMin();
+	const double maxVal = valueMap->getNonMappedMax();
+	
+	// Use the safe helper instead of calling ctrlrSlider->setRange directly
+	if (ctrlrSlider != nullptr) {
+		CtrlrComponent::applySafeSliderRange(*ctrlrSlider, minVal, maxVal, 1.0);
+	}
 }
 
 
@@ -260,6 +265,11 @@ void CtrlrFixedSlider::valueTreePropertyChanged (ValueTree &treeWhosePropertyHas
     else if (property == Ids::uiSliderTrackColour)
     {
         ctrlrSlider->setColour (Slider::trackColourId, VAR2COLOUR(getProperty (Ids::uiSliderTrackColour)) );
+        setProperty(Ids::uiSliderLookAndFeelIsCustom, true); // Locks the component custom colourScheme
+    }
+    else if (property == Ids::uiSliderBackgroundColour) // Added v5.5.36 for linear bar slider
+    {
+        ctrlrSlider->setColour (Slider::backgroundColourId, VAR2COLOUR(getProperty (Ids::uiSliderBackgroundColour)) );
         setProperty(Ids::uiSliderLookAndFeelIsCustom, true); // Locks the component custom colourScheme
     }
     else if (property == Ids::uiSliderThumbColour)
@@ -408,6 +418,7 @@ void CtrlrFixedSlider::resetLookAndFeelOverrides()
         setProperty (Ids::uiSliderThumbColour, (String)findColour(Slider::thumbColourId).toString());
 
         setProperty (Ids::uiSliderTrackColour, (String)findColour(Slider::rotarySliderFillColourId).toString());
+        setProperty (Ids::uiSliderBackgroundColour, (String)findColour(Slider::backgroundColourId).toString()); // Added v5.5.36 for linear bar slider
 
         setProperty (Ids::uiSliderIncDecTextColour, (String)findColour(Slider::textBoxTextColourId).toString());
         setProperty (Ids::uiSliderIncDecButtonColour, (String)findColour(Slider::backgroundColourId).toString());

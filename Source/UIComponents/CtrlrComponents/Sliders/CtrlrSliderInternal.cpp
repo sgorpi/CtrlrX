@@ -88,6 +88,35 @@ void CtrlrSliderInternal::mouseWheelMove (const MouseEvent &e, const MouseWheelD
 
 /* Visual styles for Sliders */
 
+void CtrlrSliderLookAndFeel_V2::drawLinearSlider (Graphics& g, int x, int y, int width, int height, float sliderPos, float minSliderPos, float maxSliderPos, const Slider::SliderStyle style, Slider& slider) // Added v5.5.36 for linear bar slider
+{
+    // JUCE 6.0.8 style check for Bar-type sliders
+    const bool isBar = (style == Slider::LinearBar || style == Slider::LinearBarVertical);
+
+    if (isBar)
+    {
+        const Colour background (slider.findColour (Slider::backgroundColourId));
+        g.setColour (background);
+        g.fillRect (x, y, width, height);
+
+        // Now draw the active track bar on top using trackColourId
+        g.setColour (slider.findColour (Slider::trackColourId));
+        if (slider.isHorizontal())
+        {
+            g.fillRect (x, y, (int) (sliderPos - x), height);
+        }
+        else
+        {
+            g.fillRect (x, (int) sliderPos, width, height - (int) sliderPos);
+        }
+    }
+    else
+    {
+        // Fallback to the standard drawing method which calls drawLinearSliderBackground
+        LookAndFeel_V2::drawLinearSlider (g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+    }
+}
+
 void CtrlrSliderLookAndFeel_V2::drawLinearSliderBackground (Graphics& g, int x, int y, int width, int height, float /*sliderPos*/, float /*minSliderPos*/, float /*maxSliderPos*/, const Slider::SliderStyle /*style*/, Slider& slider)
 {
     const float sliderRadius = (float) (getSliderThumbRadius (slider) - 2);
@@ -238,8 +267,34 @@ Colour CtrlrSliderLookAndFeel_V2::findColour (int colourId) const noexcept
     return (LookAndFeel::findColour (colourId));
 }
 
+void CtrlrSliderLookAndFeel_V3::drawLinearSlider (Graphics& g, int x, int y, int width, int height, float sliderPos, float minSliderPos, float maxSliderPos, const Slider::SliderStyle style, Slider& slider) // Added v5.5.36 for linear bar slider
+{
+    // JUCE 6.0.8 style check for Bar-type sliders
+    const bool isBar = (style == Slider::LinearBar || style == Slider::LinearBarVertical);
 
+    if (isBar)
+    {
+        const Colour background (slider.findColour (Slider::backgroundColourId));
+        g.setColour (background);
+        g.fillRect (x, y, width, height);
 
+        // Now draw the active track bar on top using trackColourId
+        g.setColour (slider.findColour (Slider::trackColourId));
+        if (slider.isHorizontal())
+        {
+            g.fillRect (x, y, (int) (sliderPos - x), height);
+        }
+        else
+        {
+            g.fillRect (x, (int) sliderPos, width, height - (int) sliderPos);
+        }
+    }
+    else
+    {
+        // Fallback to the standard drawing method which calls drawLinearSliderBackground
+        LookAndFeel_V3::drawLinearSlider (g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+    }
+}
 
 void CtrlrSliderLookAndFeel_V3::drawLinearSliderBackground (Graphics& g, int x, int y, int width, int height, float /*sliderPos*/, float /*minSliderPos*/, float /*maxSliderPos*/, const Slider::SliderStyle /*style*/, Slider& slider)
 {
@@ -339,8 +394,34 @@ Colour CtrlrSliderLookAndFeel_V3::findColour (int colourId) const noexcept
     return (LookAndFeel::findColour (colourId));
 }
 
+void CtrlrSliderLookAndFeel_V4::drawLinearSlider (Graphics& g, int x, int y, int width, int height, float sliderPos, float minSliderPos, float maxSliderPos, const Slider::SliderStyle style, Slider& slider) // Added v5.5.36 for linear bar slider
+{
+    // JUCE 6.0.8 style check for Bar-type sliders
+    const bool isBar = (style == Slider::LinearBar || style == Slider::LinearBarVertical);
 
+    if (isBar)
+    {
+        const Colour background (slider.findColour (Slider::backgroundColourId));
+        g.setColour (background);
+        g.fillRect (x, y, width, height);
 
+        // Now draw the active track bar on top using trackColourId
+        g.setColour (slider.findColour (Slider::trackColourId));
+        if (slider.isHorizontal())
+        {
+            g.fillRect (x, y, (int) (sliderPos - x), height);
+        }
+        else
+        {
+            g.fillRect (x, (int) sliderPos, width, height - (int) sliderPos);
+        }
+    }
+    else
+    {
+        // Fallback to the standard drawing method which calls drawLinearSliderBackground
+        LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+    }
+}
 
 void CtrlrSliderLookAndFeel_V4::drawLinearSliderBackground (Graphics& g, int x, int y, int width, int height, float /*sliderPos*/, float /*minSliderPos*/, float /*maxSliderPos*/, const Slider::SliderStyle /*style*/, Slider& slider)
 {

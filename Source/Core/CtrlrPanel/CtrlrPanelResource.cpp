@@ -25,7 +25,8 @@ CtrlrPanelResource::CtrlrPanelResource (CtrlrPanelResourceManager &_owner, const
 		resourceName = _resourceSourceFile.getFileNameWithoutExtension();
 	}
 
-	resourceHashCode	= _resourceSourceFile.hashCode();
+	// resourceHashCode	= _resourceSourceFile.hashCode();
+	resourceHashCode	= computeContentHash(_resourceDataFile); // Updated v5.6.36. Thanks to @dnaldoog. REF : https://github.com/damiensellier/CtrlrX/issues/281
 	resourceType		= owner.guessType (_resourceSourceFile);
 
 	load();
@@ -35,7 +36,8 @@ CtrlrPanelResource::CtrlrPanelResource (CtrlrPanelResourceManager &_owner, const
 	setProperty (Ids::resourceName, getName(), false);
 	setProperty (Ids::resourceSize, getSize(), false);
 	setProperty (Ids::resourceType, CtrlrPanelResourceManager::getTypeDescription(getType()), false);
-
+	setProperty (Ids::resourceHash, resourceHashCode, false); // Updated v5.6.36. Thanks to @dnaldoog.
+	
 	resourceTree.addListener(this);
 }
 
@@ -275,4 +277,14 @@ const String CtrlrPanelResource::asGzipText()
 
     // Read the decompressed content as string
     return gzipStream.readEntireStreamAsString();
+}
+
+int64 CtrlrPanelResource::computeContentHash (const File &f) // Added v5.6.36. Thanks to @dnaldoog.
+{
+	if (! f.existsAsFile() || f.getSize() == 0)
+		return 0;
+	
+	MemoryBlock data;
+	f.loadFileAsData (data);
+	return data.toBase64Encoding().hashCode64();
 }

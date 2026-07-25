@@ -414,7 +414,7 @@ const String CtrlrPanel::exportPanel(CtrlrPanel *panel, const File &lastBrowsedD
 
 	if (isRestricted)
 	{
-		exportTree.setProperty (Ids::restricted, (int)InstanceSingleRestriced, nullptr);
+		exportTree.setProperty (Ids::restricted, (int)InstanceSingleRestricted, nullptr);
 		if (exportTree.getChildWithName (Ids::uiPanelEditor).isValid())
 		{
 			exportTree.getChildWithName (Ids::uiPanelEditor).setProperty (Ids::uiPanelEditMode, false, nullptr);

@@ -64,7 +64,7 @@ CtrlrProcessor::CtrlrProcessor() :
 
 	ctrlrManager->setManagerReady();
 
-	if (ctrlrManager->getInstanceMode() == InstanceSingle || ctrlrManager->getInstanceMode() == InstanceSingleRestriced)
+	if (ctrlrManager->getInstanceMode() == InstanceSingle || ctrlrManager->getInstanceMode() == InstanceSingleRestricted)
 	{
 		if (ctrlrManager->getActivePanel())
 		{

@@ -140,7 +140,21 @@ void CtrlrFixedImageSlider::setComponentValue (const double newValue, const bool
 void CtrlrFixedImageSlider::sliderContentChanged()
 {
     valueMap->copyFrom (owner.getProcessor().setValueMap (getProperty(Ids::uiFixedSliderContent)));
-    ctrlrSlider->setRange (valueMap->getNonMappedMin(), valueMap->getNonMappedMax(), 1);
+	
+    // ctrlrSlider->setRange (valueMap->getNonMappedMin(), valueMap->getNonMappedMax(), 1); // Removed v5.6.36
+	
+    // UPDATED v5.6.36. @Thanks to @dnaldoog
+    // FIX for startup/panel-loading crash (juce_NormalisableRange.h:242 assertion failure)
+    // that occurs when legacy or complex panels (like the Roland JD-990) initialize sliders with flat (min == max),
+    // inverted, or empty ranges.
+    // Get the limits from the value map
+    const double minVal = valueMap->getNonMappedMin();
+    const double maxVal = valueMap->getNonMappedMax();
+    
+    // Use the safe helper instead of calling ctrlrSlider->setRange directly
+    if (ctrlrSlider != nullptr) {
+        CtrlrComponent::applySafeSliderRange(*ctrlrSlider, minVal, maxVal, 1.0);
+    }
 }
 
 

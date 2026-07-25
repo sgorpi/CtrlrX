@@ -3153,6 +3153,20 @@ void XWindowSystem::handleWindowMessage (LinuxComponentPeer* peer, XEvent& event
 
 void XWindowSystem::handleKeyPressEvent (LinuxComponentPeer* peer, XKeyEvent& keyEvent) const
 {
+    // ==========================================================================
+    // WORKAROUND: Fix Keypad Minus shortcut inside Linux Virtual Machines.
+    // Under certain Wayland/Fedora environments, raw hardware keycode 82 (KP_Minus)
+    // fails to translate to a valid symbol via XLookupString/XkbLookupKeySym.
+    // Spoofing it to keycode 20 forces JUCE to process it as a standard top-row minus.
+    // ==========================================================================
+
+    #if JUCE_LINUX // Added v5.6.36. Thanks to @dnaldoog. SEE : https://github.com/damiensellier/CtrlrX/issues/283
+    if (keyEvent.keycode == 82)
+    {
+        keyEvent.keycode = 20; // Spoof to standard top-row minus keycode
+    }
+    #endif
+
     auto oldMods = ModifierKeys::currentModifiers;
 
     char utf8 [64] = { 0 };

@@ -2161,6 +2161,7 @@
       <method name="getData" args="()" type="instance"/>
       <method name="getRange" args="(int startingPosition, int numBytes)" type="instance"/>
       <method name="getRange" args="(int startByte, int numBytes)" type="instance"/>
+      <method name="getRawAddress" type="instance" args="()" />
       <method name="getSize" args="()" type="instance"/>
       <method name="insert" args="(class_id src, class_id target, cast_function cast)" type="instance"/>
       <method name="insert" args="(make_pair(type, 0))" type="instance"/>

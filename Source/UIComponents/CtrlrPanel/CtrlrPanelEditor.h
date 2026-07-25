@@ -115,7 +115,12 @@ class CtrlrPanelEditor  :	public Component,
 	private:
         // Declare the LookAndFeel pointer first to ensure it is destroyed last
         std::unique_ptr<juce::LookAndFeel> lookAndFeel;
-    
+
+        // Declared before the component ScopedPointers below so it is destroyed *after* them:
+        // the viewport -> magnifier -> canvas chain unregisters itself as a listener on this tree
+        // in ~CtrlrPanelCanvas, so the tree must still be alive when those components are destroyed.
+        ValueTree panelEditorTree;
+
         // Old way
         // CtrlrPanelProperties* ctrlrPanelProperties;
         // StretchableLayoutResizerBar* spacerComponent;
@@ -136,8 +141,7 @@ class CtrlrPanelEditor  :	public Component,
 		StretchableLayoutManager layoutManager;
 		bool lastEditMode, currentRestoreState;
 		CtrlrManager &ctrlrManager;
-		ValueTree panelEditorTree;
-    
+
         // The macro JUCE_DECLARE_WEAK_REFERENCEABLE(CtrlrPanelEditor)
         // already handles the weak reference master.
         // The following lines are redundant and should be removed from your code.

@@ -19,6 +19,7 @@ void CtrlrEditor::getAllCommands (Array< CommandID > &commands)
 								doViewPropertyDisplayIDs,
 								doZoomIn,
 								doZoomOut,
+								doZoomZero, // Added v5.6.36. Thanks to @dnaldoog
 								doCopy,
 								doCut,
 								doPaste,
@@ -178,12 +179,29 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
 		case doZoomIn:
 			result.setInfo ("Zoom In", "Zoom in the panel", panelCategory, 0);
 			result.addDefaultKeypress ('+', ModifierKeys::commandModifier);
+			result.addDefaultKeypress ('=', ModifierKeys::commandModifier); // US keyboard, that + / = key is seen as "="
+			result.addDefaultKeypress (juce::KeyPress::numberPadAdd, ModifierKeys::commandModifier);
 			result.setActive (isPanelActive());
 			break;
 
 		case doZoomOut:
 			result.setInfo ("Zoom Out", "Zoom out the panel", panelCategory, 0);
 			result.addDefaultKeypress ('-', ModifierKeys::commandModifier);
+			result.addDefaultKeypress (juce::KeyPress::numberPadSubtract, ModifierKeys::commandModifier);
+			result.setActive (isPanelActive());
+			break;
+		
+		if (result.defaultKeypresses.size() > 0) // Added v5.6.36. FIX for LINUX WAYLAND. Thanks to @dnaldoog
+			{
+				_DBG("Registered ZoomOut key description: " + result.defaultKeypresses[0].getTextDescription());
+			}
+			result.setActive (isPanelActive());
+			break;
+		
+		case doZoomZero: // Added v5.6.36. Thanks to @dnaldoog
+			result.setInfo ("Zoom Reset", "Reset panel zoom to baseline", panelCategory, 0);
+			result.addDefaultKeypress ('0', ModifierKeys::commandModifier);
+			result.addDefaultKeypress (juce::KeyPress::numberPad0, ModifierKeys::commandModifier);
 			result.setActive (isPanelActive());
 			break;
 
@@ -294,7 +312,8 @@ void CtrlrEditor::getCommandInfo (CommandID commandID, ApplicationCommandInfo &r
 			break;
 
 		case doRefreshDeviceList:
-			result.setInfo ("Refresh devices", "Refresh the list of devices available in the OS", panelCategory, 0);
+			result.setInfo ("Refresh devices", "Refresh available MIDI devices", panelCategory, 0);
+			result.addDefaultKeypress('d', ModifierKeys::commandModifier);
 			result.setActive (true);
 			break;
 

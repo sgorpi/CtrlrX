@@ -110,10 +110,25 @@ CtrlrComponent::CtrlrComponent(CtrlrModulator &_owner)
     setProperty (Ids::componentLuaMouseDoubleClick, COMBO_ITEM_NONE);
     setProperty (Ids::componentLuaMouseEnter, COMBO_ITEM_NONE);
     setProperty (Ids::componentLuaMouseExit, COMBO_ITEM_NONE);
+	
+    setProperty (Ids::componentBubbleHelpEnabled, false); // Added v5.6.36. Thanks to @dnaldoog
+    setProperty (Ids::componentBubbleHelpTitle, ""); // Added v5.6.36. Thanks to @dnaldoog
+    setProperty (Ids::componentBubbleHelpText, ""); // Added v5.6.36. Thanks to @dnaldoog
+    setProperty (Ids::componentBubbleHelpTimeout, 5000); // Added v5.6.36. Thanks to @dnaldoog
+    setProperty (Ids::componentBubbleHelpTrigger, 0); // Added v5.6.36. Thanks to @dnaldoog
+    setProperty(Ids::componentBubbleHelpDismissOnExit, false); // Added v5.6.36. Thanks to @dnaldoog
 }
 
 CtrlrComponent::~CtrlrComponent()
 {
+	if (bubbleMessage != nullptr) // Added v5.6.36. Thanks to @dnaldoog
+	{
+        bubbleMessage->setVisible(false);
+        if (auto* p = bubbleMessage->getParentComponent())
+            p->removeChildComponent(bubbleMessage.get());
+            bubbleMessage.reset();
+	}
+    
     if (shadowEffect)
     {
         delete (shadowEffect.release());
@@ -196,13 +211,25 @@ void CtrlrComponent::mouseDoubleClick(const MouseEvent &e)
 
 void CtrlrComponent::mouseDown(const MouseEvent &e)
 {
+    _DBG("CtrlrComponent::mouseDown fired, cbk=" + String(mouseDownCbk ? 1 : 0));
+    
     if (mouseDownCbk && !mouseDownCbk.wasObjectDeleted())
     {
+        _DBG("cbk not deleted, isValid=" + String(mouseDownCbk->isValid() ? 1 : 0));
         if (mouseDownCbk->isValid())
         {
+            _DBG("calling Lua method");
             owner.getOwnerPanel().getCtrlrLuaManager().getMethodManager().call (mouseDownCbk, this, e);
         }
     }
+    if (e.mods.isAltDown())
+        triggerBubbleHelp(e, 4); // Alt check goes first since on some platforms Alt+Click can also register as a plain click depending on event ordering.
+    if (e.mods.isCtrlDown())
+        triggerBubbleHelp(e, 2);
+    else if (e.mods.isShiftDown())
+        triggerBubbleHelp(e, 3);
+    else
+        triggerBubbleHelp(e, 0);
 }
 
 void CtrlrComponent::mouseUp(const MouseEvent &e)
@@ -225,6 +252,7 @@ void CtrlrComponent::mouseEnter (const MouseEvent &e)
             owner.getOwnerPanel().getCtrlrLuaManager().getMethodManager().call (mouseEnterCbk, this, e);
         }
     }
+    triggerBubbleHelp(e, 1); // Added v5.6.36. Thanks to @dnaldoog
 }
 
 void CtrlrComponent::mouseExit (const MouseEvent &e)
@@ -234,6 +262,17 @@ void CtrlrComponent::mouseExit (const MouseEvent &e)
         if (mouseExitCbk->isValid())
         {
             owner.getOwnerPanel().getCtrlrLuaManager().getMethodManager().call (mouseExitCbk, this, e);
+        }
+    }
+    
+    if ((bool)componentTree.getProperty(Ids::componentBubbleHelpDismissOnExit, false)) // Added v5.6.36. Thanks to @dnaldoog
+    {
+        if (bubbleMessage != nullptr)
+        {
+            bubbleMessage->setVisible(false);
+            if (auto* p = bubbleMessage->getParentComponent())
+                p->removeChildComponent(bubbleMessage.get());
+                bubbleMessage.reset();
         }
     }
 }
@@ -441,6 +480,16 @@ void CtrlrComponent::valueTreePropertyChanged (ValueTree &treeWhosePropertyHasCh
             // Call the existing function to move the component.
             // This function already handles all the necessary logic.
             owner.getOwnerPanel().getCanvas()->assignToLayer(this, newLayer);
+        }
+    }
+    else if (property == Ids::componentBubbleHelpEnabled) // Added v5.6.36. Thanks to @dnaldoog
+    {
+        if (!(bool)getProperty(property) && bubbleMessage != nullptr)
+        {
+            bubbleMessage->setVisible(false);
+            if (auto* p = bubbleMessage->getParentComponent())
+                p->removeChildComponent(bubbleMessage.get());
+            bubbleMessage.reset();
         }
     }
     else if (property == Ids::componentRectangle)
@@ -803,6 +852,55 @@ bool CtrlrComponent::isInternal()
 CtrlrLuaRectangle CtrlrComponent::getLuaBounds() const
 {
     return (CtrlrLuaRectangle(getBounds()));
+}
+
+void CtrlrComponent::triggerBubbleHelp(const MouseEvent& e, int requiredTrigger)
+{
+    // Don't re-trigger if bubble is already visible
+    if (bubbleMessage != nullptr && bubbleMessage->isVisible())
+        return;
+    if (!(bool)componentTree.getProperty(Ids::componentBubbleHelpEnabled, false))
+        return;
+	
+    if ((int)componentTree.getProperty(Ids::componentBubbleHelpTrigger, 0) != requiredTrigger)
+        return;
+	
+    if (restoreStateInProgress)
+        return;
+	
+    CtrlrPanelEditor* editor = owner.getOwnerPanel().getEditor();
+    if (editor == nullptr)
+        return;
+	
+    String title   = componentTree.getProperty(Ids::componentBubbleHelpTitle).toString();
+    String body    = componentTree.getProperty(Ids::componentBubbleHelpText).toString();
+    int    timeout = componentTree.getProperty(Ids::componentBubbleHelpTimeout, 5000);
+	
+    if (body.isEmpty())
+        return;
+	
+    if (bubbleMessage != nullptr)
+    {
+        bubbleMessage->setVisible(false);
+        if (auto* p = bubbleMessage->getParentComponent())
+            p->removeChildComponent(bubbleMessage.get());
+        bubbleMessage.reset();
+    }
+    
+    String completeMessage = title.isNotEmpty() ? (title + "\n\n" + body) : body;
+    
+    AttributedString attrStr(completeMessage);
+    attrStr.setJustification(Justification::centred);
+    attrStr.setFont(Font(14.0f));
+    attrStr.setColour(editor->getLookAndFeel().findColour(TextEditor::textColourId));
+	
+    bubbleMessage.reset(new BubbleMessageComponent(200));
+    editor->addChildComponent(bubbleMessage.get());
+    bubbleMessage->setAlwaysOnTop(true);
+    bubbleMessage->setVisible(true);
+    
+    Rectangle<int> boundsInEditor = editor->getLocalArea(this, getLocalBounds());
+    bubbleMessage->showAt(boundsInEditor, attrStr, timeout, true, false);
 }
 
 void CtrlrComponent::wrapForLua (lua_State *L)

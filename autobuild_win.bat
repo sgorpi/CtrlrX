@@ -10,7 +10,7 @@ setlocal enabledelayedexpansion
 :: #cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCTRLRX_USE_LUAJIT=ON ..
 :: #cmake --build build
 set "BUILD_DIR=%USERPROFILE%\Documents\CtrlrX\build"
-set "PROCESSORS=%NUMBER_OF_PROCESSORS%"
+set "PROCESSORS=%PROCESSORS%"
 
 ::==============================================================================
 :: Bootstrap VS environment if cl.exe isn't already available
@@ -132,13 +132,15 @@ cmake -G "Ninja" ^
   .. || goto ERROR
 
 echo Building...
-cmake --build . --parallel %PROCESSORS% || goto ERROR
+:: cmake --build . --parallel %PROCESSORS% || goto ERROR
+cmake --build . --parallel %PROCESSORS% > build_log.txt 2>&1 || goto ERROR
 goto END
 
 ::==============================================================================
 :CLEAN
 ::==============================================================================
 echo.
+echo View compiler messages in build/build_log.txt
 echo [CLEAN BUILD] Config: %CONFIG%
 if not exist "%BUILD_DIR%" (
     echo Build directory not found - run a Full Build first.
@@ -153,7 +155,8 @@ del /s /q "%BUILD_DIR%\*.ilk"     2>nul
 del /s /q "%BUILD_DIR%\*.pdb"     2>nul
 
 echo Building...
-cmake --build . --parallel %PROCESSORS% || goto ERROR
+:: cmake --build . --parallel %PROCESSORS% || goto ERROR
+cmake --build . --parallel %PROCESSORS% > build_log.txt 2>&1 || goto ERROR
 goto END
 
 ::==============================================================================
@@ -168,7 +171,8 @@ if not exist "%BUILD_DIR%" (
 cd /d "%BUILD_DIR%" || exit /b 1
 
 echo Building...
-cmake --build . --parallel %PROCESSORS% || goto ERROR
+:: cmake --build . --parallel %PROCESSORS% || goto ERROR
+cmake --build . --parallel %PROCESSORS% > build_log.txt 2>&1 || goto ERROR
 goto END
 
 ::==============================================================================

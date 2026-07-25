@@ -12,6 +12,8 @@ class LBigInteger : public BigInteger
 	public:
 		LBigInteger() {}
 		LBigInteger(int value) : BigInteger(value) {}
+		void setBit1(int bit) { BigInteger::setBit(bit); }
+		void setBit2(int bit, bool shouldBeSet) { BigInteger::setBit(bit, shouldBeSet); }
 
 		/*void xor(const BigInteger &other)
 		{

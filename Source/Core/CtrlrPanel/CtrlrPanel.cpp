@@ -242,7 +242,11 @@ CtrlrPanel::~CtrlrPanel()
 
 	ctrlrModulators.clear();
 
-	owner.getManagerTree().removeChild (panelTree, 0);
+	// UPDATED v5.6.36. Thanks to @dnaldoog.
+	// !owner.isShuttingDown prevents a use-after-free crash during app shutdown.
+	if (!owner.isShuttingDown()) {
+		owner.getManagerTree().removeChild(panelTree, 0);
+	}
 }
 
 void CtrlrPanel::setRestoreState(const bool _restoreStateStatus)

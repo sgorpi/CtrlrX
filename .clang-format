@@ -51,3 +51,10 @@ AlignConsecutiveDeclarations: false
 
 # Line limit safety padding
 ColumnLimit: 120
+
+# --- FUNCTION WRAPPING ---
+# Prevents VS/Xcode from collapsing short functions onto a single line
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false

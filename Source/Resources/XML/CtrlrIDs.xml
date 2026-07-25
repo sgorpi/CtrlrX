@@ -228,6 +228,13 @@
   <id name="componentBubbleNameColour"            text="Bubble: Name text colour" type="Colour" />
   <id name="componentBubbleNameFont"              text="Bubble: Name text font" type="Font" />
   <id name="componentBubbleNameJustification"     text="Bubble: Nam text justification" type="VarText" defaults="@justification" />
+  <id name="componentBubbleHelpTrigger"           text="Bubble Help: Trigger Condition" type="VarNumeric" defaults="Mouse Down=0,Mouse Hover=1,Ctrl + Click=2,Shift + Click=3" />
+  <id name="componentBubbleHelpEnabled"           text="Bubble Help: Enable Tooltips" type="Bool" />
+  <id name="componentBubbleHelpTitle"             text="Bubble Help: Title" type="Text" />
+  <id name="componentBubbleHelpText"              text="Bubble Help: Description" type="MultiLineSmall" />
+  <id name="componentBubbleHelpTimeout"           text="Bubble Help: Timeout [ms]" type="Numeric" min="500" max="30000" />
+  <id name="componentBubbleHelpTrigger"           text="Bubble Help: Trigger Condition" type="VarNumeric" defaults="Mouse Down=0,Mouse Hover=1,Ctrl + Click=2,Shift + Click=3,Alt + Click=4" />
+  <id name="componentBubbleHelpDismissOnExit"     text="Bubble Help: Dismiss on mouse exit" type="Bool" />
   
   <id name="componentLookAndFeel"                 text="Component LookAndFeel type" type="VarText" defaults="@componentlookandfeel" />
   <id name="componentLookAndFeelIsCustom"         text="Component LookAndFeel is customized" type="Bool" defaults="Custom Colours/Default Colours" />
@@ -278,6 +285,7 @@
   <id name="uiSliderValueHighlightColour" 	text="Value text colour highlighted" type="Colour"/>
   <id name="uiSliderValueOutlineColour" 	text="Value outline colour" type="Colour"/>
   <id name="uiSliderTrackColour" 			text="Track colour (linear)" type="Colour"/>
+  <id name="uiSliderBackgroundColour" 		text="Background colour (linear)" type="Colour"/>
   <id name="uiSliderIncDecButtonColour" 	text="Inc/Dec buttons background colour" type="Colour"/>
   <id name="uiSliderIncDecTextColour" 		text="Inc/Dec buttons text colour" type="Colour"/>
 

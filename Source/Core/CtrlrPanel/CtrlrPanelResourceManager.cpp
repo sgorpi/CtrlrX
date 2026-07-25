@@ -230,52 +230,86 @@ bool CtrlrPanelResourceManager::resourceExists(const File &resourceFile)
 	return (false);
 }
 
-Result CtrlrPanelResourceManager::importResource (const ValueTree &resourceTree)
+Result CtrlrPanelResourceManager::importResource (const ValueTree &resourceTree) // Updated v5.6.36. Thanks to @dnaldoog
 {
-	if (getResource(resourceTree.getProperty(Ids::resourceName).toString()))
+	String resourceName = resourceTree.getProperty(Ids::resourceName).toString();
+	
+	// _DBG("importResource: [" + resourceName + "] exists="
+	//      + String(getResource(resourceName) != nullptr ? "YES" : "NO")
+	//      + " resourcesDir=" + resourcesDirectory.getFullPathName()
+	//      + " numResources=" + String(resources.size()));
+	
+	if (getResource(resourceName))
 	{
 		if ((bool)owner.getCtrlrManagerOwner().getProperty(Ids::ctrlrOverwriteResources) == false)
+			return Result::fail("ImportResource resource: " + resourceName
+								+ " failed, a resource with this name already exists");
+		
+		// Decode incoming data first so we can hash-compare
+		MemoryBlock resourceData;
+		if (! resourceData.fromBase64Encoding(resourceTree.getProperty(Ids::resourceData).toString()))
+			return Result::fail("ImportResource resource: " + resourceName
+								+ " failed to decode base64 encoded data");
+		
+		// Only overwrite if content has actually changed
+		int64 incomingHash = (int64) resourceTree.getProperty(Ids::resourceHash);
+		int64 cachedHash   = getResource(resourceName)->getHashCode();
+		_DBG("importResource: [" + resourceName + "] incomingHash=" + String(incomingHash)
+			 + " cachedHash=" + String(cachedHash));
+		
+		if (incomingHash != 0 && cachedHash != 0 && incomingHash == cachedHash)
 		{
-			return (Result::fail("ImportResource resource: " + resourceTree.getProperty(Ids::resourceName).toString() + "failed, a resource with this name already exists"));
+			_DBG("importResource: [" + resourceName + "] hash match, skipping overwrite");
+			return Result::ok();
 		}
-		else
-		{
-			return (Result::ok());
-		}
+		_DBG("importResource: [" + resourceName + "] hash changed, overwriting");
+		
+		File resourceTempFile = File::getCurrentWorkingDirectory()
+		.getChildFile(resourceTree.getProperty(Ids::resourceFile).toString());
+		File resourceDest = resourcesDirectory.getChildFile(resourceTempFile.getFileName());
+		
+		if (! resourceDest.exists())
+			resourceDest.create();
+		
+		if (! resourceDest.replaceWithData(resourceData.getData(), (int)resourceData.getSize()))
+			return Result::fail("ImportResource can't replace file contents with new data, resource: "
+								+ resourceDest.getFullPathName());
+		
+		_DBG("importResource: [" + resourceName + "] overwritten on disk OK: "
+			 + resourceDest.getFullPathName());
+		return Result::ok();
 	}
 	else
 	{
-		File resourceTempFile = File::getCurrentWorkingDirectory().getChildFile(resourceTree.getProperty(Ids::resourceFile).toString());
+		// Fresh import — resource not on disk yet
+		File resourceTempFile = File::getCurrentWorkingDirectory()
+		.getChildFile(resourceTree.getProperty(Ids::resourceFile).toString());
 		File resourceDest = resourcesDirectory.getChildFile(resourceTempFile.getFileName());
-
-		if (resourcesDirectory.isDirectory())
+		
+		if (! resourcesDirectory.isDirectory())
+			return Result::fail("Import resource failed, the path specified as the resource directory is not one: "
+								+ resourcesDirectory.getFullPathName());
+		
+		MemoryBlock resourceData;
+		if (! resourceData.fromBase64Encoding(resourceTree.getProperty(Ids::resourceData).toString()))
 		{
-			MemoryBlock resourceData;
-			if (resourceData.fromBase64Encoding (resourceTree.getProperty(Ids::resourceData).toString()))
-			{
-				if (!resourceDest.exists())
-				{
-					resourceDest.create();
-				}
-
-				if (!resourceDest.replaceWithData(resourceData.getData(), (int)resourceData.getSize()))
-				{
-					return (Result::fail("ImportResource can't replace file contents with new data, resource: "+resourceDest.getFullPathName()));
-				}
-
-				addResource (resourceDest, resourceTree.getProperty(Ids::resourceName));
-				return (Result::ok());
-			}
-			else
-			{
-				resourceDest.deleteFile();
-				return (Result::fail("ImportResource resource: " + resourceTree.getProperty(Ids::resourceName).toString() + " failed to decode base64 encoded data"));
-			}
+			resourceDest.deleteFile();
+			return Result::fail("ImportResource resource: " + resourceName
+								+ " failed to decode base64 encoded data");
 		}
-		else
-		{
-			return (Result::fail("Import resource failed, the path specified as the resource directory is not one:"+resourcesDirectory.getFullPathName()));
-		}
+		
+		if (! resourceDest.exists())
+			resourceDest.create();
+		
+		if (! resourceDest.replaceWithData(resourceData.getData(), (int)resourceData.getSize()))
+			return Result::fail("ImportResource can't replace file contents with new data, resource: "
+								+ resourceDest.getFullPathName());
+		
+		_DBG("importResource: [" + resourceName + "] fresh import OK: "
+			 + resourceDest.getFullPathName());
+		
+		addResource (resourceDest, resourceTree.getProperty(Ids::resourceName));
+		return Result::ok();
 	}
 }
 

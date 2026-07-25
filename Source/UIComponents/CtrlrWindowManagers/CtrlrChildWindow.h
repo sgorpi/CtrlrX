@@ -9,6 +9,9 @@ class CtrlrChildWindowContent;
 class CtrlrLookAndFeel;
 class CtrlrChildWindow;
 class CtrlrManager;
+#if JUCE_LINUX
+class LinuxFadeInWindow;
+#endif
 class CtrlrWindowManager
 {
 	public:
@@ -41,4 +44,7 @@ class CtrlrChildWindow  : public DocumentWindow, public KeyListener
 		CtrlrChildWindowContent *contentComponent;
 		CtrlrWindowManager &owner;
 		TooltipWindow window;
+#if JUCE_LINUX
+		std::unique_ptr<LinuxFadeInWindow> fadeInTimer;
+#endif
 };

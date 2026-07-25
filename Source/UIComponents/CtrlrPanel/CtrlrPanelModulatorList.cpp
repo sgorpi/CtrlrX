@@ -8,31 +8,31 @@
 #include "CtrlrInlineUtilitiesGUI.h"
 
 /* ********************************************************************************** */
-CtrlrPanelModulatorList::CtrlrPanelModulatorList (CtrlrPanel &_owner)
+CtrlrPanelModulatorList::CtrlrPanelModulatorList (CtrlrPanel &_owner) // Updated v5.6.36. Thanks to @dnaldoog
     : owner(_owner),
       modulatorList (nullptr), 
       modulatorListTree(owner)
 {
-    addAndMakeVisible (&modulatorListTree);
-    modulatorListTree.setVisible (false);
-
     owner.setProperty (Ids::uiPanelModulatorListViewTree, false);
-
+	
+    // Instantiate and configure TableListBox once
     addAndMakeVisible (modulatorList = new TableListBox ("Modulator List", this));
-    modulatorList->setName ("modulatorList");
+    modulatorList->setName(L"modulatorList");
+    modulatorList->getHeader().addListener(this);
     modulatorList->getHeader().setStretchToFitActive(true);
-    modulatorList->setMultipleSelectionEnabled (true);
-    modulatorList->setHeaderHeight (20);
-
-    if (owner.getProperty (Ids::panelModulatorListColumns).toString() != COMBO_ITEM_NONE)
-    {
-        restoreColumns (owner.getProperty (Ids::panelModulatorListColumns));
-    }
-    else
-    {
+    modulatorList->setMultipleSelectionEnabled(true);
+    modulatorList->setHeaderHeight(20);
+    
+    // Configure TreeView
+    addAndMakeVisible(&modulatorListTree);
+    modulatorListTree.setVisible(false);
+    
+    // Restore or reset columns configuration
+    if (owner.getProperty(Ids::panelModulatorListColumns).toString() != COMBO_ITEM_NONE) {
+        restoreColumns(owner.getProperty(Ids::panelModulatorListColumns));
+    } else {
         resetToDefaults();
     }
-    
     owner.addPanelListener (this);
 
     // Start the timer to poll for selection changes every 200ms
@@ -42,9 +42,15 @@ CtrlrPanelModulatorList::CtrlrPanelModulatorList (CtrlrPanel &_owner)
     refresh();
 }
 
-CtrlrPanelModulatorList::~CtrlrPanelModulatorList()
+CtrlrPanelModulatorList::~CtrlrPanelModulatorList() // Updated v5.6.36. Thanks to @dnaldoog
 {
-	owner.removePanelListener (this);
+    saveColumnState();
+    
+    owner.removePanelListener (this);
+    
+    if (modulatorList != nullptr)
+        modulatorList->getHeader().removeListener(this);
+    
     deleteAndZero (modulatorList);
 }
 
@@ -61,19 +67,46 @@ void CtrlrPanelModulatorList::resized()
 void CtrlrPanelModulatorList::resetToDefaults()
 {
 	modulatorList->getHeader().removeAllColumns();
+	
+	// @damiensellier default basic laytout
 	modulatorList->getHeader().addColumn ("name", getColumnIdForIdentifier("name")+1, 100);
-	modulatorList->getHeader().addColumn ("modulatorValue", getColumnIdForIdentifier("modulatorValue")+1, 60);
 	modulatorList->getHeader().addColumn ("vstIndex", getColumnIdForIdentifier("vstIndex")+1, 60);
+	modulatorList->getHeader().addColumn ("modulatorValue", getColumnIdForIdentifier("modulatorValue")+1, 60);
 	modulatorList->getHeader().addColumn ("uiType", getColumnIdForIdentifier("uiType")+1, 100);
 	modulatorList->getHeader().addColumn ("componentRectangle", getColumnIdForIdentifier("componentRectangle")+1, 80);
 	modulatorList->getHeader().addColumn ("componentGroupName", getColumnIdForIdentifier("componentGroupName")+1, 60);
 	modulatorList->getHeader().addColumn ("componentTabName", getColumnIdForIdentifier("componentTabName")+1, 60);
-	modulatorList->getHeader().addColumn ("componentRadioGroupId", getColumnIdForIdentifier("componentRadioGroupId")+1, 60);
 	modulatorList->getHeader().addColumn ("midiMessageType", getColumnIdForIdentifier("midiMessageType")+1, 60);
 	modulatorList->getHeader().addColumn ("midiMessageCtrlrNumber", getColumnIdForIdentifier("midiMessageCtrlrNumber")+1, 60);
 	modulatorList->getHeader().addColumn ("midiMessageSysExFormula", getColumnIdForIdentifier("midiMessageSysExFormula")+1, 100);
-	modulatorList->getHeader().addColumn ("modulatorCustomIndex", getColumnIdForIdentifier("modulatorCustomIndex")+1, 60);
-	modulatorList->getHeader().addColumn ("modulatorCustomIndexGroup", getColumnIdForIdentifier("modulatorCustomIndexGroup")+1, 60);
+	
+	// @dnaldoog default layout
+	//	modulatorList->getHeader().addColumn ("name", getColumnIdForIdentifier("name")+1, 100);
+	//	modulatorList->getHeader().addColumn ("modulatorValue", getColumnIdForIdentifier("modulatorValue")+1, 60);
+	//	modulatorList->getHeader().addColumn ("vstIndex", getColumnIdForIdentifier("vstIndex")+1, 60);
+	//	modulatorList->getHeader().addColumn ("uiType", getColumnIdForIdentifier("uiType")+1, 100);
+	//	modulatorList->getHeader().addColumn ("componentRectangle", getColumnIdForIdentifier("componentRectangle")+1, 80);
+	//	modulatorList->getHeader().addColumn ("componentGroupName", getColumnIdForIdentifier("componentGroupName")+1, 60);
+	//	modulatorList->getHeader().addColumn ("componentTabName", getColumnIdForIdentifier("componentTabName")+1, 60);
+	//	modulatorList->getHeader().addColumn ("midiMessageType", getColumnIdForIdentifier("midiMessageType")+1, 60);
+	//	modulatorList->getHeader().addColumn ("midiMessageCtrlrNumber", getColumnIdForIdentifier("midiMessageCtrlrNumber")+1, 60);
+	//	modulatorList->getHeader().addColumn ("midiMessageSysExFormula", getColumnIdForIdentifier("midiMessageSysExFormula")+1, 100);
+	//	modulatorList->getHeader().addColumn ("modulatorCustomIndex", getColumnIdForIdentifier("modulatorCustomIndex")+1, 60);
+	
+	// @dobo365 default layout
+	//	modulatorList->getHeader().addColumn ("name", getColumnIdForIdentifier("name")+1, 100);
+	//	modulatorList->getHeader().addColumn ("modulatorValue", getColumnIdForIdentifier("modulatorValue")+1, 60);
+	//	modulatorList->getHeader().addColumn ("vstIndex", getColumnIdForIdentifier("vstIndex") + 1, 60);
+	//	modulatorList->getHeader().addColumn ("vstExported", getColumnIdForIdentifier("modulatorVstExported") + 1, 40);
+	//	modulatorList->getHeader().addColumn ("midiMessageType", getColumnIdForIdentifier("midiMessageType") + 1, 60);
+	//	modulatorList->getHeader().addColumn ("midiMessageCtrlrNumber", getColumnIdForIdentifier("midiMessageCtrlrNumber") + 1, 60);
+	//	modulatorList->getHeader().addColumn ("uiType", getColumnIdForIdentifier("uiType")+1, 100);
+	//	modulatorList->getHeader().addColumn ("componentRectangle", getColumnIdForIdentifier("componentRectangle")+1, 80);
+	//	modulatorList->getHeader().addColumn ("componentGroupName", getColumnIdForIdentifier("componentGroupName")+1, 60);
+	//	modulatorList->getHeader().addColumn ("componentIsLocked", getColumnIdForIdentifier("componentIsLocked") + 1,40);
+	//	modulatorList->getHeader().addColumn ("componentDisabled", getColumnIdForIdentifier("componentDisabled") + 1, 40);
+	
+	saveColumnState(); // Added v5.6.36. Thanks to @dnaldoog
 }
 
 void CtrlrPanelModulatorList::visibilityChanged()
@@ -249,13 +282,15 @@ int CtrlrPanelModulatorList::getNumRows()
 
 void CtrlrPanelModulatorList::paintRowBackground (Graphics& g, int rowNumber, int width, int height, bool rowIsSelected)
 {
-    if (rowIsSelected)
+    if (rowIsSelected) // Updated v5.6.36
     {
-        // Fill the background with SteelBlue
-        g.fillAll (Colours::steelblue); 
-
-        // Optional: Keep the Ctrlr-specific selection outline
-        gui::drawSelectionRectangle (g, width, height);
+		Colour rowBackgroundColour = findColour (TextButton::buttonOnColourId);
+		
+		// 1. Fill the background base
+		g.fillAll (rowBackgroundColour);
+		
+		// 2. Override the macro by passing your dynamic color as the 3rd argument and the others for the gradient
+		gui::drawSelectionRectangle (g, width, height, rowBackgroundColour, 1.0f, 1.0f, 0.0f, 0.0f); // updated v5.6.36. Removes the stuborn blue gradient at the end of the selected row for @dobo365
     }
 }
 
@@ -706,4 +741,34 @@ void CtrlrPanelModulatorList::timerCallback()
 
         modulatorList->repaint();
     }
+}
+
+void CtrlrPanelModulatorList::tableColumnsChanged(TableHeaderComponent *) // Added v5.6.36. Thanks to @dnaldoog
+{
+	saveColumnState();
+}
+
+void CtrlrPanelModulatorList::tableColumnsResized(TableHeaderComponent *t) // Added v5.6.36. Thanks to @dnaldoog
+{
+	saveColumnState();
+}
+
+void CtrlrPanelModulatorList::tableSortOrderChanged(TableHeaderComponent *) // Added v5.6.36. Thanks to @dnaldoog
+{
+	saveColumnState();
+}
+
+void CtrlrPanelModulatorList::tableColumnDraggingChanged(TableHeaderComponent *, int) // Added v5.6.36. Thanks to @dnaldoog
+{
+	saveColumnState();
+}
+
+void CtrlrPanelModulatorList::saveColumnState() // Added v5.6.36. Thanks to @dnaldoog
+{
+	const String state = modulatorList->getHeader().toString();
+	
+	_DBG("Saving column state:");
+	_DBG(state);
+	
+	owner.setProperty(Ids::panelModulatorListColumns, state);
 }

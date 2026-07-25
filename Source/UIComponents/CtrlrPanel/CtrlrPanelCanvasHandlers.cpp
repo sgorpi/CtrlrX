@@ -299,6 +299,12 @@ void CtrlrPanelCanvas::getEditMenu(PopupMenu &m)
 		m.addItem (AlignToBottom, "Align to bottom", true, false);
 		m.addItem (AlignToLeft, "Align to left", true, false);
 		m.addItem (AlignToRight, "Align to right", true, false);
+		m.addItem (DistributeHorizontally, "Distribute horizontally", true, false); // Added v5.6.36. Thanks to @dnaldoog. Align/Resize to first selection between components
+		m.addItem (DistributeVertically, "Distribute vertically", true, false);
+		m.addSeparator();
+		m.addItem(MatchWidth, "Match width to first selected", true, false);
+		m.addItem(MatchHeight, "Match height to first selected", true, false);
+		m.addItem(MatchSize, "Match height/width to first selected", true, false);
 	}
 }
 
@@ -327,6 +333,11 @@ void CtrlrPanelCanvas::handleEditMenu (const int returnCode, const MouseEvent &e
 		case AlignToLeft:
 		case AlignToBottom:
 		case AlignToRight:
+		case DistributeHorizontally: // Added v5.6.36. Thanks to @dnaldoog. Align/Resize to first selection between components
+		case DistributeVertically:
+		case MatchHeight:
+		case MatchWidth:
+		case MatchSize:
 			alignSelection ((EditMenuItems)returnCode);
 			break;
 

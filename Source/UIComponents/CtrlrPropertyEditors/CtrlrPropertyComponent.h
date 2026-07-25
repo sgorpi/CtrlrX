@@ -523,6 +523,60 @@ private:
 	Slider valueSlider, numberSlider;
 };
 
+/********************New Class for JUCE Bubble native code********************************* */
+class BubbleConfigAlert : public AlertWindow
+{
+public:
+	BubbleConfigAlert(const String& currentTitle, const String& currentText, int currentTimeout)
+	: AlertWindow("Configure Tooltip Bubble", String(), AlertWindow::NoIcon)
+	{
+		// Add text editor for the Bubble Header Title
+		addTextEditor("bubbleTitle", currentTitle, "Bubble Header/Title:", false);
+		
+		// Add a larger multi-line text editor for the actual help content
+		addTextEditor("bubbleText", currentText, "Help text description:", false);
+		if (auto* textEd = getTextEditor("bubbleText"))
+		{
+			textEd->setMultiLine(true, true);
+			textEd->setReturnKeyStartsNewLine(true);
+		}
+		
+		// Add a text field for timeout duration (in milliseconds)
+		addTextEditor("bubbleTimeout", String(currentTimeout), "Display timeout (ms):", false);
+		
+#if JUCE_MAJOR_VERSION >= 8
+		// JUCE 8 Custom Button Bounds Layout Logic
+		addButton("Save Changes", 1, KeyPress(KeyPress::returnKey, 0, 0));
+		addButton("Cancel", 0, KeyPress(KeyPress::escapeKey, 0, 0));
+		setSize(500, 350);
+		
+		if (auto* okBtn = getButton("Save Changes"))
+		{
+			if (auto* cancelBtn = getButton("Cancel"))
+			{
+				const int bW = 120, bH = 35, gap = 15;
+				const int totalWidth = (bW * 2) + gap;
+				const int startX = (getWidth() - totalWidth) / 2;
+				const int yPos = getHeight() - bH - 20;
+				okBtn->setBounds(startX, yPos, bW, bH);
+				cancelBtn->setBounds(startX + bW + gap, yPos, bW, bH);
+			}
+		}
+#else
+		// JUCE 6/7 Fallback Layout Engine
+		addButton("Save Changes", 1);
+		addButton("Cancel", 0);
+#endif
+	}
+	
+	// Getters to retrieve the final values out of the dialog boxes
+	String getBubbleTitle()   { return getTextEditor("bubbleTitle") ? getTextEditor("bubbleTitle")->getText() : ""; }
+	String getBubbleText()    { return getTextEditor("bubbleText")  ? getTextEditor("bubbleText")->getText()  : ""; }
+	int getBubbleTimeout()    { return getTextEditor("bubbleTimeout") ? getTextEditor("bubbleTimeout")->getText().getIntValue() : 5000; }
+};
+
+/*************************************************************************************************** */
+
 class CtrlrMultiMidiPropertyComponent  : public Component,
                                          public ListBoxModel,
                                          public Label::Listener,

@@ -437,7 +437,7 @@ void CtrlrPanelEditor::restoreState(const ValueTree &savedState)
     }
 
     if (owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingle
-        || owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingleRestriced)
+        || owner.getCtrlrManagerOwner().getInstanceMode() == InstanceSingleRestricted)
     {
         initSingleInstance();
     }

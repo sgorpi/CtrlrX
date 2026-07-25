@@ -48,6 +48,9 @@ class LMemoryBlock : public MemoryBlock
 		static LMemoryBlock fromLuaString(luabind::object const& self, const juce::String& strData);
 		static LMemoryBlock fromLuaBinaryString(luabind::object const& luaString);
 		static LMemoryBlock fromLuaStringToAscii(const juce::String& strData);
+		uintptr_t getRawAddress() const noexcept { // Added v5.6.36. LuaJit addon
+			return reinterpret_cast<uintptr_t>(MemoryBlock::getData());
+		}
 };
 
 #endif

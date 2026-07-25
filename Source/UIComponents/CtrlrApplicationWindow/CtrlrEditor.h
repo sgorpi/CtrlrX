@@ -59,6 +59,7 @@ class CtrlrEditor  : public AudioProcessorEditor,
 
 			doZoomIn					= 0x3001,
 			doZoomOut					= 0x3002,
+			doZoomZero					= 0x3029, // Added v5.6.36. Thanks to @dnaldoog
 			doCopy						= 0x3003,
 			doCut						= 0x3004,
 			doPaste						= 0x3005,
