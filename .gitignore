@@ -1,16 +1,16 @@
 # Operating System & IDE Specific Files
-.DS_Store                 # macOS directory metadata
-Thumbs.db                 # Windows thumbnail cache
-Desktop.ini               # Windows custom folder settings
-.vs/                      # Visual Studio 2017+ hidden solution folder
-*.user                    # Visual Studio user options file
-*.suo                     # Visual Studio solution user options (older VS)
-*.sln.ide                 # Some Visual Studio versions
-*.VC.opendb               # Visual Studio temporary database
-*.VC.db                   # Visual Studio code Browse database
-*.VC.VC.opendb            # Visual Studio
-.idea/                    # IntelliJ/CLion project files
-.vscode/                  # VS Code workspace settings (optional - commit if shared config is vital)
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vs/
+*.user
+*.suo
+*.sln.ide
+*.VC.opendb
+*.VC.db
+*.VC.VC.opendb
+.idea/
+.vscode/
 # !.vscode/settings.json  # Example: Keep settings.json if needed
 # !.vscode/tasks.json
 # !.vscode/launch.json
@@ -25,29 +25,30 @@ Desktop.ini               # Windows custom folder settings
 # IMPORTANT: These should NOT contain your source code or essential project definitions.
 # If your project definitions (e.g., .xcodeproj) are INSIDE these,
 # you'll need explicit exceptions later.
-build/                    # Common build output directory (e.g., CMake out-of-source builds)
-bin/                      # Compiled binaries directory
-obj/                      # Object files directory
-*.o                       # Object files (Unix/MinGW)
-*.lo                      # Library object files
-*.la                      # Libtool files
-*.so                      # Shared libraries
-*.dll                     # Windows dynamic link libraries
-*.dylib                   # macOS dynamic libraries
-*.exe                     # Executables
-*.obj                     # Windows object files
-*.lib                     # Windows static libraries
-*.pdb                     # Program Database (debug info)
-*.ilk                     # Incremental Linker File
-*.exp                     # Export files
-*.idb                     # Intermediate Debugging Information
+build*/
+.cache/
+bin/
+obj/
+*.o
+*.lo
+*.la
+*.so
+*.dll
+*.dylib
+*.exe
+*.obj
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.idb
 
 # Audio Plugin & Application Formats (Built output, ignore these)
-*.aaxplugin/              # Avid AAX plugin bundles (macOS directory/bundle)
-*.vst/                    # Older VST 1/2 plugin bundles (macOS directory/bundle)
-*.vst3/                   # VST3 plugin bundles (macOS directory/bundle)
-*.component/              # Audio Unit plugin bundles (macOS directory/bundle)
-*.app/                    # macOS Application bundles (as directory)
+*.aaxplugin/
+*.vst/
+*.vst3/
+*.component/
+*.app/
 # For completeness, also ignore these as files, though typically covered by directory ignores
 *.aaxplugin
 *.vst
@@ -58,17 +59,17 @@ obj/                      # Object files directory
 
 # Specific IDE/Compiler Temporary Directories and Files
 # Visual Studio
-Debug/                    # VS Debug build output directory
-Release/                  # VS Release build output directory
-x64/                      # Often used for build configurations directory
-Win32/                    # Often used for build configurations directory
-IPCH/                     # Precompiled header cache directory
-*.ipch                    # Precompiled header cache files
-*.aps                     # VS resource script cache
-*.ncb                     # IntelliSense database
-*.opendb                  # VS database
-*.sdf                     # IntelliSense database
-*.tlog                    # Build log files
+Debug/
+Release/
+x64/
+Win32/
+IPCH/
+*.ipch
+*.aps
+*.ncb
+*.opendb
+*.sdf
+*.tlog
 
 # Builds Specific Ignores
 # Ignore the entire Builds folder
@@ -93,14 +94,14 @@ Source/Misc/boost/
 .DS_Store
 
 # Other project-specific ignores
-Panels/                   # Ignore the Panels directory and its contents
+Panels/
 # /Panels                 # If 'Panels' can also exist as a file in root and needs ignoring, use this
 
 # Steinberg VST2 SDK ignores
 Source/Misc/vst2sdk/
 
 # macOS Specific Files
-.DS_Store                 # macOS directory metadata
+.DS_Store
 Builds/MacOSX/build/Release/libCtrlrX.a
 Builds/MacOSX/CtrlrX.xcodeproj/project.xcworkspace/xcuserdata/DYREC.xcuserdatad/UserInterfaceState.xcuserstate
 Source/Core/CtrlrRevision.h
