@@ -125,7 +125,7 @@ jobs:
       # Build LuaJIT on its own first, so a bootstrap failure is reported as a
       # LuaJIT failure rather than buried in the CtrlrX build.
       - name: Build LuaJIT only
-        run: cmake --build ${{ env.BUILD_DIR }} --config ${{ env.BUILD_TYPE }} --target libluajit
+        run: cmake --build ${{ env.BUILD_DIR }} --config ${{ env.BUILD_TYPE }} --target luajit_all
 
       - name: Show what was produced
         run: |

@@ -598,4 +598,17 @@ else()
 endif()
 
 set_target_properties(libluajit PROPERTIES FOLDER "LuaJIT")
+
+# `libluajit` is an INTERFACE library on single-architecture platforms, and an
+# INTERFACE library is not a buildable target -- `cmake --build --target
+# libluajit` fails with "unknown target". Provide a stable aggregate so LuaJIT
+# can be built on its own, which is what CI does to isolate bootstrap failures
+# from the rest of the CtrlrX build.
+add_custom_target(luajit_all)
+add_dependencies(luajit_all ${LJ_SLICE_TARGETS})
+if(NOT LJ_SLICE_COUNT EQUAL 1)
+    add_dependencies(luajit_all libluajit)
+endif()
+set_target_properties(luajit_all PROPERTIES FOLDER "LuaJIT")
+
 message(STATUS "LuaJIT: building vendored source, slices: ${LJ_SLICES}")
