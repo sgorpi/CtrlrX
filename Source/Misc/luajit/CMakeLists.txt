@@ -506,6 +506,12 @@ function(_luajit_add_slice slice out_target)
         "${LJ_SRC}")
     target_compile_definitions(${_lib} PRIVATE ${_archdefs} ${LJ_TARGET_XDEFS})
     target_compile_options(${_lib} PRIVATE ${LJ_TARGET_XCFLAGS})
+
+    if(MSVC)
+        # msvcbuild.bat sets this for every translation unit; LuaJIT's core uses
+        # fopen/getenv/strcpy throughout and would otherwise emit C4996 for each.
+        target_compile_definitions(${_lib} PRIVATE _CRT_SECURE_NO_DEPRECATE)
+    endif()
     add_dependencies(${_lib} luajit_version)
 
     # Linked into shared plugin binaries (VST3/AU).

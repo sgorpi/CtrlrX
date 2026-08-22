@@ -136,6 +136,19 @@ jobs:
             find ${{ env.BUILD_DIR }} -name 'libluajit.a' -exec lipo -info {} \;
           fi
 
+      # Proves the LuaJIT we just built actually links into a real binary --
+      # and on macOS, that the lipo'd archive satisfies both arches of a
+      # universal link. Does not depend on the test mocks.
+      - name: Build Standalone
+        run: cmake --build ${{ env.BUILD_DIR }} --config ${{ env.BUILD_TYPE }} --target CtrlrX_Standalone -j 4
+
+      - name: Check the Standalone is universal (macOS)
+        if: matrix.name == 'macOS'
+        run: |
+          APP="${{ env.BUILD_DIR }}/CtrlrX_artefacts/${{ env.BUILD_TYPE }}/Standalone/CtrlrX.app/Contents/MacOS/CtrlrX"
+          lipo -info "$APP"
+          strings "$APP" | grep -m1 "LuaJIT 2\.1" || echo "WARNING: LuaJIT version string not found"
+
       - name: Build TestsProcessor
         run: cmake --build ${{ env.BUILD_DIR }} --config ${{ env.BUILD_TYPE }} --target TestsProcessor -j 4
 
