@@ -9,6 +9,11 @@ on:
         required: false
         default: false
   push:
+    # TEMPORARY: luajit-cmake-build iterates via luajit_build.yml, which is much
+    # faster. Remove this filter (and luajit_build.yml) before folding that
+    # branch into 8.0.0_testing.
+    branches-ignore:
+      - luajit-cmake-build
   pull_request:
 
 concurrency:
