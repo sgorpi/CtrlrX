@@ -136,7 +136,15 @@ namespace
         MIDIEventPacket* packet = MIDIEventListInit (list, kMIDIProtocol_1_0);
 
         ump::GenericUMPConverter converter (ump::PacketProtocol::MIDI_1_0);
-        converter.convert (msg, [&] (const ump::View& view)
+
+        // As of JUCE 8.0.12 GenericUMPConverter::convert takes a BytesOnGroup, View, Packets or an
+        // iterator pair -- there is no MidiMessage overload any more. Wrap the bytestream message in
+        // a BytesOnGroup on group 0; the callback still receives a View per converted packet.
+        const ump::BytesOnGroup groupBytes { 0,
+            juce::Span<const std::byte> (reinterpret_cast<const std::byte*> (msg.getRawData()),
+                                         (size_t) msg.getRawDataSize()) };
+
+        converter.convert (groupBytes, [&] (const ump::View& view)
         {
             packet = MIDIEventListAdd (list, sizeof (storage), packet, /*timeStamp*/ 0,
                                        view.size(), view.data());
@@ -324,9 +332,18 @@ OSStatus MIDISendEventList (MIDIPortRef, MIDIEndpointRef dest, const MIDIEventLi
         ump::Iterator it   (packet->words, packet->wordCount * sizeof (juce::uint32));
         ump::Iterator end  (packet->words + packet->wordCount, 0);
         for (; it != end; ++it)
-            converter.convert (*it, 0.0, [&] (const juce::MidiMessage& msg)
+            // As of JUCE 8.0.12 the ToBytestreamConverter callback is invoked with
+            // (BytesOnGroup, double time) rather than a ready-made MidiMessage -- see
+            // SingleGroupMidi1ToBytestreamTranslator::dispatch, which calls
+            // `callback (BytesOnGroup { 0, bytes }, time)`. Rebuild the MidiMessage from the bytes.
+            converter.convert (*it, 0.0, [&] (const ump::BytesOnGroup& groupBytes, double)
             {
-                m->sendMidiEvent (dev, port, msg);
+                if (groupBytes.bytes.empty())
+                    return;
+
+                m->sendMidiEvent (dev, port,
+                                  juce::MidiMessage (groupBytes.bytes.data(),
+                                                     (int) groupBytes.bytes.size()));
             });
 
         packet = MIDIEventPacketNext (packet);
