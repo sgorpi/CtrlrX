@@ -76,13 +76,18 @@ else()
 endif()
 
 if(CTRLRX_USE_LUAJIT)
-    # Source/Misc/luajit/CMakeLists.txt defines the `libluajit` target and already
-    # does the per-OS routing (IMPORTED lua51.lib on Windows, IMPORTED libluajit.a
-    # on macOS, pkg-config INTERFACE target on Linux). It also carries the LuaJIT
-    # include directory as INTERFACE_INCLUDE_DIRECTORIES, so linking it is enough.
+    # Source/Misc/luajit/CMakeLists.txt builds the vendored LuaJIT source and
+    # defines the `libluajit` target. It carries the LuaJIT include directories
+    # (both the source tree and the generated headers) as INTERFACE include
+    # directories, so linking it is enough.
     add_subdirectory(Source/Misc/luajit)
 else()
-    # Add your standard Lua fallback path here if needed
+    message(FATAL_ERROR
+        "CTRLRX_USE_LUAJIT=OFF is not supported: the vendored Source/Misc/lua "
+        "tree is incomplete, and Source/Misc/luajit/src is on the include path "
+        "unconditionally further down this file. To build against a system "
+        "LuaJIT instead of the vendored source, configure with "
+        "-DCTRLRX_LUAJIT_USE_SYSTEM=ON.")
 endif()
 
 # -----------------------------------------------------------------------
