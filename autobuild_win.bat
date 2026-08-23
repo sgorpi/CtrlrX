@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
-:: #To build with LuaJIT: cmake -B build -DCTRLRX_USE_LUAJIT=ON
-:: #To build without (default): cmake -B build
+:: #LuaJIT is built from the vendored source by CMake and is on by default.
+:: #CTRLRX_USE_LUAJIT=OFF is not supported; see Doc\LUAJIT.md.
 :: #Check whether you have Ninja installed and available in PATH, as it will speed up the build significantly. 
 :: #If not, you can install it via your system package manager or from https://ninja-build.org/. 
 :: #On Windows, you can also install it via winget:
@@ -32,30 +32,12 @@ if errorlevel 1 (
 )
 
 ::==============================================================================
-:: Build LuaJIT if source exists but lib is missing
-:: If luajit source is not present (non-LuaJIT branch) this is silently skipped
+:: LuaJIT is built from the vendored source by CMake -- see Doc\LUAJIT.md.
+:: Nothing to prebuild here, and msvcbuild.bat must NOT be run: it writes
+:: generated files into Source\Misc\luajit\src, which shadow the ones CMake
+:: generates and are rejected by the configure-time guard.
 ::==============================================================================
-set "LUAJIT_FLAG="
-echo PATH CHECK: "%~dp0Source\Misc\luajit\src\msvcbuild.bat"
-if exist "%~dp0Source\Misc\luajit\src\msvcbuild.bat" (
-    set "LUAJIT_FLAG=-DCTRLRX_USE_LUAJIT=ON"
-    if not exist "%~dp0Source\Misc\luajit\src\lua51.lib" (
-        echo Building LuaJIT...
-        pushd "%~dp0Source\Misc\luajit\src"
-        call msvcbuild.bat static
-        popd
-        if not exist "%~dp0Source\Misc\luajit\src\lua51.lib" (
-            echo ERROR: LuaJIT build failed - lua51.lib not found.
-            pause
-            exit /b 1
-        )
-        echo LuaJIT built successfully.
-    ) else (
-        echo LuaJIT lua51.lib already exists - skipping build.
-    )
-) else (
-    echo LuaJIT source not found - building without LuaJIT.
-)
+set "LUAJIT_FLAG=-DCTRLRX_USE_LUAJIT=ON"
 
 ::==============================================================================
 :: Prompt: Build Type
@@ -101,11 +83,7 @@ exit /b 1
 
 echo.
 echo [FULL BUILD] Config: %CONFIG%
-if defined LUAJIT_FLAG (
-    echo LuaJIT: ENABLED
-) else (
-    echo LuaJIT: DISABLED
-)
+echo LuaJIT: built from vendored source by CMake
 echo Wiping build directory...
 if exist "%BUILD_DIR%" rd /s /q "%BUILD_DIR%"
 :WAIT_DELETE
