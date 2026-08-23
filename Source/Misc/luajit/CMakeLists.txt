@@ -52,6 +52,14 @@ if(CTRLRX_LUAJIT_USE_SYSTEM)
     target_include_directories(libluajit INTERFACE ${SYSLUAJIT_INCLUDE_DIRS})
     target_link_libraries(libluajit INTERFACE ${SYSLUAJIT_LIBRARIES})
     target_link_directories(libluajit INTERFACE ${SYSLUAJIT_LIBRARY_DIRS})
+
+    # Keep the `luajit_all` target name valid on both paths, so that building it
+    # does not depend on how LuaJIT was sourced. There is nothing to build here.
+    # (no semicolons in the message -- CMake would split it into two commands)
+    add_custom_target(luajit_all
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "LuaJIT: using the system library, nothing to build.")
+
     message(STATUS "LuaJIT: using system ${SYSLUAJIT_VERSION} (CTRLRX_LUAJIT_USE_SYSTEM=ON)")
     return()
 endif()
