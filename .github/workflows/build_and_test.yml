@@ -9,11 +9,6 @@ on:
         required: false
         default: false
   push:
-    # TEMPORARY: luajit-cmake-build iterates via luajit_build.yml, which is much
-    # faster. Remove this filter (and luajit_build.yml) before folding that
-    # branch into 8.0.0_testing.
-    branches-ignore:
-      - luajit-cmake-build
   pull_request:
 
 concurrency:
@@ -81,7 +76,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: egor-tensin/setup-clang@v1
 
-      - name: Install JUCE's Linux Deps & LuaJIT Dev Tools
+      - name: Install JUCE's Linux Deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -91,7 +86,7 @@ jobs:
             binutils-dev libboost-dev libcurl4-gnutls-dev libgl1-mesa-dev \
             libglapi-mesa libiberty-dev libsframe1 libudev-dev \
             libxcursor-dev libxrandr-dev xorg-dev \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libluajit-5.1-dev unzip
+            libgtk-3-dev libwebkit2gtk-4.1-dev unzip
           # Alias webkit 4.1 to 4.0 so CMake finds it
           sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc \
                       /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
@@ -105,11 +100,9 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ninja
 
-      - name: Install macOS Deps (Including Homebrew LuaJIT)
+      - name: Install macOS Deps
         if: matrix.name == 'macOS'
-        run: |
-          brew install osxutils boost luajit
-          echo "PKG_CONFIG_PATH=$(brew --prefix luajit)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        run: brew install osxutils boost
 
       - name: Use latest Xcode on system (macOS)
         if: matrix.name == 'macOS'
@@ -121,37 +114,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-     # -----------------------------------------------------------------------
-      # Extract LuaJIT Source from local Archive
-      # -----------------------------------------------------------------------
-      - name: Extract LuaJIT (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          ZIP="./Source/Resources/LuaJIT/luajit.zip"
-          if [ -f "$ZIP" ]; then
-            echo "Found zip at: $ZIP"
-            unzip -o "$ZIP" -d "Source/Misc/"
-            echo "Extraction complete."
-          else
-            echo "Error: luajit.zip not found at $ZIP"
-            exit 1
-          fi
-
-      - name: Extract LuaJIT (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $zipPath = "Source/Resources/LuaJIT/luajit.zip"
-          if (Test-Path $zipPath) {
-            Write-Host "Found zip at: $zipPath"
-            Expand-Archive -Path $zipPath -DestinationPath "Source/Misc/" -Force
-            Write-Host "Extraction complete."
-          } else {
-            Write-Host "Error: luajit.zip not found at $zipPath"
-            exit 1
-          }
-
 
       # -----------------------------------------------------------------------
       # Dependencies Optimization & Boost Unzipping
