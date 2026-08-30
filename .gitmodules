@@ -7,3 +7,6 @@
 [submodule "Panels/sequential_dsi"]
 	path = Panels/sequential_dsi
 	url = https://github.com/synthmutt/CtrlrPanelSequential.git
+[submodule "Panels/dnaldoog"]
+	path = Panels/dnaldoog
+	url = https://github.com/dnaldoog/CtrlrDemoPanels.git
