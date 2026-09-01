@@ -66,7 +66,7 @@ jobs:
           - name: Windows
             os: windows-2022
             pluginval-binary: ./pluginval.exe
-            extra-flags: ""
+            extra-flags: -G Ninja
 
     steps:
       - name: Setup MSVC (Windows)
