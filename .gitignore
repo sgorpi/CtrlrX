@@ -160,3 +160,14 @@ Builds/MacOSX/build/Release/libCtrlrX.a
 Builds/MacOSX/CtrlrX.xcodeproj/project.xcworkspace/xcuserdata/DYREC.xcuserdatad/UserInterfaceState.xcuserstate
 Source/Core/CtrlrRevision.h
 .vs/
+
+### LuaJIT precompiled bundles for Projucer builds
+# CI-produced, tracked so a Projucer user needs no CMake -- see Doc/LUAJIT.md.
+# Track the zips and their manifests only; the extracted contents are recreated
+# by each build's pre-build step and must never be committed. Note the `*` in
+# the first pattern: a trailing `/` would stop git descending into the directory
+# and the negations below would never fire.
+Source/Misc/luajit/precompiled/*
+!Source/Misc/luajit/precompiled/*.zip
+!Source/Misc/luajit/precompiled/*.json
+!Source/Misc/luajit/precompiled/README.md

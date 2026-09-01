@@ -1,8 +1,13 @@
 # LuaJIT in CtrlrX
 
 CtrlrX embeds LuaJIT. The full upstream source is vendored at `Source/Misc/luajit/` and **built
-from source by CMake** on Linux, macOS and Windows. There are no prebuilt LuaJIT binaries in this
-repository, and there should never be any.
+from source by CMake** on Linux, macOS and Windows.
+
+No build output ever belongs in the vendored tree. The only LuaJIT binaries in this repository are
+the CI-produced bundles under `Source/Misc/luajit/precompiled/`, which exist so that people
+building through the Projucer exporters need no local CMake, see
+[Building with the Projucer](#building-with-the-projucer). The CMake build never reads them, and
+refuses to configure if anything like them turns up in `Source/Misc/luajit/src/`.
 
 > This file lives in `Doc/`, not `Source/Resources/`. Everything under `Source/Resources/` is
 > globbed into the binary as JUCE `BinaryData` by `cmake/Assets.cmake` — documentation put there
@@ -15,6 +20,9 @@ repository, and there should never be any.
 | `Source/Misc/luajit/` | unmodified upstream LuaJIT 2.1 ROLLING (a553b3de) |
 | `cmake/luajit/CMakeLists.txt` | **fork-local.** Upstream ships no CMake build at all |
 | `cmake/luajit/check_makefile_drift.py` | CI check: the source lists below still match `src/Makefile` |
+| `cmake/luajit/check_precompiled_drift.py` | CI check: the precompiled bundles match the sources |
+| `Source/Misc/luajit/precompiled/` | **fork-local.** Prebuilt LuaJIT for Projucer builds |
+| `.github/workflows/luajit.yml` | all LuaJIT CI: both drift checks, and the bundle build |
 | `Doc/LUAJIT.md` | this file |
 
 The build lives outside the tree it builds, deliberately: `Source/Misc/luajit/` can be replaced
@@ -101,10 +109,75 @@ platform) and the generated headers in `/tmp/lj/gen/`. Add `-DCTRLRX_LUAJIT_SOUR
 build a different checkout, and the usual `-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"` for a universal
 macOS build.
 
-This is the hook for a `.jucer` pre-build step: the Projucer/Xcode exporters do not run CMake, so a
-pre-build phase that invokes the two commands above gives them the same `libluajit` the CMake build
-produces. Note the stale-file guard below — it rejects a source tree that still contains output from
-LuaJIT's own `make`.
+Note the stale-file guard below — it rejects a source tree that still contains output from LuaJIT's
+own `make`.
+
+## Building with the Projucer
+
+The Projucer exporters do not run CMake, so they cannot build LuaJIT. They link a prebuilt one
+instead, from `Source/Misc/luajit/precompiled/`:
+
+```
+precompiled/luajit-windows.zip     tracked      windows/include/luajit.h
+precompiled/luajit-macos.zip       tracked      windows/lib/x64/{Release,Debug}/lua51.lib
+precompiled/manifest-*.json        tracked      macos/include/luajit.h
+precompiled/{windows,macos}/       gitignored   macos/lib/libluajit.a
+```
+
+Nothing needs doing by hand. Each exporter's pre-build step extracts the bundle for its platform
+(`tar -xf` on Windows, `unzip -o` on Xcode), and `headerPath`/`libraryPath` point straight at the
+result. A fresh clone opens and builds.
+
+`luajit.h` is why the header path matters: `CtrlrAbout.cpp` includes it for `LUAJIT_VERSION`, and it
+is *generated* — it is not part of the upstream `src/` tree. The vendored `src/` stays on the header
+path too, for `lua.h`, `lualib.h`, `lauxlib.h` and `luaconf.h`.
+
+**Do not copy anything out of `precompiled/` into `Source/Misc/luajit/src/`.** The exporters already
+look in the right place, and the stale-file guard rejects a tree with build output in it.
+
+### Why Windows ships two libraries
+
+`cmake/JUCEDefaults.cmake` sets `CMAKE_MSVC_RUNTIME_LIBRARY` to the **static** CRT (`/MT`, `/MTd`)
+for the CMake build. The `.jucer` files set no `winRuntimeLibrary`, so Visual Studio uses its
+default: the **dynamic** CRT (`/MD`, `/MDd`). Linking a `/MT` LuaJIT into a `/MD` CtrlrX gives
+`LNK4098` and two CRT heaps in one process.
+
+So the bundles are built by a job of their own, with the runtime library overridden to match the
+Projucer — they are *not* lifted out of the plugin build. `/MD` and `/MDd` are themselves
+incompatible, hence one library per configuration. x64 only: 32-bit is not shipped
+(`installer.iss` is `ArchitecturesAllowed=x64compatible`), and a `Win32` config fails loudly with
+`LNK1112` rather than linking something wrong.
+
+macOS needs no such split — there is no CRT model, and LuaJIT is built `-O2` regardless of
+configuration — so it ships one universal `arm64 + x86_64` library at deployment target 10.13.
+
+### Linux
+
+There is no Linux bundle: `LINUX_MAKE` and `CODEBLOCKS_LINUX` are not IDEs, and every Linux
+developer already has CMake. Build LuaJIT standalone as above, then add `<builddir>/gen/common` to
+`headerPath` and `<builddir>` to `libraryPath` in those exporters.
+
+(Those two exporters also carry both `externalLibraries=...luajit` and
+`extraLinkerFlags="-lluajit-5.1"`, which is a pre-existing double-link worth cleaning up
+separately.)
+
+## Regenerating the precompiled bundles
+
+`check_precompiled_drift.py` compares the git object ids each bundle's manifest recorded for its
+inputs — `Source/Misc/luajit/{src,dynasm,.relver}` and `cmake/luajit` — against the tree, on every
+push. When it goes red:
+
+1. Actions → **LuaJIT** → *Run workflow*. (The build job also runs on its own whenever the check
+   finds the bundles stale, so the artifacts are usually already waiting in that same run.)
+2. Download the `luajit-precompiled-windows` and `luajit-precompiled-macos` artifacts.
+3. Copy the `.zip` and `.json` out of each into `Source/Misc/luajit/precompiled/`. Do **not** unzip
+   the inner zip into the repo.
+4. Commit both files.
+
+The check fingerprints *inputs*, not the built artefacts, because the build
+artifacts will change bytes due to timestamping and possible changes in toolchain.
+After regenerating, check that Visual Studio links `Debug|x64` and `Release|x64`
+with no `LNK4098`, and that Xcode reports no "built for newer macOS version".
 
 ## Upgrading LuaJIT
 
@@ -135,31 +208,45 @@ LuaJIT's own `make`.
 4. Re-check by hand, which the script does not cover:
    - the MSVC table in `_luajit_detect()`, against the new `src/msvcbuild.bat`
    - `LJVM_MODE` per target system
-5. Build and test on all three platforms.
+5. Bump `Source/Misc/luajit/.relver` to the new revision's upstream commit timestamp — see
+   [Version string](#version-string). Nothing derives or checks it.
+6. Regenerate the precompiled bundles — the vendored source just changed, so the checked-in ones
+   are stale by construction and `check_precompiled_drift.py` will say so. See
+   [Regenerating the precompiled bundles](#regenerating-the-precompiled-bundles).
+7. Build and test on all three platforms.
 
 ### Version string
 
 `CtrlrAbout.cpp` displays `LUAJIT_VERSION` from the generated `luajit.h`, which currently reads
-`LuaJIT 2.1.ROLLING`.
+`LuaJIT 2.1.1772148810`.
 
 `genversion.lua` substitutes `ROLLING` with digits read from `luajit_relver.txt`, which upstream
 fills from `git show -s --format=%ct` **in the LuaJIT checkout**. `Source/Misc/luajit/` is a plain
 directory here, not a submodule, so running that would report *CtrlrX's* commit time and put a
 number in the About box that looks like a LuaJIT version but is not one. The build therefore feeds
-`genversion.lua` the shipped `.relver`, which contains the unexpanded `$Format:%ct$` git-archive
-placeholder; no digits are found and `ROLLING` is kept.
+`genversion.lua` the shipped `.relver`, which holds the vendored revision's real upstream commit
+timestamp — `1772148810`, for a553b3de.
 
-If you ever want a real version there, set the vendored revision's true upstream commit timestamp
-in `luajit_relver.txt` at build time — and add bumping it to this checklist.
+**Bump `.relver` whenever you upgrade the vendored tree**, or the About box will keep showing the
+old revision's timestamp. It is not derived from anything, so nothing else will catch a stale
+value. Get it with `git show -s --format=%ct <rev>` in an upstream LuaJIT checkout. Leaving it as
+the unexpanded `$Format:%ct$` git-archive placeholder is also valid: no digits are found and the
+version reads `LuaJIT 2.1.ROLLING`.
 
 ## Troubleshooting
 
-### "stale generated files found in …"
+### "build output found in the vendored source tree …"
 
-You ran LuaJIT's own `Makefile` or `msvcbuild.bat` by hand and left generated files in `src/`.
-Because a quoted `#include "lj_bcdef.h"` searches the including file's own directory *before* any
-`-I`, those files shadow the ones CMake generates and produce a miscompile rather than an error.
-The configure-time guard catches this. Fix:
+Something left build output in `Source/Misc/luajit/src/`. Two ways that happens:
+
+- You ran LuaJIT's own `Makefile` or `msvcbuild.bat` by hand. A quoted
+  `#include "lj_bcdef.h"` searches the including file's own directory *before* any `-I`, so a
+  generated header left there shadows the one CMake generates and produces a miscompile rather
+  than an error.
+- You copied a library out of `precompiled/` into `src/`, which is where the `.jucer` files used
+  to look. However, the `.jucer` files now point at `precompiled/` and extract it themselves.
+
+Either way, the configure-time guard catches it. Fix:
 
 ```sh
 git clean -xdf Source/Misc/luajit

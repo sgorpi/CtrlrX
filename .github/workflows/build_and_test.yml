@@ -400,30 +400,6 @@ jobs:
         uses: mxschmitt/action-tmate@v3
         if: ${{ failure() && (github.event_name == 'workflow_dispatch' && inputs.debug_enabled) || (runner.debug) }}
 
-  # cmake/luajit/CMakeLists.txt hand-transcribes three source lists and the DynASM flag
-  # set from the vendored LuaJIT's src/Makefile, which upstream can change on any
-  # upgrade. LJLIB_C's order fixes fast-function and bytecode numbering, so drift there
-  # miscompiles silently rather than failing the build -- hence a check of its own.
-  # Parsing only: no build, no dependency on build_and_test.
-  luajit_drift:
-    name: LuaJIT source lists match src/Makefile
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout the two files being compared
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            cmake/luajit
-            Source/Misc/luajit/src
-          submodules: false
-
-      - name: Compare CMakeLists.txt against src/Makefile
-        run: python3 cmake/luajit/check_makefile_drift.py
-
   # Surface the test outcome as a single, non-required check (so a red here does NOT
   # block a PR — just don't add it to branch-protection required checks).
   # The check is "Tests - <platform> (excluding known failures)": only failures outside

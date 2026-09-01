@@ -93,6 +93,9 @@ endif()
 # `#include "lj_bcdef.h"` from a file in src/ searches src/ first, ahead of any
 # -I. A leftover generated file there silently shadows the one we generate,
 # producing a baffling miscompile rather than an error. Fail loudly instead.
+#
+# The guard also rejects compiled artefacts (libluajit.a, lua51.lib, *.o) 
+# so that the tree stays byte-identical to upstream
 # ----------------------------------------------------------------------------
 set(_lj_generated_in_tree
     "${LJ_SRC}/luajit.h"
@@ -107,8 +110,14 @@ set(_lj_generated_in_tree
     "${LJ_SRC}/host/buildvm_arch.h"
     "${LJ_SRC}/jit/vmdef.lua")
 
+# Compiled output.
+file(GLOB _lj_binaries_in_tree
+    "${LJ_SRC}/*.o" "${LJ_SRC}/*.obj" "${LJ_SRC}/*.a" "${LJ_SRC}/*.lib"
+    "${LJ_SRC}/*.dll" "${LJ_SRC}/*.so" "${LJ_SRC}/*.dylib"
+    "${LJ_SRC}/host/*.o" "${LJ_SRC}/host/*.obj")
+
 set(_lj_stale "")
-foreach(_f IN LISTS _lj_generated_in_tree)
+foreach(_f IN LISTS _lj_generated_in_tree _lj_binaries_in_tree)
     if(EXISTS "${_f}")
         # Relative to LJ_DIR, not CMAKE_SOURCE_DIR: the top level differs
         # between a standalone configure and one under CtrlrX.
@@ -119,12 +128,14 @@ endforeach()
 
 if(_lj_stale)
     message(FATAL_ERROR
-        "LuaJIT: stale generated files found in ${LJ_DIR}:"
+        "LuaJIT: build output found in the vendored source tree ${LJ_DIR}:"
         "${_lj_stale}\n\n"
-        "These shadow the files CMake generates, because a quoted #include "
-        "searches the including file's own directory first. They are left "
-        "behind by running LuaJIT's Makefile or msvcbuild.bat by hand. "
-        "Remove them with:\n\n"
+        "Generated headers shadow the ones CMake generates, because a quoted "
+        "#include searches the including file's own directory first."
+        "Compiled libraries and objects do not shadow anything, but they do"
+        "not belong in a tree that must stay byte-identical to upstream.\n\n"
+        "See Doc/LUAJIT.md."
+        "\n\nRemove them with:\n\n"
         "    git clean -xdf Source/Misc/luajit\n")
 endif()
 
