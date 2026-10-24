@@ -75,6 +75,371 @@ def find_mod(report, name):
     fail(f"no modulator named '{name}' in finalState")
 
 
+# A uiCustomComponent `surface` (200 x 100) whose paint callback counts into `paintCount` and whose
+# mouse callbacks append what they received to `probeLog`, beside a button `btn`.
+CUSTOM = "fixtures/fixture_probe_custom.panel"
+
+
+def probe_log(rep, i):
+    """The probeLog table returned by step i, as a list of dicts."""
+    log = rep["steps"][i].get("returnValue")
+    return log if isinstance(log, list) else []
+
+
+def action_error_types(step):
+    return [e["type"] for e in step["errors"]]
+
+
+def scenario_17_callback_families(probe):
+    # On a custom component only the uiCustomMouse* callbacks fire; componentLuaMouseDown/Up are
+    # stored but never called (CtrlrCustomComponent shadows CtrlrComponent's callback members).
+    # On a button it is the other way round. Characterization: pins what CtrlrX does today.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "click", "modulator": "surface"},
+        {"action": "eval", "lua": "return probeKinds()"},
+        {"action": "eval", "lua": "local l = probeLog probeLog = {} return l"},
+        {"action": "click", "modulator": "btn"},
+        {"action": "eval", "lua": "return probeKinds()"},
+    ]})
+    require(rep is not None, f"scenario 17 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 17 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    require(rep["steps"][1]["returnValue"] == ["down@100,50", "up@100,50"],
+            f"scenario 17 a custom component should get only uiCustomMouse*: {rep['steps'][1]}")
+    require(rep["steps"][4]["returnValue"] == ["baseDown@36,20", "baseUp@36,20"],
+            f"scenario 17 a button should get componentLuaMouse*: {rep['steps'][4]}")
+    # click's down and up carry the left button, as every real click does; nothing else is held.
+    for r in probe_log(rep, 2):
+        require(r["left"] is True and not (r["right"] or r["shift"] or r["ctrl"] or r["alt"]),
+                f"scenario 17 click should hold the left button and no modifier: {r}")
+
+
+def scenario_18_paint(probe):
+    # The paint action paints one component synchronously, in memory, and counts it.
+    shot = os.path.abspath("probe_selftest_paint.png")
+    if os.path.exists(shot):
+        os.unlink(shot)
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "paint", "modulator": "surface"},
+        {"action": "eval", "lua": "return paintCount"},
+        {"action": "paint", "modulator": "surface", "file": shot},
+        {"action": "paint", "modulator": "no-such-modulator"},
+    ]})
+    require(rep is not None, f"scenario 18 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 1, f"scenario 18 expected exit 1 (the unknown modulator), got {code}")
+    got = rep["steps"][0].get("paint")
+    require(got is not None and got["modulator"] == "surface" and got["width"] == 200
+            and got["height"] == 100, f"scenario 18 step should report the paint: {rep['steps'][0]}")
+    assert got is not None
+    require("file" not in got, f"scenario 18 no file unless asked: {got}")
+    require(rep["steps"][1]["returnValue"] == 1,
+            f"scenario 18 the paint callback should have run exactly once: {rep['steps'][1]}")
+    require(os.path.exists(shot), "scenario 18 paint with 'file' should write a PNG")
+    with open(shot, "rb") as f:
+        head = f.read(24)
+    os.unlink(shot)
+    require(head[:8] == b"\x89PNG\r\n\x1a\n", "scenario 18 output is not a PNG")
+    require(head[16:24] == (200).to_bytes(4, "big") + (100).to_bytes(4, "big"),
+            "scenario 18 the PNG should be the component alone (200 x 100), not the canvas")
+    require(action_error_types(rep["steps"][3]) == ["action"],
+            f"scenario 18 an unknown modulator should be an action error: {rep['steps'][3]['errors']}")
+    p = find_mod(rep, "surface").get("paint")
+    require(p is not None and p["paints"] == 2 and p["pendingRepaint"] is False and p["tracked"] is True,
+            f"scenario 18 finalState should count both paints: {p}")
+
+    # paint renders a component whether or not a user could see it; the step says which.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "eval", "lua": "panel:getModulatorByName('surface'):getComponent():setVisible(false) return 1"},
+        {"action": "paint", "modulator": "surface"},
+        {"action": "eval", "lua": "return paintCount"},
+    ]})
+    assert rep is not None
+    require(code == 0 and rep["steps"][1]["errors"] == [],
+            f"scenario 18 painting a hidden component is not an error: {rep['steps'][1]}")
+    require(rep["steps"][1].get("paint", {}).get("effectiveVisible") is False,
+            f"scenario 18 the step should say the component was hidden: {rep['steps'][1].get('paint')}")
+    require(rep["steps"][2]["returnValue"] == 1, f"scenario 18 a hidden component still paints: {rep['steps'][2]}")
+    require(not [w for w in rep["warnings"] if w["type"] == "paint"],
+            f"scenario 18 a hidden paint is not a warning: {rep['warnings']}")
+
+
+def scenario_19_silent_repaint(probe):
+    # The trap this work exists for. Under the old probe this script came back with errorCount 0
+    # and nothing else, so a paint test written behind repaint() passed vacuously for ever.
+    # repaint() still cannot paint headlessly -- the report must now say so.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "eval", "lua": "panel:getModulatorByName('surface'):getComponent():repaint() return 1"},
+        {"action": "wait", "ms": 300},
+        {"action": "eval", "lua": "return paintCount"},
+    ]})
+    require(rep is not None, f"scenario 19 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 19 a warning must not change the exit code, got {code}")
+    require(rep["steps"][2]["returnValue"] == 0,
+            f"scenario 19 repaint() is expected NOT to paint headlessly: {rep['steps'][2]}")
+    p = find_mod(rep, "surface").get("paint")
+    require(p is not None and p["repaintRequests"] >= 1 and p["paints"] == 0 and p["pendingRepaint"] is True,
+            f"scenario 19 finalState should show an unpainted repaint: {p}")
+    warnings = rep.get("warnings")
+    require(isinstance(warnings, list)
+            and any(w.get("type") == "paint" and w.get("modulator") == "surface" for w in warnings),
+            f"scenario 19 the unpainted repaint should be a 'paint' warning: {warnings}")
+    s = rep["summary"]
+    require(s.get("warningCount", 0) >= 1 and s["errorCount"] == 0,
+            f"scenario 19 a warning is counted apart from errors: {s}")
+
+    # Painting after the repaint clears it.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "eval", "lua": "panel:getModulatorByName('surface'):getComponent():repaint() return 1"},
+        {"action": "paint", "modulator": "surface"},
+    ]})
+    assert rep is not None
+    p = find_mod(rep, "surface").get("paint")
+    require(p is not None and p["pendingRepaint"] is False and p["paints"] == 1,
+            f"scenario 19 a paint after the repaint should clear it: {p}")
+    require(not [w for w in rep.get("warnings", []) if w.get("type") == "paint"],
+            f"scenario 19 no paint warning once painted: {rep.get('warnings')}")
+
+    # A script that does not test paint can turn the warning off; the counters still tell.
+    code, rep, raw = run_script(probe, CUSTOM, {"paintWarnings": False, "steps": [
+        {"action": "eval", "lua": "panel:getModulatorByName('surface'):getComponent():repaint() return 1"},
+    ]})
+    assert rep is not None
+    require(rep["warnings"] == [] and rep["summary"]["warningCount"] == 0,
+            f"scenario 19 paintWarnings false should silence the warning: {rep['warnings']}")
+    p = find_mod(rep, "surface").get("paint")
+    require(p is not None and p["pendingRepaint"] is True and p["paints"] == 0,
+            f"scenario 19 the counters are kept with paintWarnings false: {p}")
+
+
+def scenario_20_mouse_click(probe):
+    # A click lands where it is told, with the left button down, as a real one does.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "click", "x": 30, "y": 70},
+        {"action": "eval", "lua": "return probeLog"},
+    ]})
+    require(rep is not None, f"scenario 20 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 20 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    log = probe_log(rep, 1)
+    require([r["kind"] for r in log] == ["down", "up"], f"scenario 20 expected down, up: {log}")
+    down = log[0]
+    require((down["x"], down["y"], down["downX"], down["downY"]) == (30, 70, 30, 70),
+            f"scenario 20 the click should land at (30, 70): {down}")
+    require(down["left"] is True and down["right"] is False and down["clicks"] == 1,
+            f"scenario 20 a click holds the left button: {down}")
+    require(log[1]["wasClicked"] is True, f"scenario 20 an undragged press is a click: {log[1]}")
+    require(rep["steps"][0].get("mouse", {}).get("events") == ["down@30,70", "up@30,70"],
+            f"scenario 20 the step should list what it delivered: {rep['steps'][0].get('mouse')}")
+
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "click", "x": 250, "y": 10},
+        {"action": "mouse", "modulator": "surface", "gesture": "fling", "x": 5, "y": 5},
+        {"action": "eval", "lua": "panel:getModulatorByName('surface'):getComponent():setVisible(false) return 1"},
+        {"action": "mouse", "modulator": "surface", "gesture": "click", "x": 5, "y": 5},
+        {"action": "eval", "lua": "return #probeLog"},
+    ]})
+    assert rep is not None
+    for i, why in ((0, "outside the component"), (1, "an unknown gesture"), (3, "a hidden component")):
+        require(action_error_types(rep["steps"][i]) == ["action"],
+                f"scenario 20 {why} should be an action error: {rep['steps'][i]['errors']}")
+    require(rep["steps"][4]["returnValue"] == 0,
+            f"scenario 20 a refused gesture must deliver nothing: {rep['steps'][4]}")
+
+    # mouse drives custom components only: on a button the wrapper is not what a user's mouse hits.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "btn", "gesture": "click", "x": 5, "y": 5},
+        {"action": "eval", "lua": "return #probeLog"},
+    ]})
+    assert rep is not None
+    require(action_error_types(rep["steps"][0]) == ["action"],
+            f"scenario 20 mouse on a non-custom component should be an action error: {rep['steps'][0]['errors']}")
+    require(rep["steps"][1]["returnValue"] == 0,
+            f"scenario 20 mouse on a button must deliver nothing: {rep['steps'][1]}")
+
+
+def scenario_21_mouse_drag(probe):
+    # A drag threads the mouse-down position through every event, so a callback asking how far
+    # the drag has gone gets the truth. Held across steps, so the middle can be asserted on.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "down", "x": 10, "y": 10},
+        {"action": "mouse", "modulator": "surface", "gesture": "drag", "x": 110, "y": 50, "steps": 4},
+        {"action": "eval", "lua": "return probeKinds()"},
+        {"action": "mouse", "modulator": "surface", "gesture": "up"},
+        {"action": "eval", "lua": "return probeLog"},
+    ]})
+    require(rep is not None, f"scenario 21 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 21 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    require(rep["steps"][2]["returnValue"] == ["down@10,10", "drag@35,20", "drag@60,30", "drag@85,40",
+                                               "drag@110,50"],
+            f"scenario 21 mid-gesture: a down and four interpolated drags: {rep['steps'][2]}")
+    log = probe_log(rep, 4)
+    drags = [r for r in log if r["kind"] == "drag"]
+    require(all((r["downX"], r["downY"]) == (10, 10) and r["left"] is True for r in drags),
+            f"scenario 21 every drag must carry the mouse-down position and the button: {drags}")
+    last = drags[-1]
+    require((last["dist"], last["distX"], last["distY"]) == (108, 100, 40),
+            f"scenario 21 distance from drag start should be 108 (100, 40): {last}")
+    up = log[-1]
+    require(up["kind"] == "up" and (up["x"], up["y"]) == (110, 50) and up["wasClicked"] is False,
+            f"scenario 21 the up lands where the drag ended and is not a click: {up}")
+
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "drag", "x": 50, "y": 50},
+        {"action": "mouse", "modulator": "surface", "gesture": "up"},
+        {"action": "mouse", "modulator": "surface", "gesture": "down", "x": 5, "y": 5},
+        {"action": "mouse", "modulator": "surface", "gesture": "down", "x": 6, "y": 6},
+    ]})
+    assert rep is not None
+    for i, why in ((0, "drag with no press"), (1, "up with no press")):
+        require(action_error_types(rep["steps"][i]) == ["action"],
+                f"scenario 21 {why} should be an action error: {rep['steps'][i]['errors']}")
+    # The last step carries its own error (down while pressed) and the end-of-script one.
+    last = rep["steps"][3]["errors"]
+    require(action_error_types(rep["steps"][3]) == ["action", "action"] and "held" in last[0]["message"]
+            and "end of the script" in last[1]["message"],
+            f"scenario 21 down while pressed, then the press left held, are action errors: {last}")
+    require(rep["summary"]["actionErrorCount"] == 4,
+            f"scenario 21 a press still held at script end is an action error too: {rep['summary']}")
+
+
+def scenario_22_mouse_mods(probe):
+    # Right-click, modifiers, and a double-click in JUCE's own event order.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "click", "x": 20, "y": 20,
+         "button": "right", "mods": ["shift"]},
+        {"action": "mouse", "modulator": "surface", "gesture": "click", "x": 20, "y": 20,
+         "mods": ["ctrl", "alt"]},
+        {"action": "eval", "lua": "local l = probeLog probeLog = {} return l"},
+        {"action": "mouse", "modulator": "surface", "gesture": "doubleClick", "x": 50, "y": 50},
+        {"action": "eval", "lua": "return probeLog"},
+    ]})
+    require(rep is not None, f"scenario 22 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 22 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    log = probe_log(rep, 2)
+    right = log[0]
+    require(right["right"] is True and right["left"] is False and right["shift"] is True
+            and right["popup"] is True, f"scenario 22 shift + right button: {right}")
+    keyed = log[2]
+    require(keyed["ctrl"] is True and keyed["alt"] is True and keyed["shift"] is False,
+            f"scenario 22 ctrl + alt: {keyed}")
+    dbl = probe_log(rep, 4)
+    require([r["kind"] for r in dbl] == ["down", "up", "down", "up", "doubleClick"],
+            f"scenario 22 a double-click is down up down up doubleClick: {dbl}")
+    require([r["clicks"] for r in dbl] == [1, 1, 2, 2, 2],
+            f"scenario 22 click counts should be 1,1,2,2,2: {[r['clicks'] for r in dbl]}")
+
+
+def scenario_23_mouse_wheel_and_move(probe):
+    # Wheel and move carry no button, as in JUCE.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "wheel", "x": 5, "y": 5, "dx": 0, "dy": -0.5},
+        {"action": "mouse", "modulator": "surface", "gesture": "move", "x": 5, "y": 5},
+        {"action": "eval", "lua": "return probeLog"},
+    ]})
+    require(rep is not None, f"scenario 23 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 23 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    log = probe_log(rep, 2)
+    require(len(log) == 2, f"scenario 23 expected a wheel and a move: {log}")
+    require(log[0]["kind"] == "wheel" and log[0]["dx"] == 0 and log[0]["dy"] == -0.5
+            and log[0]["left"] is False, f"scenario 23 wheel deltas should reach the callback: {log[0]}")
+    require(log[1]["kind"] == "move" and (log[1]["x"], log[1]["y"]) == (5, 5) and log[1]["left"] is False,
+            f"scenario 23 move should reach uiCustomMouseMoveCallback with no button: {log[1]}")
+
+
+def scenario_24_virtual_press_clock(probe):
+    # The press clock is the probe's own, so a wait or a slow settle between down and up cannot
+    # turn a click into a long press (JUCE's threshold is 300 ms, the default settle ceiling).
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "down", "x": 10, "y": 10},
+        {"action": "wait", "ms": 400},
+        {"action": "mouse", "modulator": "surface", "gesture": "up"},
+        {"action": "mouse", "modulator": "surface", "gesture": "down", "x": 10, "y": 10},
+        {"action": "mouse", "modulator": "surface", "gesture": "up", "holdMs": 500},
+        {"action": "eval", "lua": "return probeLog"},
+    ]})
+    require(rep is not None, f"scenario 24 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 24 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    ups = [r for r in probe_log(rep, 5) if r["kind"] == "up"]
+    require(len(ups) == 2, f"scenario 24 expected two ups: {probe_log(rep, 5)}")
+    require(ups[0]["wasClicked"] is True and ups[0]["pressLen"] == 10,
+            f"scenario 24 a 400 ms wall-clock wait must not make a long press: {ups[0]}")
+    require(rep["steps"][2].get("mouse", {}).get("pressMs") == 10,
+            f"scenario 24 pressMs should be the virtual age: {rep['steps'][2].get('mouse')}")
+    require(ups[1]["wasClicked"] is False and ups[1]["pressLen"] == 510,
+            f"scenario 24 holdMs is the way to a long press: {ups[1]}")
+    require(rep["steps"][4].get("mouse", {}).get("pressMs") == 510,
+            f"scenario 24 pressMs after holdMs 500: {rep['steps'][4].get('mouse')}")
+
+
+def scenario_25_drag_and_drop_trap(probe):
+    # A drag on a drag-and-drop container runs dadStart, then JUCE's startDragging silently does
+    # nothing on synthetic events. The probe cannot simulate the drop, so it must say so.
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "dndSurface", "gesture": "down", "x": 10, "y": 10},
+        {"action": "mouse", "modulator": "dndSurface", "gesture": "drag", "x": 60, "y": 30, "steps": 3},
+        {"action": "mouse", "modulator": "dndSurface", "gesture": "up"},
+        {"action": "eval", "lua": "return dadStarted"},
+    ]})
+    require(rep is not None, f"scenario 25 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 25 a warning must not change the exit code, got {code}: "
+                       f"{[s['errors'] for s in rep['steps']]}")
+    require(rep["steps"][3]["returnValue"] == 3, f"scenario 25 dadStart should run per drag: {rep['steps'][3]}")
+    mouse_warnings = [w for w in rep["warnings"] if w["type"] == "mouse"]
+    require(len(mouse_warnings) == 1 and mouse_warnings[0]["modulator"] == "dndSurface",
+            f"scenario 25 one 'mouse' warning per drag step: {rep['warnings']}")
+    require(rep["summary"]["errorCount"] == 0, f"scenario 25 the trap is a warning: {rep['summary']}")
+
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "mouse", "modulator": "surface", "gesture": "down", "x": 10, "y": 10},
+        {"action": "mouse", "modulator": "surface", "gesture": "drag", "x": 60, "y": 30},
+        {"action": "mouse", "modulator": "surface", "gesture": "up"},
+    ]})
+    assert rep is not None
+    require(not [w for w in rep["warnings"] if w["type"] == "mouse"],
+            f"scenario 25 a drag on a plain surface is not a DnD trap: {rep['warnings']}")
+
+
+def scenario_26_disabled_paint_callback(probe):
+    # A runtime error disables a callback for good, and the error is reported once per process. In
+    # a later --stdin script `paint` still "paints" -- without the callback. The report must show it.
+    _, reports = run_stdin(probe, CUSTOM, [
+        {"steps": [{"action": "eval", "lua": "probeFailPaint = true return 1"},
+                   {"action": "paint", "modulator": "surface"}]},
+        {"steps": [{"action": "eval", "lua": "probeFailPaint = false return paintCount"},
+                   {"action": "paint", "modulator": "surface"},
+                   {"action": "eval", "lua": "return paintCount"}]},
+    ])
+    require(len(reports) == 2, f"scenario 26 expected two reports, got {len(reports)}")
+    first, second = reports
+    require(first["summary"]["luaRuntimeErrorCount"] == 1,
+            f"scenario 26 the failing paint should be one lua error: {first['summary']}")
+    require(find_mod(first, "surface")["paint"]["paintMethodValid"] is False,
+            f"scenario 26 paintMethodValid should be false: {find_mod(first, 'surface')['paint']}")
+    require(second["summary"]["errorCount"] == 0, f"scenario 26 not counted again: {second['summary']}")
+    p = find_mod(second, "surface")["paint"]
+    require(p["paints"] == 1 and p["paintMethod"] == "surfacePaint" and p["paintMethodValid"] is False,
+            f"scenario 26 painted, but without the callback: {p}")
+    require(any(w["type"] == "paint" and w["modulator"] == "surface" and "surfacePaint" in w["message"]
+                for w in second["warnings"]),
+            f"scenario 26 a 'paint' warning should name the disabled callback: {second['warnings']}")
+    require("surfacePaint" in second["summary"]["disabledMethods"],
+            f"scenario 26 disabledMethods should list it: {second['summary']}")
+    require(second["steps"][2]["returnValue"] == second["steps"][0]["returnValue"],
+            f"scenario 26 the disabled callback must not have run: {second['steps']}")
+
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [{"action": "paint", "modulator": "surface"}]})
+    assert rep is not None
+    require(rep["summary"]["disabledMethods"] == [] and find_mod(rep, "surface")["paint"]["paintMethodValid"] is True,
+            f"scenario 26 a fresh process starts with nothing disabled: {rep['summary']}")
+
+
 def main():
     if len(sys.argv) < 2:
         fail("usage: probe_selftest.py <path-to-CtrlrPanelProbe>")
@@ -328,7 +693,19 @@ def main():
     require("hello 42" in reports[2]["steps"][0]["console"],
             f"scenario 16 later scripts still capture console: {reports[2]['steps'][0]}")
 
-    print("SELFTEST PASS: all 16 scenarios ok")
+    # --- Scenarios 17-26: custom components -- paint honesty and real mouse gestures ---
+    scenario_17_callback_families(probe)
+    scenario_18_paint(probe)
+    scenario_19_silent_repaint(probe)
+    scenario_20_mouse_click(probe)
+    scenario_21_mouse_drag(probe)
+    scenario_22_mouse_mods(probe)
+    scenario_23_mouse_wheel_and_move(probe)
+    scenario_24_virtual_press_clock(probe)
+    scenario_25_drag_and_drop_trap(probe)
+    scenario_26_disabled_paint_callback(probe)
+
+    print("SELFTEST PASS: all 26 scenarios ok")
     sys.exit(0)
 
 
