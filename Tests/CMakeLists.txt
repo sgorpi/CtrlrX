@@ -75,6 +75,11 @@ target_link_libraries(CtrlrPanelProbe
 target_compile_definitions(CtrlrPanelProbe PRIVATE $<TARGET_PROPERTY:${PROJECT_NAME},COMPILE_DEFINITIONS>)
 target_include_directories(CtrlrPanelProbe PRIVATE $<TARGET_PROPERTY:${PROJECT_NAME},INCLUDE_DIRECTORIES>)
 target_compile_features(CtrlrPanelProbe PRIVATE cxx_std_17)
+# The Source/ headers mix `override` with unmarked overrides, which Clang reports once per including
+# translation unit. SharedCode itself builds with -w; keep the probe's own build log readable.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(CtrlrPanelProbe PRIVATE -Wno-inconsistent-missing-override)
+endif ()
 
 if ((DEFINED ENV{CI}))
     target_compile_definitions(CtrlrPanelProbe PUBLIC CI=1)
