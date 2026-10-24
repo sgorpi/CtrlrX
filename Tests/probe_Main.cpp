@@ -19,8 +19,39 @@
 #include <mutex>
 #include <set>
 #include <vector>
-#include <unistd.h>
 #include <fcntl.h>
+
+// The report is written to a saved copy of fd 1 (see redirectStdoutToStderr). MSVC spells the
+// POSIX fd calls with a leading underscore in <io.h>, and has no /dev/null or ssize_t.
+#ifdef _WIN32
+  #include <io.h>
+#else
+  #include <unistd.h>
+#endif
+
+namespace probe_fd
+{
+#ifdef _WIN32
+    constexpr int stdoutFd = 1, stderrFd = 2;
+    constexpr const char* nullDevice = "NUL";
+    inline int dup (int fd)                                { return ::_dup (fd); }
+    inline int dup2 (int from, int to)                     { return ::_dup2 (from, to); }
+    inline int openWrite (const char* path)                { return ::_open (path, _O_WRONLY); }
+    inline int close (int fd)                              { return ::_close (fd); }
+    inline long write (int fd, const char* buf, size_t n)  { return ::_write (fd, buf, (unsigned int) n); }
+    // Binary mode, so the report's "\n" does not become "\r\n" (one report per line in --stdin).
+    inline void setBinary (int fd)                         { ::_setmode (fd, _O_BINARY); }
+#else
+    constexpr int stdoutFd = STDOUT_FILENO, stderrFd = STDERR_FILENO;
+    constexpr const char* nullDevice = "/dev/null";
+    inline int dup (int fd)                                { return ::dup (fd); }
+    inline int dup2 (int from, int to)                     { return ::dup2 (from, to); }
+    inline int openWrite (const char* path)                { return ::open (path, O_WRONLY); }
+    inline int close (int fd)                              { return ::close (fd); }
+    inline long write (int fd, const char* buf, size_t n)  { return (long) ::write (fd, buf, n); }
+    inline void setBinary (int)                            {}
+#endif
+}
 
 #include "gmock/gmock.h"
 #include "JuceHeader.h"
@@ -100,8 +131,10 @@ namespace
     {
         std::cout.flush();
         std::fflush(stdout);
-        g_realStdout = ::dup(STDOUT_FILENO);
-        ::dup2(STDERR_FILENO, STDOUT_FILENO);
+        g_realStdout = probe_fd::dup(probe_fd::stdoutFd);
+        if (g_realStdout >= 0)
+            probe_fd::setBinary(g_realStdout);
+        probe_fd::dup2(probe_fd::stderrFd, probe_fd::stdoutFd);
     }
 
     // Quiet mode (default, no --verbose): send fd 1 and fd 2 to /dev/null so none of CtrlrX /
@@ -113,12 +146,12 @@ namespace
         std::cout.flush();
         std::fflush(stdout);
         std::fflush(stderr);
-        const int devnull = ::open("/dev/null", O_WRONLY);
+        const int devnull = probe_fd::openWrite(probe_fd::nullDevice);
         if (devnull >= 0)
         {
-            ::dup2(devnull, STDOUT_FILENO);
-            ::dup2(devnull, STDERR_FILENO);
-            ::close(devnull);
+            probe_fd::dup2(devnull, probe_fd::stdoutFd);
+            probe_fd::dup2(devnull, probe_fd::stderrFd);
+            probe_fd::close(devnull);
         }
     }
 
@@ -347,12 +380,12 @@ namespace
     void writeReport(const juce::var& report, bool compact)
     {
         const juce::String json = juce::JSON::toString(report, compact) + "\n";
-        const int fd = g_realStdout >= 0 ? g_realStdout : STDOUT_FILENO;
+        const int fd = g_realStdout >= 0 ? g_realStdout : probe_fd::stdoutFd;
         const char* bytes = json.toRawUTF8();
         size_t remaining = std::strlen(bytes);
         while (remaining > 0)
         {
-            const ssize_t written = ::write(fd, bytes, remaining);
+            const long written = probe_fd::write(fd, bytes, remaining);
             if (written <= 0)
                 break;
             bytes += written;
