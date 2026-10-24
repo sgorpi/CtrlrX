@@ -188,6 +188,23 @@ jobs:
           path: ${{ env.BUILD_DIR }}/Tests/test-results/
           if-no-files-found: warn
 
+      - name: Zip CtrlrPanelProbe
+        # The headless panel probe (Doc/PanelProbe.md), built with the tests. Zipped before the
+        # upload because upload-artifact drops the executable bit.
+        run: |
+          PROBE_DIR="CtrlrPanelProbe-${{ matrix.name }}"
+          rm -rf "$PROBE_DIR" && mkdir -p "$PROBE_DIR"
+          cp "${{ env.BUILD_DIR }}/Tests/CtrlrPanelProbe${{ runner.os == 'Windows' && '.exe' || '' }}" "$PROBE_DIR/"
+          cp Doc/PanelProbe.md LICENSE-GPL LICENSE-BSD "$PROBE_DIR/"
+          cmake -E tar cf "$PROBE_DIR.zip" --format=zip "$PROBE_DIR"
+
+      - name: Upload CtrlrPanelProbe
+        uses: actions/upload-artifact@v4
+        with:
+          name: CtrlrPanelProbe-${{ matrix.name }}
+          path: CtrlrPanelProbe-${{ matrix.name }}.zip
+          if-no-files-found: warn
+
       - name: Read in .env from CMake
         run: |
           cat .env
