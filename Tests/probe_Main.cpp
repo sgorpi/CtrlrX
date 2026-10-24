@@ -15,7 +15,9 @@
 #include <cstdio>
 #include <cstring>
 #include <chrono>
+#include <cmath>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <set>
 #include <vector>
@@ -62,6 +64,7 @@ namespace probe_fd
 #include <CtrlrModulator.h>
 #include <CtrlrModulatorProcessor.h>
 #include "CtrlrComponents/CtrlrComponent.h"
+#include "CtrlrComponents/CtrlrCustomComponent.h"
 #include "CtrlrPanel/CtrlrPanelCanvas.h"
 #include <CtrlrMIDIDeviceManager.h>
 #include "CtrlrLuaManager.h"
@@ -356,23 +359,33 @@ namespace
         return pcallForResult(L, 0, resultOut, errorOut);
     }
 
-    // Build a synthetic mouse event centred on the component. CtrlrComponent::mouseDown/mouseUp
-    // only forward it to the Lua mouse callbacks (which ignore its geometry), so default
-    // pressure/orientation/tilt are fine.
-    juce::MouseEvent makeClickEvent(juce::Component* comp)
+    // Build one synthetic mouse event on `comp`, in component-local coordinates. The probe
+    // dispatches these straight to the component's handlers, so default pressure/orientation/tilt
+    // are fine.
+    juce::MouseEvent makeMouseEvent(juce::Component* comp, juce::Point<float> pos, juce::ModifierKeys mods,
+                                    juce::Time eventTime, juce::Point<float> downPos, juce::Time downTime,
+                                    int clicks, bool wasDragged)
     {
-        const juce::Point<float> centre((float) comp->getWidth() * 0.5f, (float) comp->getHeight() * 0.5f);
         return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),
-                                centre, juce::ModifierKeys(),
+                                pos, mods,
                                 juce::MouseInputSource::invalidPressure,
                                 juce::MouseInputSource::invalidOrientation,
                                 juce::MouseInputSource::invalidRotation,
                                 juce::MouseInputSource::invalidTiltX,
                                 juce::MouseInputSource::invalidTiltY,
                                 comp, comp,
-                                juce::Time::getCurrentTime(),
-                                centre, juce::Time::getCurrentTime(),
-                                1, false);
+                                eventTime, downPos, downTime,
+                                clicks, wasDragged);
+    }
+
+    // The `click` action's event: the component's centre, the left button held (as on every real
+    // click, so a handler gated on isLeftButtonDown() runs), no keyboard modifiers.
+    juce::MouseEvent makeClickEvent(juce::Component* comp)
+    {
+        const juce::Point<float> centre((float) comp->getWidth() * 0.5f, (float) comp->getHeight() * 0.5f);
+        const juce::Time now = juce::Time::getCurrentTime();
+        return makeMouseEvent(comp, centre, juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier),
+                              now, centre, now, 1, false);
     }
 
     // Write a var as one JSON document to the real (saved) stdout. `compact` puts it on a single
@@ -428,6 +441,111 @@ namespace
         return wantOutput ? list[list.size() - 1] : list[0];
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Paint honesty. repaint() paints nothing here: with no desktop peer, JUCE's repaint walk ends
+    // at the top-level component with nowhere to queue the area, and no amount of pumping paints
+    // it. So the probe counts, per uiCustomComponent, the repaint requests it sees and the paints
+    // that really happen, and warns about requests that were never followed by a paint.
+    // ------------------------------------------------------------------------------------------
+
+    // Per-component counters. They live in the session, not in the spy: the component owns the
+    // spy, and panel Lua can replace or delete it (setCachedComponentImage, setBufferedToImage).
+    struct PaintCounters
+    {
+        int repaintRequests = 0;    // invalidations: repaint(), move/resize, property change, focus
+        int paints = 0;             // parent paints the spy saw + the `paint` action's own
+        int requestsSincePaint = 0; // > 0 means a repaint is still pending
+    };
+
+    // A CachedComponentImage that paints straight through -- the canvas screenshot is byte-identical
+    // with and without it -- but sees both sides: JUCE calls invalidate*() on every repaint request
+    // before it looks for a peer, and paint() whenever a parent paints the component. It does not
+    // see a direct paintEntireComponent() on the component, so the `paint` action counts its own.
+    struct PaintSpy : public juce::CachedComponentImage
+    {
+        PaintSpy(juce::Component& c, PaintCounters& k, juce::uint32 t) : owner(c), counters(k), token(t) {}
+
+        void paint(juce::Graphics& g) override
+        {
+            ++counters.paints;
+            counters.requestsSincePaint = 0;
+            owner.paintEntireComponent(g, false);
+        }
+        bool invalidateAll() override                          { noteRequest(); return true; }
+        bool invalidate(const juce::Rectangle<int>&) override { noteRequest(); return true; }
+        void releaseResources() override {}
+
+        void noteRequest() { ++counters.repaintRequests; ++counters.requestsSincePaint; }
+
+        juce::Component& owner;
+        PaintCounters& counters;
+        const juce::uint32 token; // tells our spy from a newer one, even at a recycled address
+    };
+
+    struct TrackedPaint
+    {
+        PaintCounters counters;
+        juce::uint32 token = 0;
+    };
+    using PaintTracking = std::map<juce::String, TrackedPaint>; // keyed by modulator name
+
+    // True while the component still carries the spy the probe attached. False once Lua replaced
+    // or removed it, or the component was recreated (e.g. a uiType change): the counters are then
+    // no longer fed, and the report says `tracked: false`.
+    bool isOurSpy(juce::Component* comp, const TrackedPaint& t)
+    {
+        auto* spy = (comp != nullptr) ? dynamic_cast<PaintSpy*>(comp->getCachedComponentImage()) : nullptr;
+        return spy != nullptr && spy->token == t.token;
+    }
+
+    // The method a component's uiCustomPaintCallback names, or nullptr when it names none.
+    CtrlrLuaMethod* paintMethodOf(CtrlrPanel& panel, CtrlrModulator& mod)
+    {
+        const juce::String name = mod.getObjectTree().getChildWithName(Ids::component)
+                                     .getProperty(Ids::uiCustomPaintCallback).toString();
+        if (name.isEmpty())
+            return nullptr;
+        return panel.getCtrlrLuaManager().getMethodManager().getMethodByName(name);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Mouse. One press is held across steps (`down` ... `drag` ... `up`) so a test can assert
+    // mid-gesture. The probe stamps every event of a press itself, on a virtual clock: +10 ms per
+    // delivered event, plus any `holdMs`. Wall-clock age would be flaky, because the default settle
+    // ceiling (300 ms) is exactly JUCE's long-press threshold.
+    // ------------------------------------------------------------------------------------------
+    constexpr int   MOUSE_EVENT_MS = 10;
+    constexpr float DRAG_THRESHOLD_PX = 4.0f; // MouseInputSource's "moved significantly"
+    constexpr int   LONG_PRESS_MS = 300;      // MouseInputSource::isLongPressOrDrag()
+
+    struct HeldPress
+    {
+        bool active = false;
+        juce::String modulator;
+        juce::Component::SafePointer<juce::Component> comp;
+        juce::Point<float> downPos, lastPos;
+        juce::Time t0;              // real clock, stamped at the down
+        juce::int64 vMs = 0;        // virtual age of the press
+        int clicks = 1;
+        juce::ModifierKeys mods;    // including the button flag
+        bool movedSignificantly = false;
+
+        void moveTo(juce::Point<float> pos)
+        {
+            lastPos = pos;
+            movedSignificantly = movedSignificantly || downPos.getDistanceFrom(pos) >= DRAG_THRESHOLD_PX;
+        }
+
+        // The event this press delivers now, at `pos`. JUCE's rule for mouseWasDragged, on the
+        // virtual age.
+        juce::MouseEvent event(juce::Point<float> pos) const
+        {
+            return makeMouseEvent(comp.getComponent(), pos, mods,
+                                  t0 + juce::RelativeTime::milliseconds((juce::int64) vMs), downPos, t0,
+                                  clicks, movedSignificantly || vMs > LONG_PRESS_MS);
+        }
+    };
+
     // Everything a step needs to drive the loaded panel.
     struct RunContext
     {
@@ -439,9 +557,27 @@ namespace
         std::vector<juce::MidiMessage>& deviceSends;
         std::set<juce::String>& knownInvalidMethods; // methods already invalid; used to detect new runtime errors
         LogCapture& log;
+        PaintTracking& paintTracking;
+        juce::Array<juce::var>& warnings; // the script's top-level warnings[]
         int settleMs = DEFAULT_SETTLE_MS; // ceiling: give up waiting for quiet after this long
         int quietMs  = DEFAULT_QUIET_MS;  // stop as soon as nothing has happened for this long
+        HeldPress press;                  // the mouse press held across steps, if any
     };
+
+    // Warnings are what the probe saw but could not turn into a pass or a fail: they are not
+    // counted in errorCount and do not change the exit code. `step` is present when a step
+    // raised it.
+    void addWarning(RunContext& ctx, const char* type, const juce::String& modulator,
+                    const juce::String& message, int stepIndex = -1)
+    {
+        juce::var w = probeReport::makeObject();
+        probeReport::setProp(w, "type", type);
+        probeReport::setProp(w, "modulator", modulator);
+        probeReport::setProp(w, "message", message);
+        if (stepIndex >= 0)
+            probeReport::setProp(w, "step", stepIndex);
+        ctx.warnings.add(w);
+    }
 
     // Parse a whitespace/comma-separated hex byte string ("F0 7E 41 F7") into a MidiMessage.
     // Returns false on an empty/garbage string.
@@ -623,6 +759,316 @@ namespace
         return nullptr;
     }
 
+    // Write an image as PNG to `path` (relative to the working directory). Returns false on
+    // failure; `fullPathOut` is the absolute path either way.
+    bool writePng(const juce::Image& image, const juce::String& path, juce::String& fullPathOut)
+    {
+        const juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile(path);
+        fullPathOut = out.getFullPathName();
+        out.deleteFile();
+        std::unique_ptr<juce::FileOutputStream> stream(out.createOutputStream());
+        juce::PNGImageFormat png;
+        if (stream == nullptr || ! png.writeImageToStream(image, *stream))
+            return false;
+        stream->flush();
+        return true;
+    }
+
+    // An event label coordinate: integers without a decimal point, anything else with up to 3
+    // decimals and the trailing zeros trimmed ("35", "22.5").
+    juce::String formatCoord(float v)
+    {
+        if (v == std::floor(v) && std::abs(v) < 1.0e9f)
+            return juce::String((juce::int64) v);
+        juce::String s((double) v, 3);
+        while (s.endsWithChar('0'))
+            s = s.dropLastCharacters(1);
+        if (s.endsWithChar('.'))
+            s = s.dropLastCharacters(1);
+        return s;
+    }
+
+    juce::String eventLabel(const juce::String& kind, juce::Point<float> p)
+    {
+        return kind + "@" + formatCoord(p.x) + "," + formatCoord(p.y);
+    }
+
+    // A drag on a drag-and-drop container with a live dadStart runs that callback, then JUCE's
+    // startDragging() finds the real mouse source not dragging and silently returns (a jassert in
+    // Debug). Nothing is dropped anywhere, yet the step looks fine -- so it is worth a warning.
+    bool isDragAndDropTrap(CtrlrPanel& panel, CtrlrModulator& mod)
+    {
+        const juce::ValueTree tree = mod.getObjectTree().getChildWithName(Ids::component);
+        if (! (bool) tree.getProperty(Ids::uiCustomDragAndDropContainer, false))
+            return false;
+        const juce::String name = tree.getProperty(Ids::uiCustomStartDraggingCallback).toString();
+        CtrlrLuaMethod* m = name.isEmpty() ? nullptr
+                                           : panel.getCtrlrLuaManager().getMethodManager().getMethodByName(name);
+        return m != nullptr && m->isValid();
+    }
+
+    // The `mouse` action. Dispatches straight to the named uiCustomComponent's own handlers (no
+    // hit-testing, no MouseListeners), like `click`, but at the requested position, with the
+    // requested buttons and modifiers, and with every event of a press threading the down state.
+    void runMouseAction(RunContext& ctx, int stepIndex, const juce::var& action, juce::var& step,
+                        juce::Array<juce::var>& errors)
+    {
+        const juce::String gesture = action.getProperty("gesture", juce::var()).toString();
+        const juce::String modName = action.getProperty("modulator", juce::var()).toString();
+        HeldPress& press = ctx.press;
+
+        static const juce::StringArray gestures { "down", "drag", "up", "click", "doubleClick", "move", "wheel" };
+        if (! gestures.contains(gesture))
+        {
+            addError(errors, "action", "mouse: unknown gesture '" + gesture
+                                       + "' (expected down, drag, up, click, doubleClick, move or wheel)");
+            return;
+        }
+        const bool continuesPress = (gesture == "drag" || gesture == "up");
+        const bool startsPress    = (gesture == "down" || gesture == "click" || gesture == "doubleClick");
+
+        // Keyboard modifiers. On Linux and Windows JUCE's `cmd` is the same flag as `ctrl`.
+        const bool hasMods = action.hasProperty("mods");
+        int keyFlags = 0;
+        if (hasMods)
+        {
+            const juce::Array<juce::var>* mods = action.getProperty("mods", juce::var()).getArray();
+            if (mods == nullptr)
+            {
+                addError(errors, "action", "mouse: 'mods' must be an array");
+                return;
+            }
+            for (const auto& m : *mods)
+            {
+                const juce::String k = m.toString();
+                if      (k == "shift") keyFlags |= juce::ModifierKeys::shiftModifier;
+                else if (k == "ctrl")  keyFlags |= juce::ModifierKeys::ctrlModifier;
+                else if (k == "alt")   keyFlags |= juce::ModifierKeys::altModifier;
+                else if (k == "cmd")   keyFlags |= juce::ModifierKeys::commandModifier;
+                else
+                {
+                    addError(errors, "action", "mouse: unknown modifier '" + k + "' (expected shift, ctrl, alt or cmd)");
+                    return;
+                }
+            }
+        }
+
+        int buttonFlag = juce::ModifierKeys::leftButtonModifier;
+        if (action.hasProperty("button"))
+        {
+            const juce::String b = action.getProperty("button", juce::var()).toString();
+            if (! startsPress)
+            {
+                addError(errors, "action", "mouse: 'button' applies to down, click and doubleClick; "
+                                           "drag and up keep the pressed button");
+                return;
+            }
+            if      (b == "left")   buttonFlag = juce::ModifierKeys::leftButtonModifier;
+            else if (b == "right")  buttonFlag = juce::ModifierKeys::rightButtonModifier;
+            else if (b == "middle") buttonFlag = juce::ModifierKeys::middleButtonModifier;
+            else
+            {
+                addError(errors, "action", "mouse: unknown button '" + b + "' (expected left, right or middle)");
+                return;
+            }
+        }
+
+        if (action.hasProperty("holdMs") && ! continuesPress)
+        {
+            addError(errors, "action", "mouse: 'holdMs' applies to drag and up");
+            return;
+        }
+
+        const bool hasXY = action.hasProperty("x") && action.hasProperty("y");
+        const juce::Point<float> pos((float) (double) action.getProperty("x", juce::var(0)),
+                                     (float) (double) action.getProperty("y", juce::var(0)));
+
+        juce::Array<juce::var> events;
+        juce::int64 pressMs = -1; // the press's virtual age at the step's last event; -1 = no press
+        juce::String target = modName;
+
+        if (continuesPress)
+        {
+            if (! press.active)
+            {
+                addError(errors, "action", "mouse: '" + gesture + "' needs a held press; send a 'down' first");
+                return;
+            }
+            if (modName.isNotEmpty() && modName != press.modulator)
+            {
+                addError(errors, "action", "mouse: the held press is on '" + press.modulator + "', not '" + modName + "'");
+                return;
+            }
+            // drag/up go to the pressed component even if Lua hid it mid-press, as on screen.
+            juce::Component* comp = press.comp.getComponent();
+            if (comp == nullptr)
+            {
+                addError(errors, "action", "mouse: the pressed component '" + press.modulator + "' was deleted");
+                press = HeldPress(); // cleared, so the end-of-script check doesn't report it again
+                return;
+            }
+            if (gesture == "drag" && ! hasXY)
+            {
+                addError(errors, "action", "mouse: drag needs 'x' and 'y'");
+                return;
+            }
+            target = press.modulator;
+
+            if (hasMods) // keyboard modifiers may change mid-press; the button stays
+                press.mods = juce::ModifierKeys(keyFlags | (press.mods.getRawFlags()
+                                                            & juce::ModifierKeys::allMouseButtonModifiers));
+            press.vMs += juce::jmax(0, (int) action.getProperty("holdMs", juce::var(0)));
+
+            if (gesture == "drag")
+            {
+                const int n = juce::jmax(1, (int) action.getProperty("steps", juce::var(1)));
+                const juce::Point<float> from = press.lastPos;
+                for (int k = 1; k <= n && press.comp != nullptr; ++k)
+                {
+                    const juce::Point<float> p = (k == n) ? pos : from + (pos - from) * ((float) k / (float) n);
+                    press.vMs += MOUSE_EVENT_MS;
+                    press.moveTo(p);
+                    comp->mouseDrag(press.event(p));
+                    events.add(eventLabel("drag", p));
+                }
+                CtrlrModulator* mod = ctx.panel.getModulator(press.modulator);
+                if (mod != nullptr && isDragAndDropTrap(ctx.panel, *mod))
+                    addWarning(ctx, "mouse", press.modulator,
+                               "drag-and-drop is not simulated: dadStart ran, startDragging was a no-op", stepIndex);
+                pressMs = press.vMs;
+            }
+            else // up, with the pre-release mods, as MouseInputSource passes them
+            {
+                const juce::Point<float> p = hasXY ? pos : press.lastPos;
+                press.vMs += MOUSE_EVENT_MS;
+                press.moveTo(p);
+                comp->mouseUp(press.event(p));
+                events.add(eventLabel("up", p));
+                pressMs = press.vMs;
+                press = HeldPress();
+            }
+        }
+        else
+        {
+            if (press.active)
+            {
+                addError(errors, "action", "mouse: a press on '" + press.modulator
+                                           + "' is held; only drag and up can follow a down");
+                return;
+            }
+
+            // The checks a gesture start makes: a uiCustomComponent a user could reach, at a point
+            // inside it. Anything else delivers nothing.
+            CtrlrModulator* mod = ctx.panel.getModulator(modName);
+            CtrlrComponent* comp = (mod != nullptr) ? mod->getComponent() : nullptr;
+            if (mod == nullptr)
+            {
+                addError(errors, "action", "no modulator named '" + modName + "'");
+                return;
+            }
+            if (dynamic_cast<CtrlrCustomComponent*>(comp) == nullptr)
+            {
+                addError(errors, "action", "mouse drives uiCustomComponent only; use click for buttons, "
+                                           "setValue for value controls ('" + modName + "')");
+                return;
+            }
+            if (! probeReport::isEffectivelyVisible(comp, ctx.panel.getCanvas()))
+            {
+                addError(errors, "action", "mouse: '" + modName + "' is not visible (effectiveVisible is false)");
+                return;
+            }
+            if (! hasXY)
+            {
+                addError(errors, "action", "mouse: " + gesture + " needs 'x' and 'y'");
+                return;
+            }
+            if (pos.x < 0 || pos.y < 0 || pos.x >= (float) comp->getWidth() || pos.y >= (float) comp->getHeight())
+            {
+                addError(errors, "action", "mouse: (" + formatCoord(pos.x) + ", " + formatCoord(pos.y)
+                                           + ") is outside '" + modName + "' (" + juce::String(comp->getWidth())
+                                           + " x " + juce::String(comp->getHeight()) + ")");
+                return;
+            }
+
+            const juce::Time now = juce::Time::getCurrentTime();
+            if (startsPress)
+            {
+                HeldPress p;
+                p.active = true;
+                p.modulator = modName;
+                p.comp = comp;
+                p.downPos = p.lastPos = pos;
+                p.t0 = now;
+                p.mods = juce::ModifierKeys(keyFlags | buttonFlag);
+
+                // One press: down at its own time 0, then (unless it stays held) up 10 ms later.
+                auto pressOnce = [&](bool release) {
+                    if (p.comp == nullptr)
+                        return;
+                    p.comp->mouseDown(p.event(pos));
+                    events.add(eventLabel("down", pos));
+                    if (! release || p.comp == nullptr)
+                        return;
+                    p.vMs += MOUSE_EVENT_MS;
+                    const juce::MouseEvent up = p.event(pos);
+                    p.comp->mouseUp(up);
+                    events.add(eventLabel("up", pos));
+                    // JUCE's Component::internalMouseUp: the double-click follows the second up,
+                    // with the same event.
+                    if (p.clicks >= 2 && p.comp != nullptr)
+                    {
+                        p.comp->mouseDoubleClick(up);
+                        events.add(eventLabel("doubleClick", pos));
+                    }
+                };
+
+                if (gesture == "down")
+                {
+                    pressOnce(false);
+                    press = p;
+                }
+                else
+                {
+                    pressOnce(true);
+                    if (gesture == "doubleClick")
+                    {
+                        // The second press starts 10 ms after the first up and keeps its own down time.
+                        p.t0 = p.t0 + juce::RelativeTime::milliseconds((juce::int64) (p.vMs + MOUSE_EVENT_MS));
+                        p.vMs = 0;
+                        p.clicks = 2;
+                        pressOnce(true);
+                    }
+                }
+                pressMs = p.vMs;
+            }
+            else if (gesture == "move")
+            {
+                comp->mouseMove(makeMouseEvent(comp, pos, juce::ModifierKeys(keyFlags), now, pos, now, 1, false));
+                events.add(eventLabel("move", pos));
+            }
+            else // wheel
+            {
+                juce::MouseWheelDetails wheel;
+                wheel.deltaX = (float) (double) action.getProperty("dx", juce::var(0));
+                wheel.deltaY = (float) (double) action.getProperty("dy", juce::var(0));
+                wheel.isReversed = false;
+                wheel.isSmooth = false;
+                wheel.isInertial = false;
+                comp->mouseWheelMove(makeMouseEvent(comp, pos, juce::ModifierKeys(keyFlags), now, pos, now, 1, false),
+                                     wheel);
+                events.add(eventLabel("wheel", pos));
+            }
+        }
+
+        juce::var m = probeReport::makeObject();
+        probeReport::setProp(m, "modulator", target);
+        probeReport::setProp(m, "gesture", gesture);
+        probeReport::setProp(m, "events", events);
+        if (pressMs >= 0)
+            probeReport::setProp(m, "pressMs", (int) pressMs);
+        probeReport::setProp(step, "mouse", m);
+    }
+
     // Dispatch one action, run the settle, and return the completed step var.
     juce::var executeStep(RunContext& ctx, int index, const juce::var& action)
     {
@@ -691,9 +1137,11 @@ namespace
                 // Drive the full component mouse-up path, not just the internal juce::Button:
                 //   mouseDown -> (triggerClick) -> mouseUp
                 // CtrlrComponent::mouseDown/mouseUp fire componentLuaMouseDown/componentLuaMouseUp
-                // (the nav-button wiring); triggerClick() drives buttonClicked -> the value-change /
-                // MIDI path. A trigger-on-mouse-down button self-triggers inside CtrlrButton::mouseDown,
-                // so we skip the explicit triggerClick() then to avoid a double click.
+                // (the nav-button wiring) -- except on a uiCustomComponent, whose own handlers fire
+                // only its uiCustomMouse* callbacks. triggerClick() drives buttonClicked -> the
+                // value-change / MIDI path. A trigger-on-mouse-down button self-triggers inside
+                // CtrlrButton::mouseDown, so we skip the explicit triggerClick() then to avoid a
+                // double click.
                 const juce::MouseEvent e = makeClickEvent(comp);
                 juce::Button* button = findButtonChild(comp);
                 const bool triggerOnDown = (bool) mod->getObjectTree()
@@ -857,24 +1305,75 @@ namespace
                 if (borderWasVisible)
                     border->setVisible(true);
 
-                const juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile(path);
-                out.deleteFile();
-                std::unique_ptr<juce::FileOutputStream> stream(out.createOutputStream());
-                juce::PNGImageFormat png;
-                if (stream == nullptr || ! png.writeImageToStream(image, *stream))
+                juce::String fullPath;
+                if (! writePng(image, path, fullPath))
                 {
-                    addError(errors, "action", "screenshot: could not write " + out.getFullPathName());
+                    addError(errors, "action", "screenshot: could not write " + fullPath);
                 }
                 else
                 {
-                    stream->flush();
                     juce::var shot = probeReport::makeObject();
-                    probeReport::setProp(shot, "file", out.getFullPathName());
+                    probeReport::setProp(shot, "file", fullPath);
                     probeReport::setProp(shot, "width", image.getWidth());
                     probeReport::setProp(shot, "height", image.getHeight());
                     probeReport::setProp(step, "screenshot", shot);
                 }
             }
+        }
+        else if (actionName == "paint")
+        {
+            // Paint one component, synchronously, into an in-memory image -- the way to test paint
+            // code headlessly, since repaint() paints nothing here. It renders the component whether
+            // or not a user could see it (an off-page editor is legitimately painted before it is
+            // shown), and says which in `effectiveVisible`.
+            const juce::String modName = action.getProperty("modulator", juce::var()).toString();
+            CtrlrModulator* mod = ctx.panel.getModulator(modName);
+            CtrlrComponent* comp = (mod != nullptr) ? mod->getComponent() : nullptr;
+            if (mod == nullptr)
+                addError(errors, "action", "no modulator named '" + modName + "'");
+            else if (comp == nullptr)
+                addError(errors, "action", "modulator '" + modName + "' has no component to paint");
+            else if (comp->getWidth() <= 0 || comp->getHeight() <= 0)
+                addError(errors, "action", "paint: '" + modName + "' has zero size");
+            else
+            {
+                // CtrlrCustomComponent::paint silently skips a callback an earlier runtime error
+                // disabled, and that error was reported once, in the script that raised it.
+                if (dynamic_cast<CtrlrCustomComponent*>(comp) != nullptr)
+                    if (CtrlrLuaMethod* pm = paintMethodOf(ctx.panel, *mod))
+                        if (! pm->isValid())
+                            addWarning(ctx, "paint", modName, "paint callback '" + pm->getName()
+                                       + "' is disabled by an earlier error; the component painted without it", index);
+
+                const juce::Image image = comp->createComponentSnapshot(comp->getLocalBounds(), true);
+
+                // The spy does not see a direct paint, so count it here.
+                auto tracked = ctx.paintTracking.find(modName);
+                if (tracked != ctx.paintTracking.end() && isOurSpy(comp, tracked->second))
+                {
+                    ++tracked->second.counters.paints;
+                    tracked->second.counters.requestsSincePaint = 0;
+                }
+
+                juce::var painted = probeReport::makeObject();
+                probeReport::setProp(painted, "modulator", modName);
+                probeReport::setProp(painted, "width", image.getWidth());
+                probeReport::setProp(painted, "height", image.getHeight());
+                probeReport::setProp(painted, "effectiveVisible",
+                                     probeReport::isEffectivelyVisible(comp, ctx.panel.getCanvas()));
+
+                const juce::String path = action.getProperty("file", juce::var()).toString();
+                juce::String fullPath;
+                if (path.isNotEmpty() && ! writePng(image, path, fullPath))
+                    addError(errors, "action", "paint: could not write " + fullPath);
+                else if (path.isNotEmpty())
+                    probeReport::setProp(painted, "file", fullPath);
+                probeReport::setProp(step, "paint", painted);
+            }
+        }
+        else if (actionName == "mouse")
+        {
+            runMouseAction(ctx, index, action, step, errors);
         }
         else if (actionName == "setLayerVisible")
         {
@@ -968,7 +1467,54 @@ namespace
         juce::String origIn, origOut;
         juce::var compileErrors;
         std::set<juce::String> knownInvalidMethods;
+        PaintTracking paintTracking; // every uiCustomComponent's paint counters
     };
+
+    // Attach a PaintSpy to every uiCustomComponent. Each attach gets a fresh token, so a spy can
+    // never be mistaken for an earlier one.
+    void attachPaintSpies(CtrlrPanel& panel, PaintTracking& tracking)
+    {
+        static juce::uint32 nextToken = 0;
+        for (int i = 0; i < panel.getNumModulators(); ++i)
+        {
+            CtrlrModulator* mod = panel.getModulatorByIndex(i);
+            auto* custom = (mod != nullptr) ? dynamic_cast<CtrlrCustomComponent*>(mod->getComponent()) : nullptr;
+            if (custom == nullptr)
+                continue;
+            TrackedPaint& t = tracking[mod->getName()];
+            t.token = ++nextToken;
+            custom->setCachedComponentImage(new PaintSpy(*custom, t.counters, t.token));
+            t.counters = PaintCounters(); // setCachedComponentImage itself invalidates once
+        }
+    }
+
+    // finalState.modulators[i].paint, for every component that ever had a spy.
+    void addPaintState(juce::var& finalState, CtrlrPanel& panel, const PaintTracking& tracking)
+    {
+        const juce::var modulators = finalState.getProperty("modulators", juce::var());
+        const juce::Array<juce::var>* mods = modulators.getArray();
+        if (mods == nullptr)
+            return;
+        for (juce::var m : *mods)
+        {
+            const juce::String name = m.getProperty("name", juce::var()).toString();
+            const auto t = tracking.find(name);
+            CtrlrModulator* mod = panel.getModulator(name);
+            if (t == tracking.end() || mod == nullptr)
+                continue;
+
+            const PaintCounters& c = t->second.counters;
+            CtrlrLuaMethod* pm = paintMethodOf(panel, *mod);
+            juce::var p = probeReport::makeObject();
+            probeReport::setProp(p, "repaintRequests", c.repaintRequests);
+            probeReport::setProp(p, "paints", c.paints);
+            probeReport::setProp(p, "pendingRepaint", c.requestsSincePaint > 0);
+            probeReport::setProp(p, "tracked", isOurSpy(mod->getComponent(), t->second));
+            probeReport::setProp(p, "paintMethod", pm != nullptr ? juce::var(pm->getName()) : juce::var());
+            probeReport::setProp(p, "paintMethodValid", pm != nullptr ? juce::var(pm->isValid()) : juce::var());
+            probeReport::setProp(m, "paint", p);
+        }
+    }
 
     // Take the panel the manager just loaded, rebind its MIDI to the mock devices and capture the
     // Lua baselines. Returns false (with a reason) if no panel is there.
@@ -1018,6 +1564,7 @@ namespace
                 if (! m->isValid())
                     s.knownInvalidMethods.insert(m->getName());
 
+        attachPaintSpies(*s.panel, s.paintTracking);
         return true;
     }
 
@@ -1040,10 +1587,15 @@ namespace
     // `logStart` is where this script's console output begins in the shared log capture.
     juce::var runScript(Session& s, const juce::var& script, bool globalConsole, size_t logStart)
     {
+        juce::Array<juce::var> warnings;
         RunContext ctx{ s.processor, *s.panel, s.midi, s.buffer, s.sendsMutex, s.deviceSends,
-                        s.knownInvalidMethods, s.log,
+                        s.knownInvalidMethods, s.log, s.paintTracking, warnings,
                         (int) script.getProperty("settleMs", juce::var(DEFAULT_SETTLE_MS)),
                         (int) script.getProperty("quietMs",  juce::var(DEFAULT_QUIET_MS)) };
+
+        // Paint counters are per script: --stdin scripts share a process.
+        for (auto& t : s.paintTracking)
+            t.second.counters = PaintCounters();
 
         juce::Array<juce::var> stepResults;
         int actionErrorCount = 0;     // the probe could not carry out what a step asked for
@@ -1053,13 +1605,51 @@ namespace
         {
             for (int i = 0; i < stepArray->size(); ++i)
             {
-                const juce::var stepResult = executeStep(ctx, i, (*stepArray)[i]);
+                juce::var stepResult = executeStep(ctx, i, (*stepArray)[i]);
+
+                // A press nobody released would leak into the next --stdin script, and its
+                // handlers never saw an up: the script is wrong, so say so on its last step.
+                if (i == stepArray->size() - 1 && ctx.press.active)
+                {
+                    if (juce::Array<juce::var>* errs = stepResult.getProperty("errors", juce::var()).getArray())
+                        addError(*errs, "action", "mouse: the press on '" + ctx.press.modulator
+                                                  + "' is still held at the end of the script; finish it with 'up'");
+                    probeReport::setProp(stepResult, "ok", false);
+                    ctx.press = HeldPress();
+                }
+
                 const juce::var stepErrors = stepResult.getProperty("errors", juce::var());
                 actionErrorCount     += countErrorsOfType(stepErrors, "action");
                 luaRuntimeErrorCount += countErrorsOfType(stepErrors, "lua");
                 stepResults.add(stepResult);
             }
         }
+
+        // A repaint request never followed by a paint. "Invalidated", not "repaint() had no
+        // effect": the spy cannot tell Lua's repaint() from a property change, a resize or focus,
+        // and on screen each of those would have painted. A script that never tests paint can
+        // opt out with "paintWarnings": false; the counters in finalState still say it.
+        const bool paintWarnings = (bool) script.getProperty("paintWarnings", juce::var(true));
+        for (const auto& t : s.paintTracking)
+        {
+            if (! paintWarnings)
+                break;
+            CtrlrModulator* mod = s.panel->getModulator(t.first);
+            const int pending = t.second.counters.requestsSincePaint;
+            if (mod != nullptr && pending > 0 && isOurSpy(mod->getComponent(), t.second))
+                addWarning(ctx, "paint", t.first, "invalidated " + juce::String(pending)
+                                                  + (pending == 1 ? " time" : " times") + ", painted 0 times since");
+        }
+
+        // Every method invalid right now, compile or runtime. A method disabled by a runtime error
+        // stays silently dead for the rest of the process, and its error was counted once, in
+        // the script that raised it -- later --stdin scripts would otherwise never hear of it.
+        juce::Array<juce::var> disabledMethods;
+        CtrlrLuaMethodManager& methods = s.panel->getCtrlrLuaManager().getMethodManager();
+        for (int i = 0; i < methods.getNumMethods(); ++i)
+            if (CtrlrLuaMethod* m = methods.getMethodByIndex(i))
+                if (! m->isValid())
+                    disabledMethods.add(m->getName());
 
         juce::var report = probeReport::makeObject();
         probeReport::setProp(report, "reportVersion", PROBE_REPORT_VERSION);
@@ -1075,7 +1665,10 @@ namespace
         probeReport::setProp(report, "panel", panelInfo);
 
         probeReport::setProp(report, "steps", stepResults);
-        probeReport::setProp(report, "finalState", probeReport::finalState(*s.panel));
+        juce::var finalState = probeReport::finalState(*s.panel);
+        addPaintState(finalState, *s.panel, s.paintTracking);
+        probeReport::setProp(report, "finalState", finalState);
+        probeReport::setProp(report, "warnings", warnings);
 
         // Global console aggregate (opt-in): every console() line this script produced. Gated
         // behind a flag because a chatty panel can emit a lot; the per-step console arrays are
@@ -1100,6 +1693,8 @@ namespace
         probeReport::setProp(summary, "luaRuntimeErrorCount", luaRuntimeErrorCount);
         probeReport::setProp(summary, "luaCompileErrorCount", compileErrorCount);
         probeReport::setProp(summary, "exitCode", (errorCount > 0) ? 1 : 0);
+        probeReport::setProp(summary, "warningCount", warnings.size()); // not in errorCount
+        probeReport::setProp(summary, "disabledMethods", disabledMethods); // not in errorCount either
         probeReport::setProp(report, "summary", summary);
 
         return report;

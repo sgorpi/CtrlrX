@@ -21,11 +21,19 @@ namespace
         return false;
     }
 
-    // Visible in its own right *and* not sitting inside a hidden group, layer or canvas. Walks up
-    // to and including the canvas; anything above the canvas belongs to the (absent) editor
-    // window and is not part of what the panel document controls.
+    // The live component of a modulator, or nullptr if it was never realized.
+    juce::Component* liveComponentOf(CtrlrModulator& mod)
+    {
+        return static_cast<juce::Component*>(mod.getComponent());
+    }
+}
+
+namespace probeReport
+{
     bool isEffectivelyVisible(const juce::Component* c, const juce::Component* canvas)
     {
+        // Walks up to and including the canvas; anything above the canvas belongs to the
+        // (absent) editor window and is not part of what the panel document controls.
         for (const juce::Component* p = c; p != nullptr; p = p->getParentComponent())
         {
             if (! p->isVisible())
@@ -36,15 +44,6 @@ namespace
         return true;
     }
 
-    // The live component of a modulator, or nullptr if it was never realized.
-    juce::Component* liveComponentOf(CtrlrModulator& mod)
-    {
-        return static_cast<juce::Component*>(mod.getComponent());
-    }
-}
-
-namespace probeReport
-{
     juce::var makeObject()
     {
         return juce::var(new juce::DynamicObject());

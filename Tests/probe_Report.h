@@ -20,6 +20,10 @@ namespace probeReport
     // Set a property on an object created by makeObject().
     void setProp(juce::var& obj, const juce::Identifier& key, const juce::var& value);
 
+    // Visible in its own right *and* not sitting inside a hidden group, layer or canvas: the
+    // finalState `effectiveVisible` field, also the guard the `mouse` action applies.
+    bool isEffectivelyVisible(const juce::Component* c, const juce::Component* canvas);
+
     // Lowercase, space-separated hex of a MIDI message's raw bytes, e.g. "f0 42 30 f7".
     juce::String midiToHex(const juce::MidiMessage& m);
 

@@ -120,6 +120,8 @@ like passing no script at all.
     { "action": "eval", "lua": "return codec.get(img, 'filters.speed')" },
     { "action": "waitFor", "lua": "return dump_done", "timeoutMs": 2000 },
     { "action": "screenshot", "file": "panel.png" },
+    { "action": "paint", "modulator": "stepGrid" },
+    { "action": "mouse", "modulator": "stepGrid", "gesture": "click", "x": 40, "y": 12 },
     { "action": "wait", "ms": 500 }
   ]
 }
@@ -127,6 +129,9 @@ like passing no script at all.
 
 Steps run in order, in one process, against one panel. **State accumulates** — step 3 sees
 whatever steps 1 and 2 did.
+
+Besides `settleMs` / `quietMs`, a script may set `"paintWarnings": false` to turn off the
+end-of-script `paint` warnings (see [Custom components](#custom-components-paint-and-mouse)).
 
 ### Settling
 
@@ -159,13 +164,15 @@ Every action object needs an `"action"` key. Any other key is specific to that a
 | Action            | Required            | Optional              | Effect |
 |-------------------|---------------------|-----------------------|--------|
 | `setValue`        | `modulator`, `value`|                       | Sets the modulator via the **GUI path** (`setComponentValue` → `changedByGUI`), so the full knob-move wiring fires: MIDI is sent and `luaModulatorValueChange` runs. `value` is a number in the modulator's own units (the `min`…`max` reported in `finalState`), not normalised. |
-| `click`           | `modulator`         |                       | Drives the real component mouse-up path: `mouseDown` → (`triggerClick`) → `mouseUp`, so `componentLuaMouseDown` / `componentLuaMouseUp` **and** the value-change / MIDI path all fire. A `uiButtonTriggerOnMouseDown` button self-triggers on the down event (no double click). |
+| `click`           | `modulator`         |                       | Drives the real component mouse-up path at the component's centre, left button held: `mouseDown` → (`triggerClick`) → `mouseUp`, so the value-change / MIDI path fires, and so do the mouse callbacks: `componentLuaMouseDown` / `componentLuaMouseUp` on most components, but **only** `uiCustomMouseDown/UpCallback` on a `uiCustomComponent` (see [Custom components](#custom-components-paint-and-mouse)). A `uiButtonTriggerOnMouseDown` button self-triggers on the down event (no double click). |
 | `injectDeviceMidi`| `bytes`             |                       | Injects a MIDI message as if it arrived from the (mock) hardware input; fires the panel's input comparator + `luaPanelMidiReceived`. |
 | `injectHostMidi`  | `bytes`             |                       | Carries a MIDI message into the next `processBlock` as host input. |
 | `callLuaMethod`   | `method`            | `args`                | Calls a named Lua method and reports its return value in `steps[i].returnValue`. |
 | `eval`            | `lua`               |                       | Runs an arbitrary Lua chunk in the panel's own `lua_State`; result in `steps[i].returnValue`. |
 | `waitFor`         | `lua`               | `timeoutMs`, `pollMs` | Polls a Lua condition until it is truthy. |
 | `screenshot`      | `file`              |                       | Renders the live canvas to a PNG. |
+| `paint`           | `modulator`         | `file`                | Paints one component synchronously, in memory, and counts it; `file` also writes it (alone) to a PNG. The way to test paint code, since `repaint()` paints nothing here. |
+| `mouse`           | `modulator`, `gesture` | `x`, `y`, `steps`, `button`, `mods`, `holdMs`, `dx`, `dy` | Sends mouse events to a `uiCustomComponent` at a position: `down`, `drag`, `up` (a press held across steps), `click`, `doubleClick`, `move`, `wheel`. |
 | `setLayerVisible` | `layer`, `visible`  |                       | Sets a canvas layer's visibility (layers are pages). `layer` matches by **uid first, then name**. Sets the `uiPanelCanvasLayerVisibility` tree property, which the report reads back. |
 | `wait`            |                     | `ms`                  | Pumps for exactly `ms` (default: the step's effective `settleMs`) with **no early exit** — useful to observe delayed/queued output. |
 
@@ -250,6 +257,150 @@ but is fully built and laid out, so this paints what the editor window would. Th
 always-on-top `ResizableBorderComponent` is hidden for the duration so it does not frame every
 image.
 
+#### `paint`
+
+```json
+{ "action": "paint", "modulator": "stepGrid" }
+{ "action": "paint", "modulator": "stepGrid", "file": "grid.png" }
+```
+
+Paints one component, synchronously, into an in-memory image the size of the component
+(`createComponentSnapshot`), and reports `steps[i].paint = { modulator, width, height,
+effectiveVisible, file? }`. Nothing is written to disk unless `file` is given; then the PNG holds
+the component alone, not the canvas, and `file` is the absolute path.
+
+- Any modulator with a component can be painted. Only a `uiCustomComponent` has paint counters
+  (`finalState…paint`, below), and this paint adds one to them.
+- It paints the component **whether or not a user could see it**: rendering an editor on a hidden
+  page before showing it is legitimate. Assert `steps[i].paint.effectiveVisible` if that matters,
+  or use `screenshot`, which only paints what the canvas can reach.
+- A Lua error in the paint callback is an `errors[]` entry of type `"lua"`, as for any callback.
+- An unknown modulator, one without a component, or a zero-size component is an `action` error.
+
+#### `mouse`
+
+```json
+{ "action": "mouse", "modulator": "grid", "gesture": "click",       "x": 30, "y": 70 }
+{ "action": "mouse", "modulator": "grid", "gesture": "down",        "x": 10, "y": 10, "mods": ["shift"] }
+{ "action": "mouse", "modulator": "grid", "gesture": "drag",        "x": 110, "y": 60, "steps": 4 }
+{ "action": "mouse", "modulator": "grid", "gesture": "up" }
+{ "action": "mouse", "modulator": "grid", "gesture": "doubleClick", "x": 50, "y": 50 }
+{ "action": "mouse", "modulator": "grid", "gesture": "click",       "x": 50, "y": 50, "button": "right" }
+{ "action": "mouse", "modulator": "grid", "gesture": "move",        "x": 5, "y": 5 }
+{ "action": "mouse", "modulator": "grid", "gesture": "wheel",       "x": 5, "y": 5, "dx": 0, "dy": -0.5 }
+```
+
+Sends mouse events to a `uiCustomComponent`'s own handlers, which run its `uiCustomMouse*Callback`s.
+`x` and `y` are component-local and may be fractional.
+
+| `gesture` | Delivers |
+|---|---|
+| `down` | `mouseDown`, and **holds the press** for the following steps |
+| `drag` | `steps` (default 1) `mouseDrag`s, evenly spaced from the last position to `(x, y)`, the last one exactly there |
+| `up` | `mouseUp` at `(x, y)`, or where the press last was; ends the press |
+| `click` | `mouseDown` + `mouseUp` at one point |
+| `doubleClick` | down, up, down, up, then `mouseDoubleClick`, with click counts 1, 1, 2, 2, 2 (JUCE's own order) |
+| `move` | `mouseMove`, no button held |
+| `wheel` | `mouseWheelMove` with deltas `dx`, `dy` (default 0), no button held |
+
+**A held press** lets a test assert in the middle of a gesture, and the settle between steps lets
+asynchronous work run as it would between real events. There is one press at a time. These are
+`action` errors: `drag` or `up` with no press held; `down`, `click`, `doubleClick`, `move` or
+`wheel` while one is held; and a press still held at the end of the script (reported on the last
+step). `drag` and `up` go to the pressed component, so they may name it or leave `modulator` out.
+
+**Every event of a press carries its down state**, so `getMouseDownX/Y`,
+`getDistanceFromDragStart[X|Y]`, `getOffsetFromDragStart`, `mouseWasClicked` and
+`getLengthOfMousePress` read what a real drag would give. `mouseWasDragged` follows JUCE's rule:
+true once any position was 4 px or more from the down point, or the press is older than 300 ms.
+
+**The press's age is virtual.** The probe stamps each event of a press itself: 10 ms per event,
+whatever the wall clock did. A `wait` or a slow settle between `down` and `up` therefore cannot turn
+a click into a long press (the default 300 ms settle ceiling is exactly JUCE's long-press
+threshold). The only way to a long press is `holdMs` on `drag` or `up`, which adds that many
+milliseconds first:
+
+```json
+{ "action": "mouse", "modulator": "grid", "gesture": "down", "x": 10, "y": 10 }
+{ "action": "wait", "ms": 900 }
+{ "action": "mouse", "modulator": "grid", "gesture": "up" }
+```
+
+gives `mouseWasClicked()` true and `getLengthOfMousePress()` 10; `"holdMs": 500` on the `up` gives
+false and 510. `move` and `wheel` are not part of a press and carry the real time.
+
+**Buttons and modifiers.** `button` is `"left"` (default), `"right"` or `"middle"`, on `down`,
+`click` and `doubleClick`; `drag` and `up` keep the pressed button, as JUCE does (`up` carries the
+button that is being released). `mods` is an array of `"shift"`, `"ctrl"`, `"alt"`, `"cmd"`; on
+`drag` and `up` it replaces the keyboard modifiers mid-press. A right button reads as
+`isPopupMenu()`. On Linux and Windows JUCE's `cmd` **is** `ctrl`, so both read true.
+
+**Checks when a gesture starts** (`down`, `click`, `doubleClick`, `move`, `wheel`), each an
+`action` error that delivers nothing: the modulator exists, its component is a `uiCustomComponent`,
+it is `effectiveVisible`, `x` and `y` are given and lie inside it. `drag` and `up` may leave the
+component, as a real drag does, and still reach it if Lua hid it mid-press; if Lua deleted it,
+they are an `action` error and the press ends.
+
+`steps[i].mouse = { modulator, gesture, events, pressMs? }`. `events` lists what was delivered, as
+`"kind@x,y"` strings (`"down@10,10"`, `"drag@35,22.5"`), so a failing test can tell "my callback
+ignored it" from "the probe never sent it". `pressMs` is the press's virtual age at the step's last
+event; it is absent for `move` and `wheel`.
+
+## Custom components: paint and mouse
+
+A `uiCustomComponent` is drawn and driven entirely by panel Lua, so it needs the two actions above.
+Four things to know before writing its tests.
+
+**`repaint()` paints nothing here.** The probe never puts the canvas on the desktop, and without a
+window JUCE has nowhere to queue a repaint, so the paint callback never runs however long the
+script waits. Nothing fails either. So:
+
+- Test paint code with `paint` (one component) or `screenshot` (the canvas): both paint
+  synchronously.
+- Every `uiCustomComponent` gets paint counters in `finalState.modulators[i].paint`:
+
+  | Field | Meaning |
+  |---|---|
+  | `repaintRequests` | Times the component was invalidated during the script: Lua `repaint()`, a move or resize, a component property change, a focus change. |
+  | `paints` | Times it really painted: `paint`, plus every `screenshot` that reached it. |
+  | `pendingRepaint` | Invalidated since its last paint (or ever, if it never painted). |
+  | `tracked` | The counters are live. `false` once panel Lua replaced the component's cached image (`setCachedComponentImage`, `setBufferedToImage(false)`) or the component was recreated, e.g. by a `uiType` change. |
+  | `paintMethod` | The `uiCustomPaintCallback` method's name; `null` when it names no method. |
+  | `paintMethodValid` | Whether that method is still enabled; `null` when there is none. |
+
+  The counters start at 0 for every script, also in `--stdin` mode. They count requests, not their
+  source: a value change that rewrites a component property invalidates it as surely as a Lua
+  `repaint()` does. A repaint of a *parent* does not count for the child.
+- At the end of the script every tracked component with `pendingRepaint` gets a `warnings[]` entry
+  of type `"paint"`: *"invalidated N times, painted 0 times since"*. It is a warning, not an
+  error, because almost every real panel repaints from its value-change paths. A script that
+  does not test paint can turn these off with `"paintWarnings": false`; the counters are still
+  reported, and the `paint` action's own warning is not affected.
+- **A paint test asserts `paints >= 1` and `paintMethodValid`**, plus whatever its paint callback
+  records. `paints` alone is not enough: a paint callback disabled by an earlier Lua error is
+  skipped silently, so the component "paints" without it. `paint` adds a `"paint"` warning when
+  that happens.
+
+**Which mouse callbacks fire.** On a `uiCustomComponent`, `click` and `mouse` fire only the
+`uiCustomMouse*Callback`s. Its `componentLuaMouseDown` / `componentLuaMouseUp` properties are
+accepted and stored but **never** called: `CtrlrCustomComponent` handles the events itself and does
+not pass them on. On every other component type it is the other way round, and `componentLuaMouse*`
+fires.
+
+**No hit-testing, no listeners.** `mouse`, like `click`, goes straight to the named component. It
+does not look for what is on top at that point, so it can drive a component a user could not reach
+because something covers it; `finalState.overlaps` is the check for that. It does not notify
+`MouseListener`s either: not the canvas's (whose only run-mode effect is an undo transaction and, on
+other component types, the right-click menu) and not one a panel added with `addMouseListener`.
+`mouse` refuses other component types because there the wrapper is not what a user's mouse hits: a
+drag would fire `componentLuaMouse*` but never move a slider's value. Use `click` for buttons and
+`setValue` for value controls.
+
+**Drag and drop is not simulated.** On a component with `uiCustomDragAndDropContainer` set and a
+`uiCustomStartDraggingCallback`, a `drag` runs that callback, but JUCE's `startDragging` then does
+nothing, because no real mouse is down. No drop target hears of it. Each such `drag` step adds a
+`warnings[]` entry of type `"mouse"`.
+
 ## Report schema
 
 ```json
@@ -277,7 +428,10 @@ image.
       { "name": "test-modulator-1", "value": 64.0, "componentType": "uiSlider", "text": "64",
         "visible": true, "componentRectangle": "16 16 72 96",
         "componentLayerUid": "2a4c…", "liveVisible": true, "effectiveVisible": true,
-        "canvasRectangle": "16 16 72 96", "vstIndex": 1, "min": 0.0, "max": 127.0 }
+        "canvasRectangle": "16 16 72 96", "vstIndex": 1, "min": 0.0, "max": 127.0 },
+      { "name": "stepGrid", "componentType": "uiCustomComponent", "…": "…",
+        "paint": { "repaintRequests": 2, "paints": 1, "pendingRepaint": false, "tracked": true,
+                   "paintMethod": "gridPaint", "paintMethodValid": true } }
     ],
     "layers": [
       { "name": "New layer", "visible": true, "uid": "2a4c…" }
@@ -286,12 +440,17 @@ image.
       { "a": "change-count", "b": "last-value", "rect": "150 40 38 72" }
     ]
   },
+  "warnings": [
+    { "type": "paint", "modulator": "stepGrid", "message": "invalidated 1 time, painted 0 times since" }
+  ],
   "summary": {
     "errorCount": 0,
     "actionErrorCount": 0,
     "luaRuntimeErrorCount": 0,
     "luaCompileErrorCount": 0,
-    "exitCode": 0
+    "exitCode": 0,
+    "warningCount": 1,
+    "disabledMethods": []
   }
 }
 ```
@@ -305,6 +464,11 @@ image.
   step's settle; `console` is that step's `console()` output; `ok` is `errors` being empty.
 - `finalState` is a snapshot taken once, **after the last step**. There is no per-step state
   snapshot; to see a value mid-script, `eval` it or read the MIDI it emitted.
+- `finalState.modulators[i].paint` — a `uiCustomComponent`'s paint counters; see
+  [Custom components](#custom-components-paint-and-mouse).
+- `summary.disabledMethods` — the name of every Lua method that is invalid **now**: failed to
+  compile, or disabled by a runtime error in this script or an earlier one. See
+  [Persistent mode](#persistent-mode---stdin) for why that matters.
 
 ### Which keys are always present
 
@@ -312,11 +476,16 @@ Do not test for a key by comparing it to `null` — check whether it exists.
 
 | Key | Present |
 |-----|---------|
-| `reportVersion`, `panel`, `steps`, `finalState`, `summary` | always (on a non-fatal run) |
+| `reportVersion`, `panel`, `steps`, `finalState`, `warnings`, `summary` | always (on a non-fatal run) |
+| `summary.warningCount`, `summary.disabledMethods` | always; `[]` / `0` when there are none |
 | `console` (top level) | only with `--global-console` |
 | `steps[i].index` / `action` / `deviceMidiOut` / `hostMidiOut` / `errors` / `console` / `ok` | always |
 | `steps[i].returnValue` | only for `callLuaMethod`, `eval`, `waitFor` — and its value is `null` when Lua returned `nil` |
 | `steps[i].screenshot` | only for a `screenshot` action that wrote a file |
+| `steps[i].paint` | only for a `paint` action that painted; its `file` only when one was written |
+| `steps[i].mouse` | only for a `mouse` action that delivered its events; its `pressMs` only for a gesture that is part of a press |
+| `warnings[i].step` | only for a warning a step raised (not for the end-of-script `paint` warnings) |
+| modulator `paint` | only for a `uiCustomComponent`; `paintMethod` / `paintMethodValid` are `null` when no paint method is bound |
 | modulator `liveVisible` / `effectiveVisible` | only when the modulator has a live component |
 | modulator `canvasRectangle` | only when the live component also has a parent (see the layer-uid gotcha) |
 
@@ -335,6 +504,17 @@ Compile errors are the third channel and live outside the steps, in `panel.luaCo
 `luaRuntimeErrorCount` + `luaCompileErrorCount`). Asserting `summary.errorCount == 0` (or on the
 exit code) is sufficient; you cannot get a green result by checking a channel that happened to be
 empty while another was not.
+
+### Warnings
+
+`warnings` is an array of `{ type, modulator, message, step? }` for things the probe saw but cannot
+call a failure. They are **not** in `errorCount` and do not change the exit code;
+`summary.warningCount` counts them.
+
+| `type` | Raised when |
+|---|---|
+| `"paint"` | A `uiCustomComponent` was invalidated and never painted after (end of script; off with `"paintWarnings": false`), or `paint` painted a component whose paint callback an earlier error disabled (`step` set). |
+| `"mouse"` | A `drag` reached a drag-and-drop container, where the drag-and-drop itself is not simulated (`step` set). |
 
 ### Visibility
 
@@ -396,6 +576,10 @@ Two things to know about the reports this mode emits:
 - `panel.luaCompileErrors` is the **load-time baseline**, so it is repeated identically in every
   report on the stream — and therefore so is its contribution to `summary.errorCount`. A panel with
   one broken method never reports `errorCount == 0` for any script.
+- **A Lua method disabled by a runtime error stays disabled** for the rest of the process, and its
+  error is counted in the one report of the script that raised it. Every later script runs without
+  that callback and does not count it again. Assert `summary.disabledMethods` is empty to catch
+  it: it lists every invalid method in every report.
 - A malformed input line yields `{"reportVersion": 1, "error": "script parse error", "detail": …}`
   on its own line and the loop continues — it is the client's bug, not a broken panel. Note this
   object has no `summary`, so a consumer must check for `error` before reading `summary`.
@@ -477,7 +661,10 @@ CtrlrPanelProbe MySynth.panel e.json | jq '.steps[0].returnValue, .summary.error
   `JUCE_DEBUG` builds, and JUCE's `FileLogger` only trims that file when it is constructed — so a
   long `--stdin` session, or a suite spawning many probes, appends to it without bound. Watch it if
   you are driving a chatty panel hard.
+- **Prefer `waitFor` on a condition over `wait` floors** for a panel's own timers. The probe owns
+  the clock of a mouse press, but not the clock of a panel's `timer` callbacks: those fire on real
+  time, so a `wait` floor has to be long enough on the slowest machine.
 - **Self-test:** `ctest -R PanelProbeSelfTest` (see [probe_selftest.py](../Tests/probe_selftest.py)) —
-  16 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
+  26 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
   changing `probe_*.cpp`; it is also the best worked reference for what each report field looks
   like in practice.
