@@ -257,6 +257,11 @@ but is fully built and laid out, so this paints what the editor window would. Th
 always-on-top `ResizableBorderComponent` is hidden for the duration so it does not frame every
 image.
 
+To check a colour in a `screenshot` or `paint` PNG, [png_sample.py](../Tests/png_sample.py) reads
+one with the Python standard library alone: `pixel(load(path), x, y)` gives `(r, g, b, a)` and
+`close(a, b, tol)` compares two colours. Sample a solid fill away from text, edges and
+anti-aliasing. Do not compare whole images: fonts and anti-aliasing differ between platforms.
+
 #### `paint`
 
 ```json
@@ -410,7 +415,8 @@ nothing, because no real mouse is down. No drop target hears of it. Each such `d
     "file": "/abs/path/to.panel",
     "name": "SysEx Token",
     "originalDevices": { "input": "Device 00, port 00", "output": "Device 00, port 01" },
-    "luaCompileErrors": []
+    "luaCompileErrors": [],
+    "dialogs": []
   },
   "steps": [
     {
@@ -420,6 +426,7 @@ nothing, because no real mouse is down. No drop target hears of it. Each such `d
       "hostMidiOut":   ["b0 0c 40"],
       "errors": [],
       "console": ["set to 64"],
+      "dialogs": [],
       "ok": true
     }
   ],
@@ -479,7 +486,8 @@ Do not test for a key by comparing it to `null` — check whether it exists.
 | `reportVersion`, `panel`, `steps`, `finalState`, `warnings`, `summary` | always (on a non-fatal run) |
 | `summary.warningCount`, `summary.disabledMethods` | always; `[]` / `0` when there are none |
 | `console` (top level) | only with `--global-console` |
-| `steps[i].index` / `action` / `deviceMidiOut` / `hostMidiOut` / `errors` / `console` / `ok` | always |
+| `steps[i].index` / `action` / `deviceMidiOut` / `hostMidiOut` / `errors` / `console` / `dialogs` / `ok` | always |
+| `panel.dialogs` | always; `[]` when the panel opened no dialog while loading |
 | `steps[i].returnValue` | only for `callLuaMethod`, `eval`, `waitFor` — and its value is `null` when Lua returned `nil` |
 | `steps[i].screenshot` | only for a `screenshot` action that wrote a file |
 | `steps[i].paint` | only for a `paint` action that painted; its `file` only when one was written |
@@ -496,7 +504,7 @@ There is **one** error channel. `steps[i].errors` is an array of `{ type, messag
 | `type`     | Meaning |
 |------------|---------|
 | `"action"` | The probe could not carry out what the step asked — unknown action, no such modulator or method, unparseable `bytes`, a `waitFor` timeout. |
-| `"lua"`    | The panel's Lua raised — a method that threw, an `eval` chunk that failed, a callback CtrlrX marked invalid. |
+| `"lua"`    | The panel's Lua raised — a method that threw, an `eval` chunk that failed, a callback CtrlrX marked invalid, a `timer` callback (CtrlrX disables it; see [Dialogs](#dialogs)). |
 
 Compile errors are the third channel and live outside the steps, in `panel.luaCompileErrors`.
 
@@ -515,6 +523,33 @@ call a failure. They are **not** in `errorCount` and do not change the exit code
 |---|---|
 | `"paint"` | A `uiCustomComponent` was invalidated and never painted after (end of script; off with `"paintWarnings": false`), or `paint` painted a component whose paint callback an earlier error disabled (`step` set). |
 | `"mouse"` | A `drag` reached a drag-and-drop container, where the drag-and-drop itself is not simulated (`step` set). |
+
+### Dialogs
+
+A modal dialog would block a headless run for ever, so the probe **dismisses every one the moment
+it opens**, as if the user pressed Cancel or closed the window. That is an answer, and the code
+after it runs as if the user gave it: `utils.questionWindow` returns `false`,
+`AlertWindow.showOkCancelBox` returns `false`, `showYesNoCancelBox` returns `0`. So each dismissed
+dialog is listed in the step that opened it, `steps[i].dialogs`, as
+`{ title, kind, buttons, result }`:
+
+| Field | Meaning |
+|---|---|
+| `title` | The dialog's title. |
+| `kind` | `"alert"` (an `AlertWindow`: `utils.infoWindow` / `warnWindow` / `questionWindow`, the `AlertWindow.show…` functions, CtrlrX's own error dialogs), `"fileChooser"`, or `"component"` for any other modal. |
+| `buttons` | The button captions, e.g. `["Erase", "Keep"]`. |
+| `result` | Always `0`: what dismissing returns. |
+
+On Linux the probe ignores `DISPLAY` and `WAYLAND_DISPLAY`, so nothing ever appears on screen. On
+macOS and Windows a dialog can flash up on the desktop for a few milliseconds before it is
+dismissed.
+
+The message text is not available. Dialogs opened while the panel loaded are in `panel.dialogs`
+(repeated in every report in `--stdin` mode). A dismissed dialog is not an error by itself, with
+one exception: when a `timer` callback raises, CtrlrX disables the callback and reports it **only**
+in a dialog, *"Timer callback error, timer id that failed was: N"*. The probe turns that one into a
+`"lua"` error on the step, carrying the Lua message, so the run fails rather than going on with a
+dead timer.
 
 ### Visibility
 
@@ -634,10 +669,11 @@ CtrlrPanelProbe MySynth.panel e.json | jq '.steps[0].returnValue, .summary.error
 
 - **Device rebind** targets the mock devices `"Device 00, port 00"` (in) / `"Device 00, port 01"`
   (out). Any panel's I/O is captured regardless of the device names it shipped with.
-- **Modal dialogs are suppressed.** CtrlrX pops a blocking modal "Callback error" AlertWindow on a
-  runtime Lua error raised from a *callback*; the probe auto-dismisses it so it never hangs (on a
-  display or on headless CI). The error is still recorded in the step's `errors`. Errors from
-  `callLuaMethod` / `eval` come back through `lua_pcall` and never reach that path at all.
+- **Modal dialogs are dismissed**, so the run never hangs (on a display or on headless CI): CtrlrX's
+  "Callback error" dialog on a Lua error raised from a *callback*, and every dialog the panel's own
+  Lua opens. Each one is listed in `steps[i].dialogs`, and a callback's error is still recorded in
+  the step's `errors`; see [Dialogs](#dialogs). Errors from `callLuaMethod` / `eval` come back
+  through `lua_pcall` and never reach that path at all.
 - **Hard exit.** The probe prints its report(s) and calls `_Exit()` without tearing down JUCE — the
   panel/Lua object graph is known to leak on shutdown and the Debug leak detector would otherwise
   fire after the report. This is deliberate.
@@ -665,6 +701,6 @@ CtrlrPanelProbe MySynth.panel e.json | jq '.steps[0].returnValue, .summary.error
   the clock of a mouse press, but not the clock of a panel's `timer` callbacks: those fire on real
   time, so a `wait` floor has to be long enough on the slowest machine.
 - **Self-test:** `ctest -R PanelProbeSelfTest` (see [probe_selftest.py](../Tests/probe_selftest.py)) —
-  26 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
+  32 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
   changing `probe_*.cpp`; it is also the best worked reference for what each report field looks
   like in practice.

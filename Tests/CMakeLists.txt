@@ -89,6 +89,7 @@ endif ()
 # Registered as an individual ctest case, fitting the existing per-test parallel layout.
 configure_file("probe_selftest.json" "probe_selftest.json" COPYONLY)
 configure_file("probe_selftest.py" "probe_selftest.py" COPYONLY)
+configure_file("png_sample.py" "png_sample.py" COPYONLY) # pixel sampler the self-test imports
 # Probe fixtures are moved with the fixtures glob above.
 # Probe scripts (click, visibility, console/args, setLayerVisible).
 configure_file("probe_click.json"      "probe_click.json"      COPYONLY)

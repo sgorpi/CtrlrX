@@ -113,16 +113,76 @@ namespace
     // a timer that dismisses any modal component the instant it appears. The timer fires from inside
     // the nested modal dispatch loop, so the blocked call returns immediately. The error is still
     // recorded (setValid(false)) and logged to stderr; only the dialog is suppressed.
+    //
+    // Panel Lua opens dialogs of its own too (utils.infoWindow / warnWindow / questionWindow,
+    // AlertWindow.showOkCancelBox, ...), and dismissing one answers it with Cancel. So every dialog
+    // the suppressor dismisses is recorded for the report (steps[i].dialogs).
+    //
+    // One CtrlrX dialog carries an error nothing else reports: a Lua timer callback that raised
+    // (CtrlrLuaMultiTimer::timerCallback) is disabled and announced *only* by its dialog -- no log
+    // line, no method marked invalid. CtrlrX has just read the Lua message off the top of the stack
+    // and nothing pops it while the dialog runs, so it is read from there before dismissing.
+    struct DismissedDialog
+    {
+        juce::String title;
+        juce::String kind;               // "alert", "fileChooser" or "component"
+        juce::StringArray buttons;
+        bool isTimerError = false;       // CtrlrX's "Timer callback error" dialog
+        juce::String timerErrorMessage;  // its Lua message, when it could be read
+    };
+
     struct ModalDialogSuppressor : private juce::Timer
     {
         ModalDialogSuppressor() { startTimer(5); }
         ~ModalDialogSuppressor() override { stopTimer(); }
+
+        lua_State* luaState = nullptr; // the loaded panel's, for a timer error's message
+
+        // The dialogs dismissed since the last call.
+        std::vector<DismissedDialog> take()
+        {
+            std::vector<DismissedDialog> out;
+            out.swap(dismissed);
+            return out;
+        }
+
+    private:
+        std::vector<DismissedDialog> dismissed;
+
         void timerCallback() override
         {
-            if (auto* m = juce::ModalComponentManager::getInstanceWithoutCreating())
-                m->cancelAllModalComponents();
+            auto* m = juce::ModalComponentManager::getInstanceWithoutCreating();
+            if (m == nullptr || m->getNumModalComponents() == 0)
+                return;
+            for (int i = 0; i < m->getNumModalComponents(); ++i)
+                if (juce::Component* c = m->getModalComponent(i))
+                    dismissed.push_back(describe(*c));
+            m->cancelAllModalComponents();
+        }
+
+        DismissedDialog describe(juce::Component& c) const
+        {
+            DismissedDialog d;
+            d.title = c.getName();
+            d.kind = dynamic_cast<juce::AlertWindow*>(&c) != nullptr           ? "alert"
+                   : dynamic_cast<juce::FileChooserDialogBox*>(&c) != nullptr ? "fileChooser"
+                                                                                : "component";
+            for (int i = 0; i < c.getNumChildComponents(); ++i)
+                if (auto* b = dynamic_cast<juce::TextButton*>(c.getChildComponent(i)))
+                    d.buttons.add(b->getButtonText());
+
+            if (d.kind == "alert" && d.title.startsWith("Timer callback error"))
+            {
+                d.isTimerError = true;
+                lua_State* L = luaState;
+                if (L != nullptr && lua_gettop(L) > 0 && lua_type(L, -1) == LUA_TSTRING)
+                    d.timerErrorMessage = juce::String::fromUTF8(lua_tostring(L, -1));
+            }
+            return d;
         }
     };
+
+    ModalDialogSuppressor* g_dialogSuppressor = nullptr; // the one in main()
 
     // fd of the real stdout, saved before we redirect fd 1 to stderr. CtrlrX / JUCE / Lua write
     // plenty of noise to stdout during load; the report on stdout must be clean JSON, so all that
@@ -611,6 +671,34 @@ namespace
         probeReport::setProp(e, "type", type);
         probeReport::setProp(e, "message", message);
         errors.add(e);
+    }
+
+    // The dialogs dismissed since the last call, as report entries. A timer callback's error dialog
+    // also becomes a "lua" error in `errors` (when given): the dialog was CtrlrX's only report of it.
+    juce::Array<juce::var> takeDialogs(juce::Array<juce::var>* errors)
+    {
+        juce::Array<juce::var> out;
+        if (g_dialogSuppressor == nullptr)
+            return out;
+        for (const DismissedDialog& d : g_dialogSuppressor->take())
+        {
+            juce::var v = probeReport::makeObject();
+            probeReport::setProp(v, "title", d.title);
+            probeReport::setProp(v, "kind", d.kind);
+            juce::Array<juce::var> buttons;
+            for (const auto& b : d.buttons)
+                buttons.add(b);
+            probeReport::setProp(v, "buttons", buttons);
+            probeReport::setProp(v, "result", 0); // dismissed: what Cancel / closing the window returns
+            out.add(v);
+
+            if (d.isTimerError && errors != nullptr)
+                addError(*errors, "lua", d.title + ": "
+                                         + (d.timerErrorMessage.isNotEmpty() ? d.timerErrorMessage
+                                                                             : juce::String("(Lua message not available)"))
+                                         + " -- CtrlrX disabled the callback");
+        }
+        return out;
     }
 
     // Count the entries of one type in a step's errors array.
@@ -1439,10 +1527,13 @@ namespace
             for (const auto& line : capturedErrorText)
                 addError(errors, "lua", line);
 
+        const juce::Array<juce::var> dialogs = takeDialogs(&errors);
+
         probeReport::setProp(step, "deviceMidiOut", deviceMidiOut);
         probeReport::setProp(step, "hostMidiOut", hostMidiOut);
         probeReport::setProp(step, "errors", errors);
         probeReport::setProp(step, "console", console);
+        probeReport::setProp(step, "dialogs", dialogs);
         if (hasReturn)
             probeReport::setProp(step, "returnValue", stepReturn);
         probeReport::setProp(step, "ok", errors.isEmpty());
@@ -1466,6 +1557,7 @@ namespace
         CtrlrPanel* panel = nullptr;
         juce::String origIn, origOut;
         juce::var compileErrors;
+        juce::Array<juce::var> loadDialogs; // dismissed while the panel loaded
         std::set<juce::String> knownInvalidMethods;
         PaintTracking paintTracking; // every uiCustomComponent's paint counters
     };
@@ -1557,6 +1649,9 @@ namespace
             juce::MessageManager::getInstance()->runDispatchLoopUntil(25);
 
         s.compileErrors = probeReport::luaCompileErrors(*s.panel);
+        s.loadDialogs = takeDialogs(nullptr);
+        if (g_dialogSuppressor != nullptr)
+            g_dialogSuppressor->luaState = s.panel->getCtrlrLuaManager().getLuaState();
         s.knownInvalidMethods.clear();
         CtrlrLuaMethodManager& mgr = s.panel->getCtrlrLuaManager().getMethodManager();
         for (int i = 0; i < mgr.getNumMethods(); ++i)
@@ -1662,6 +1757,7 @@ namespace
         probeReport::setProp(origDevices, "output", s.origOut);
         probeReport::setProp(panelInfo, "originalDevices", origDevices);
         probeReport::setProp(panelInfo, "luaCompileErrors", s.compileErrors);
+        probeReport::setProp(panelInfo, "dialogs", s.loadDialogs);
         probeReport::setProp(report, "panel", panelInfo);
 
         probeReport::setProp(report, "steps", stepResults);
@@ -1705,6 +1801,14 @@ int main(int argc, char** argv)
 {
     // Isolate stdout up front: from here on only JSON reports reach the real stdout.
     redirectStdoutToStderr();
+
+   #if defined(__linux__)
+    // Never use the user's display. The probe needs none (rendering is in memory), and with one,
+    // every modal dialog the probe dismisses is put on screen first and flashes up on the desktop.
+    // Without one, dialogs run and are recorded the same way, and screenshots are byte-identical.
+    unsetenv("DISPLAY");
+    unsetenv("WAYLAND_DISPLAY");
+   #endif
 
     // InitGoogleMock initialises gmock (needed for NiceMock/ON_CALL) and strips its own flags,
     // leaving our positional arguments in place.
@@ -1767,6 +1871,7 @@ int main(int argc, char** argv)
     // them, rather than an untracked native/GTK box.
     juce::LookAndFeel::getDefaultLookAndFeel().setUsingNativeAlertWindows(false);
     ModalDialogSuppressor dialogSuppressor;
+    g_dialogSuppressor = &dialogSuppressor;
 
     // Reuse the test mock MIDI subsystem. NiceMock (not StrictMock) because there is no gtest
     // context to verify EXPECT_CALLs against; ON_CALL supplies the behaviour the mock needs.

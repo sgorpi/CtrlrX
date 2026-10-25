@@ -23,6 +23,8 @@ import tempfile
 import time
 from typing import NoReturn
 
+import png_sample  # next to this file, as in the build dir
+
 
 def run(probe, *args):
     """Run the probe; return (exit_code, parsed_stdout_json_or_None, raw_stdout)."""
@@ -440,6 +442,208 @@ def scenario_26_disabled_paint_callback(probe):
             f"scenario 26 a fresh process starts with nothing disabled: {rep['summary']}")
 
 
+# One modulator per component type a panel drives with setValue, a button whose Lua sends a bulk
+# dump, a label, an inbound-SysEx handler that answers, one-shot timers, argument/return helpers.
+# The panel's output channel override (4) puts every modulator's own message on channel 4 (bN = b3);
+# messages Lua builds byte by byte keep their channel 1 (b0).
+MIDI = "fixtures/fixture_probe_midi.panel"
+
+
+def scenario_27_midi_out_per_component(probe):
+    # deviceMidiOut is the probe's reason to exist, and both panels assert on it constantly. Each
+    # step's MIDI must be that step's, complete and in wire order.
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "setValue", "modulator": "cc", "value": 85},
+        {"action": "setValue", "modulator": "nrpn", "value": 1000, "settleMs": 500},
+        {"action": "setValue", "modulator": "fixed", "value": 1},
+        {"action": "setValue", "modulator": "onoff", "value": 1},
+        {"action": "setValue", "modulator": "mode", "value": 2},
+        {"action": "setValue", "modulator": "bipolar", "value": -12},
+    ]})
+    require(rep is not None, f"scenario 27 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 27 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    dev = [s["deviceMidiOut"] for s in rep["steps"]]
+    require(dev[0] == ["b3 07 55"], f"scenario 27 a CC slider sends one CC: {dev[0]}")
+    require(rep["steps"][0]["console"] == ["cc 85"],
+            f"scenario 27 console() from the value-change callback lands on the step: {rep['steps'][0]['console']}")
+    # NRPN 300 = 0x02 0x2c, value 1000 = 0x07 0x68: number MSB, LSB, then value MSB, LSB.
+    require(dev[1] == ["b3 63 02", "b3 62 2c", "b3 06 07", "b3 26 68"],
+            f"scenario 27 an NRPN burst arrives whole and in order: {dev[1]}")
+    require(all(m in rep["steps"][1]["hostMidiOut"] for m in dev[1]),
+            f"scenario 27 the panel echoes its output to the host: {rep['steps'][1]['hostMidiOut']}")
+    require(dev[2] == ["b3 16 40"], f"scenario 27 a fixed slider sends its mapped value (mid=64): {dev[2]}")
+    require(dev[3] == ["b3 15 01"], f"scenario 27 a toggle sends its value: {dev[3]}")
+    # CtrlrCombo::setComponentValue re-enters itself when the value changes from outside, so it
+    # may send twice (a CtrlrX property, not the probe's). Both copies must be the right message.
+    require(1 <= len(dev[4]) <= 2 and set(dev[4]) == {"b3 14 02"},
+            f"scenario 27 a combo sends CC 20 = 2 (possibly twice): {dev[4]}")
+    m = {x["name"]: x for x in rep["finalState"]["modulators"]}
+    require((m["fixed"]["value"], m["fixed"]["text"]) == (1.0, "mid") and m["mode"]["text"] == "Auto",
+            f"scenario 27 a value-mapped control reports index and text: {m['fixed']}, {m['mode']}")
+    # setValue takes the modulator's own units, negative ones included.
+    require((m["bipolar"]["value"], m["bipolar"]["min"], m["bipolar"]["max"]) == (-12.0, -64.0, 63.0),
+            f"scenario 27 a bipolar slider keeps its negative value and range: {m['bipolar']}")
+
+
+def scenario_28_bulk_output(probe):
+    # A dump: one long SysEx and a burst of 70 CCs from one click, all captured on that step, intact.
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "click", "modulator": "dumpBtn"},
+        {"action": "callLuaMethod", "method": "sendDump", "args": [3]},
+        {"action": "eval", "lua": "panel:sendMidiMessageNow(CtrlrMidiMessage(MemoryBlock({0xC0, 0x05}))) return 1"},
+    ]})
+    require(rep is not None, f"scenario 28 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 28 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    dev = rep["steps"][0]["deviceMidiOut"]
+    sysex = [i % 128 for i in range(1, 298)]
+    require(len(dev) == 71, f"scenario 28 expected 1 SysEx + 70 CCs, got {len(dev)}")
+    require(dev[0] == " ".join(f"{b:02x}" for b in [0xF0, 0x7D, 0x10] + sysex + [0xF7]),
+            f"scenario 28 the 301-byte SysEx must arrive whole: {dev[0][:60]}...")
+    require(dev[1:] == [f"b0 30 {i % 128:02x}" for i in range(1, 71)],
+            f"scenario 28 the CC burst must arrive complete and in order: {dev[1:6]}...")
+    s = rep["steps"][1]
+    require(s["returnValue"] == 4 and len(s["deviceMidiOut"]) == 4,
+            f"scenario 28 callLuaMethod's MIDI and return value belong to its step: {s.get('returnValue')}, "
+            f"{len(s['deviceMidiOut'])}")
+    require(rep["steps"][2]["deviceMidiOut"] == ["c0 05"],
+            f"scenario 28 a two-byte program change from eval: {rep['steps'][2]['deviceMidiOut']}")
+
+
+def scenario_29_device_input(probe):
+    # injectDeviceMidi drives the input path: a CC moves its modulator, a SysEx reaches
+    # luaPanelMidiReceived, and the panel's answer is on the same step. Inbound messages match on
+    # the panel's channel too (4), not the modulator's own.
+    request = [0xF0, 0x7D, 0x01] + list(range(72)) + [0xF7]
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "injectDeviceMidi", "bytes": "B3 07 22"},
+        {"action": "injectDeviceMidi", "bytes": " ".join(f"{b:02X}" for b in request)},
+        {"action": "eval", "lua": "return {ccCount, midiInCount}"},
+    ]})
+    require(rep is not None, f"scenario 29 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 29 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    require(find_mod(rep, "cc")["value"] == 34.0, f"scenario 29 an inbound CC 7 should set 'cc' to 34: {find_mod(rep, 'cc')}")
+    require("in 3" in rep["steps"][0]["console"],
+            f"scenario 29 luaPanelMidiReceived should see the CC: {rep['steps'][0]['console']}")
+    require(rep["steps"][1]["deviceMidiOut"] == [f"f0 7d 02 {len(request):02x} f7"],
+            f"scenario 29 the answer to an inbound SysEx is on the inject's step: {rep['steps'][1]['deviceMidiOut']}")
+    require(rep["steps"][2]["returnValue"] == [1, 2],
+            f"scenario 29 one value change, two messages received: {rep['steps'][2]['returnValue']}")
+
+
+def scenario_30_timers_and_dialogs(probe):
+    # A panel timer's output lands on whichever step is pumping when it fires: wait for it.
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "callLuaMethod", "method": "startTick", "args": [50]},
+        {"action": "wait", "ms": 500},
+    ]})
+    require(rep is not None, f"scenario 30 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    ticks = [(s["deviceMidiOut"], s["console"]) for s in rep["steps"]]
+    require(code == 0 and ticks[0] == ([], []) and ticks[1] == (["b0 1e 63"], ["tick"]),
+            f"scenario 30 the timer's MIDI and console belong to the wait it fired in: {ticks}")
+    require(rep["panel"]["dialogs"] == [] and all(s["dialogs"] == [] for s in rep["steps"]),
+            f"scenario 30 no dialog, no entry: {rep['panel']['dialogs']}")
+
+    # A timer callback that raises: CtrlrX disables it and says so only in a modal dialog, which the
+    # probe dismisses. It used to vanish -- errorCount 0, and the timer silently dead. The callback
+    # stops its timer before raising, so waitFor on that is a condition, not a guessed duration.
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "callLuaMethod", "method": "startBadTick", "args": [50]},
+        {"action": "waitFor", "lua": "return not timer:isTimerRunning(8)", "timeoutMs": 3000},
+    ]})
+    assert rep is not None
+    require(code == 1, f"scenario 30 a raising timer callback must fail the run, got exit {code}")
+    errs = rep["steps"][1]["errors"]
+    require(len(errs) == 1 and errs[0]["type"] == "lua" and "tick boom" in errs[0]["message"],
+            f"scenario 30 the timer error should be a 'lua' error with its message: {errs}")
+    dlg = rep["steps"][1]["dialogs"]
+    require(len(dlg) == 1 and dlg[0]["kind"] == "alert" and dlg[0]["title"].startswith("Timer callback error"),
+            f"scenario 30 the dismissed dialog should be listed: {dlg}")
+
+    # Panel Lua's own dialogs are dismissed as Cancel: the step says which, and what came back.
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "eval", "lua": "return utils.questionWindow('Erase?', 'Erase all programs?', 'Erase', 'Keep')"},
+        {"action": "eval", "lua": "utils.infoWindow('Done', 'All sent') return 1"},
+    ]})
+    assert rep is not None
+    require(code == 0, f"scenario 30 a dismissed dialog is not an error, got {code}: {[s['errors'] for s in rep['steps']]}")
+    require(rep["steps"][0]["returnValue"] is False,
+            f"scenario 30 a dismissed question answers false: {rep['steps'][0].get('returnValue')}")
+    q = rep["steps"][0]["dialogs"]
+    require(len(q) == 1 and q[0]["title"] == "Erase?" and q[0]["buttons"] == ["Erase", "Keep"] and q[0]["result"] == 0,
+            f"scenario 30 the question dialog should be listed with its buttons: {q}")
+    i = rep["steps"][1]["dialogs"]
+    require(len(i) == 1 and i[0]["title"] == "Done" and i[0]["kind"] == "alert",
+            f"scenario 30 the info dialog should be listed: {i}")
+
+
+def scenario_31_value_shapes(probe):
+    # Argument and return shapes the panels rely on, through the typed C-API path.
+    code, rep, raw = run_script(probe, MIDI, {"steps": [
+        {"action": "callLuaMethod", "method": "argTypes", "args": [1, None, "x"]},
+        {"action": "callLuaMethod", "method": "identity", "args": [7]},
+        {"action": "callLuaMethod", "method": "identity", "args": [-5]},
+        {"action": "callLuaMethod", "method": "identity", "args": [0.25]},
+        {"action": "callLuaMethod", "method": "identity", "args": [True]},
+        {"action": "callLuaMethod", "method": "identity", "args": [""]},
+        {"action": "eval", "lua": "return false"},
+        {"action": "eval", "lua": "return -2.5"},
+        {"action": "eval", "lua": "return string.rep('x', 200000)"},
+        {"action": "eval", "lua": "local t = {} for i = 1, 1000 do t[i] = i end return t"},
+        {"action": "eval", "lua": "return {[0] = 'a', [1] = 'b'}"},
+        {"action": "callLuaMethod", "method": "setName", "args": ["hello"]},
+    ]})
+    require(rep is not None, f"scenario 31 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 31 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    rv = [s.get("returnValue") for s in rep["steps"]]
+    require(rv[0] == "number,nil,string", f"scenario 31 a null argument keeps its place as nil: {rv[0]}")
+    require(rv[1:6] == [7, -5, 0.25, True, ""], f"scenario 31 scalar round trips: {rv[1:6]}")
+    require(rv[6] is False and rv[7] == -2.5, f"scenario 31 false is not nil; numbers keep sign and fraction: {rv[6:8]}")
+    require(isinstance(rv[8], str) and len(rv[8]) == 200000, "scenario 31 a 200 KB string must come back whole")
+    require(rv[9] == list(range(1, 1001)), "scenario 31 a 1000-element array must come back whole")
+    require(rv[10] == {"0": "a", "1": "b"}, f"scenario 31 keys not exactly 1..n make an object: {rv[10]}")
+    name = find_mod(rep, "name")
+    require(name["text"] == "hello" and name["componentType"] == "uiLabel",
+            f"scenario 31 finalState text follows Lua setText: {name}")
+    bip = find_mod(rep, "bipolar")
+    require(bip["componentRectangle"] == "96 16 72 96" and bip["vstIndex"] == 2,
+            f"scenario 31 geometry and vstIndex as in the panel: {bip}")
+
+
+def scenario_32_png_pixels(probe):
+    # The stdlib PNG sampler against the probe's own PNGs: a solid Lua fill and the panel background,
+    # sampled away from edges and text (D7: no whole-image comparisons).
+    paint_png = os.path.abspath("probe_selftest_pixels_paint.png")
+    shot_png = os.path.abspath("probe_selftest_pixels_shot.png")
+    code, rep, raw = run_script(probe, CUSTOM, {"steps": [
+        {"action": "paint", "modulator": "surface", "file": paint_png},
+        {"action": "screenshot", "file": shot_png},
+    ]})
+    require(rep is not None, f"scenario 32 stdout was not valid JSON:\n{raw}")
+    assert rep is not None
+    require(code == 0, f"scenario 32 expected exit 0, got {code}: {[s['errors'] for s in rep['steps']]}")
+    try:
+        fill = (0x20, 0x60, 0xA0, 0xFF)  # surfacePaint: g:fillAll(Colour(0xff2060a0))
+        comp = png_sample.load(paint_png)
+        require((comp.width, comp.height) == (200, 100), f"scenario 32 component PNG size: {comp.width}x{comp.height}")
+        got = png_sample.pixel(comp, 100, 50)
+        require(png_sample.close(got, fill), f"scenario 32 the Lua fill should read {fill}, got {got}")
+        shot = png_sample.load(shot_png)
+        got = png_sample.pixel(shot, 16 + 100, 16 + 50)  # surface sits at (16, 16) on the canvas
+        require(png_sample.close(got, fill), f"scenario 32 the screenshot shows the fill: {got}")
+        got = png_sample.pixel(shot, 500, 300)  # empty canvas: uiPanelBackgroundColour ffefefef
+        require(png_sample.close(got, (0xEF, 0xEF, 0xEF, 0xFF)), f"scenario 32 the panel background: {got}")
+        require(not png_sample.close(fill, (0xEF, 0xEF, 0xEF)), "scenario 32 close() must tell them apart")
+    finally:
+        for p in (paint_png, shot_png):
+            if os.path.exists(p):
+                os.unlink(p)
+
+
 def main():
     if len(sys.argv) < 2:
         fail("usage: probe_selftest.py <path-to-CtrlrPanelProbe>")
@@ -705,7 +909,16 @@ def main():
     scenario_25_drag_and_drop_trap(probe)
     scenario_26_disabled_paint_callback(probe)
 
-    print("SELFTEST PASS: all 26 scenarios ok")
+    # --- Scenarios 27-32: what the panel suites lean on hardest -- MIDI in and out, timers,
+    # dialogs, value shapes -- and pixels ---
+    scenario_27_midi_out_per_component(probe)
+    scenario_28_bulk_output(probe)
+    scenario_29_device_input(probe)
+    scenario_30_timers_and_dialogs(probe)
+    scenario_31_value_shapes(probe)
+    scenario_32_png_pixels(probe)
+
+    print("SELFTEST PASS: all 32 scenarios ok")
     sys.exit(0)
 
 
