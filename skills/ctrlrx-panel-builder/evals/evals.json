@@ -246,6 +246,66 @@
         "cutoff still sends CC 74 (b0 4a 32)",
         "nothing else was lost (2 modulators, 6 Lua methods)"
       ]
+    },
+    {
+      "id": 13,
+      "name": "shared-callback-dispatch",
+      "prompt": "params.panel has four knobs: cutoff, resonance, attack and release. They don't send any MIDI yet. My synth takes parameter changes as SysEx: F0 7D 10 pp vv F7, where vv is the knob value and pp is the parameter number: 10 (hex) for cutoff, 11 for resonance, 12 for attack and 13 for release. Write ONE Lua method that all four knobs call when they change (I'll add many more knobs later, so no copy per knob) and wire the knobs to it. Edit params.panel in place.",
+      "expected_output": "One luaMethod named by all four knobs' luaModulatorValueChange; it identifies the knob by something that compares as a Lua value (getVstIndex(), getProperty(\"name\"), ...), not by comparing mod:getName() (a juce String userdata) to a Lua string, and sends F0 7D 10 pp vv F7.",
+      "files": [
+        "evals/files/params.panel"
+      ],
+      "grader": "evals/graders/eval_13_shared_callback.py",
+      "expectations": [
+        "params.panel is still there",
+        "panel_tool lint passes",
+        "all four knobs run the same existing Lua method on a value change",
+        "moving the knobs raises no errors",
+        "cutoff at 100 sends exactly f0 7d 10 10 64 f7",
+        "resonance at 33 sends exactly f0 7d 10 11 21 f7",
+        "attack at 5 sends exactly f0 7d 10 12 05 f7",
+        "release at 127 sends exactly f0 7d 10 13 7f f7"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "second-device-channel",
+      "prompt": "synth.panel controls my synth on MIDI channel 1. On the same MIDI port I also have an effects unit that listens on MIDI channel 5. Add a knob 'fxMix' (0-127) to synth.panel that sends CC 91 to the effects unit, and that follows along when I turn the mix knob on the effects unit itself (the unit then sends CC 91 on channel 5). The synth's own controls must stay on channel 1. Edit synth.panel in place.",
+      "expected_output": "fxMix sends b4 5b vv and follows inbound CC 91 on channel 5 only: midiMessageChannel=5 together with midiMessageChannelOverride=1 (without the override the panel's channel wins in both directions), or an equivalent Lua path.",
+      "files": [
+        "evals/files/synth.panel"
+      ],
+      "grader": "evals/graders/eval_14_second_device_channel.py",
+      "expectations": [
+        "synth.panel is still there",
+        "panel_tool lint passes",
+        "the panel runs with no errors",
+        "fxMix exists with range 0..127",
+        "fxMix at 100 sends exactly CC 91 = 100 on channel 5 (b4 5b 64)",
+        "cutoff still sends CC 74 on channel 1 (b0 4a 40)",
+        "CC 91 = 51 arriving on channel 5 moves fxMix to 51",
+        "CC 91 arriving on channel 1 leaves fxMix alone"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "dump-without-echo",
+      "prompt": "patch_sync.panel has three knobs (osc1Level, osc2Level, filterCutoff), and each already sends its own parameter change to my synth from Lua (the method sendParam). When I press a button on the synth it sends its current patch as F0 7D 02 aa bb cc F7, where aa, bb and cc are the three knob values. Make the panel update the knobs from such a dump. Important: while the panel loads a dump it must not send anything back to the synth, because every message it receives makes the synth reload and glitch. Turning a knob by hand must still send the parameter change as before. Edit patch_sync.panel in place.",
+      "expected_output": "A luaPanelMidiReceived handler that sets the knobs without triggering sendParam (setModulatorValue(v, false, false, true), or sendParam gated on the change source) - a flag set around setValue does not work because value-change callbacks run asynchronously - and the panel's device-to-device MIDI thru switched off so the dump is not echoed.",
+      "files": [
+        "evals/files/patch_sync.panel"
+      ],
+      "grader": "evals/graders/eval_15_dump_without_echo.py",
+      "expectations": [
+        "patch_sync.panel is still there",
+        "panel_tool lint passes",
+        "the panel handles the dumps with no errors",
+        "dump 11 22 33 sets osc1Level=17, osc2Level=34, filterCutoff=51",
+        "loading a dump sends no parameter change (or anything else) back to the synth",
+        "the dump itself is not echoed back to the synth",
+        "a second dump 7F 00 40 updates the knobs to 127, 0, 64 before osc2Level is moved",
+        "moving osc2Level by hand to 99 still sends exactly f0 7d 01 02 63 f7"
+      ]
     }
   ]
 }

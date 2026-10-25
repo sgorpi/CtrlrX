@@ -1,6 +1,6 @@
 # Evals for `ctrlrx-panel-builder`
 
-Thirteen realistic panel-authoring tasks, each graded by a script that checks the result the way
+Sixteen realistic panel-authoring tasks, each graded by a script that checks the result the way
 CtrlrX would see it: `panel_tool.py lint`, the panel's XML, and **behaviour** observed through
 `CtrlrPanelProbe` (the exact MIDI bytes sent, label text, visibility, Lua state). Only one
 expectation (eval 2's diagnosis) is judged from the agent's prose.
@@ -15,11 +15,14 @@ expectation (eval 2's diagnosis) is judged from the agent's prose.
 | 5 | combo-value-map | combo entries mapped to non-index CC values; `&` in an entry name |
 | 6 | parse-sysex-dump | an incoming dump updates knobs; other SysEx ignored |
 | 7 | timer-throttled-burst | queue + timer: 16 CCs spaced out, none dropped, re-triggerable |
-| 8 | show-hide-by-type | visibility driven by a selector (`effectiveVisible`) |
+| 8 | show-hide-by-type | visibility driven by a selector (`effectiveVisible`, judged in run mode) |
 | 9 | custom-step-grid | `uiCustomComponent` paint + mouse handler, state in Lua |
 | 10 | write-probe-test | the agent's own probe check must pass the panel and fail mutants |
 | 11 | lua-files-inlined | Lua in `.lua` files, inlined into the panel by an idempotent script |
 | 12 | edit-bpanelz | edit a binary `.bpanelz`, deliver a loadable `.panel` |
+| 13 | shared-callback-dispatch | one Lua method for many knobs must tell them apart (`getName()` is a userdata) |
+| 14 | second-device-channel | a knob on its own MIDI channel, out and in (the panel channel wins unless overridden) |
+| 15 | dump-without-echo | load a dump without echoing parameter changes or the dump back (async callbacks, MIDI thru) |
 
 ## Layout
 
