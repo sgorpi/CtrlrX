@@ -72,8 +72,34 @@ itself is not platform-gated.
 [build_and_test.yml](../.github/workflows/build_and_test.yml) uploads a Release build per platform
 as the workflow artifact `CtrlrPanelProbe-Linux`, `CtrlrPanelProbe-macOS` or
 `CtrlrPanelProbe-Windows` (on the run's *Summary* page, under *Artifacts*). Inside is a zip with the
-binary, this file and the licence files. The binary is not code-signed: on macOS clear the
-quarantine flag before the first run (`xattr -d com.apple.quarantine CtrlrPanelProbe`).
+binary, this file and the licence files.
+
+### Verifying the download
+
+The binary is signed only when the workflow runs with the CtrlrX project's signing keys, the same
+ones the plugin packages use. Builds of forks and pull requests never have them, so their probe is
+**unsigned**. A failed signing step also leaves the unsigned zip in place.
+
+- **Linux**: a signed zip also holds `CtrlrPanelProbe.sig`, a detached GPG signature made with the
+  CtrlrX Project Key (see [03 — Installation Guide](readme/03-installation.md#linux-signature-verification-gpg)):
+
+  ```bash
+  gpg --keyserver hkps://keys.openpgp.org --recv-keys FC9F02DE24F1BC96
+  gpg --verify CtrlrPanelProbe.sig CtrlrPanelProbe    # expect: Good signature from "CtrlrX Project …"
+  ```
+
+  No `.sig` in the zip means an unsigned build.
+- **macOS**: a signed binary carries a Developer ID signature with the hardened runtime, and is
+  notarized. A ticket can't be stapled to a bare executable, so Gatekeeper looks it up online the
+  first time the probe runs. `codesign -dv --verbose=2 CtrlrPanelProbe` shows the
+  `Authority=Developer ID Application: …` lines. An **unsigned** build is blocked on first run
+  ("cannot be opened" / "could not verify"). Clear the quarantine flag
+  (`xattr -d com.apple.quarantine CtrlrPanelProbe`), or allow it once under *System Settings →
+  Privacy & Security → Open Anyway*.
+- **Windows**: a signed `.exe` shows the publisher under *Properties → Digital Signatures*, or in
+  PowerShell with `Get-AuthenticodeSignature .\CtrlrPanelProbe.exe`. An unsigned one reports
+  `NotSigned`. Started from Explorer, it may get a SmartScreen warning; `Unblock-File
+  .\CtrlrPanelProbe.exe` removes the downloaded-file mark.
 
 ## Invocation
 
