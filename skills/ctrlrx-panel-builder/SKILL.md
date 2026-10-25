@@ -168,18 +168,24 @@ Lua methods do **not** live on the modulator. They live in the panel's `<luaMana
 <luaManager>
   <luaManagerMethods>
     <luaMethodGroup name="Built-In" uuid="…">
-      <luaMethod luaMethodName="cutoffChanged"
-                 luaMethodCode="cutoffChanged = function(mod, value)&#10;&#9;console(value)&#10;end"
-                 luaMethodLinkedProperty="" luaMethodSource="0" uuid="…" luaMethodValid="1"/>
+      <!-- CtrlrX's own utility methods (table_dump, what, how, json4lua, …) -->
     </luaMethodGroup>
+    <luaMethod luaMethodName="cutoffChanged"
+               luaMethodCode="cutoffChanged = function(mod, value)&#10;&#9;console(value)&#10;end"
+               luaMethodLinkedProperty="" luaMethodSource="0" uuid="…" luaMethodValid="1"/>
   </luaManagerMethods>
 </luaManager>
 ```
 
 Methods can be grouped under one or more `<luaMethodGroup>` elements, **or** placed directly inside
 `<luaManagerMethods>` with no group at all — both are valid and can coexist. The group is just
-organization; what matters is that the method exists somewhere under `<luaManagerMethods>`. When you
-add one, dropping it into an existing group or alongside the others ungrouped both work.
+organization; what matters is that the method exists somewhere under `<luaManagerMethods>`.
+**Never put your own methods in the `Built-In` group**: it holds CtrlrX's utility methods, and
+CtrlrX 8 discards that group's contents when it loads a panel, so a method there silently
+vanishes. Add new methods directly under `<luaManagerMethods>` (or in a group of your own), and
+move any user method you find in `Built-In` out of it. On anything beyond a small panel, group
+methods by section or feature so the method editor stays navigable; follow the panel's existing
+groups when adding to one (conventions in `references/panel-file-format.md`).
 
 Two rules that bite if you forget them:
 

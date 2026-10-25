@@ -37,9 +37,10 @@ little-endian bytes follow, bit 7 means negative. See `ValueTree::readFromStream
   <luaManager>
     <luaManagerMethods>
       <luaMethodGroup name="Built-In" uuid="…">
-        <luaMethod .../>
-        ...
+        <luaMethod .../>   <!-- CtrlrX's utility methods only -->
       </luaMethodGroup>
+      <luaMethod .../>     <!-- the panel's own methods -->
+      ...
     </luaManagerMethods>
   </luaManager>
   <uiPanelEditor uiPanelCanvasRectangle="0 0 600 400" name="Test Panel" uiPanelEditMode="1" .../>
@@ -155,14 +156,17 @@ confirm against a real example in the repo (search panels for `uiCombo` + a valu
 <luaManager>
   <luaManagerMethods>
     <luaMethodGroup name="Built-In" uuid="49c3f79ca3dc4f868d5cfc5e48e56199">
-      <luaMethod luaMethodName="doSend"
-                 luaMethodCode="doSend = function(mod, value)&#10;&#9;panel:sendMidiMessageNow(&quot;B0 0E 42&quot;)&#10;end"
-                 luaMethodLinkedProperty="" luaMethodSource="0"
-                 uuid="00000000000000000000000000000013" luaMethodValid="1"/>
+      <!-- CtrlrX's own utility methods only: table_dump, what, how, json4lua, debugger.lua, inspect -->
     </luaMethodGroup>
-    <!-- a <luaMethod> may also sit directly under <luaManagerMethods>, with no group: -->
-    <luaMethod luaMethodName="helper" luaMethodCode="helper = function() end"
-               luaMethodLinkedProperty="" luaMethodSource="0" uuid="…" luaMethodValid="1"/>
+    <luaMethod luaMethodName="doSend"
+               luaMethodCode="doSend = function(mod, value)&#10;&#9;panel:sendMidiMessageNow(&quot;B0 0E 42&quot;)&#10;end"
+               luaMethodLinkedProperty="" luaMethodSource="0"
+               uuid="00000000000000000000000000000013" luaMethodValid="1"/>
+    <!-- a group of your own is fine too: -->
+    <luaMethodGroup name="Helpers" uuid="…">
+      <luaMethod luaMethodName="helper" luaMethodCode="helper = function() end"
+                 luaMethodLinkedProperty="" luaMethodSource="0" uuid="…" luaMethodValid="1"/>
+    </luaMethodGroup>
   </luaManagerMethods>
 </luaManager>
 ```
@@ -170,8 +174,29 @@ confirm against a real example in the repo (search panels for `uiCombo` + a valu
 > `<luaMethod>` elements can be organized into one or more `<luaMethodGroup>`s **or** placed directly
 > inside `<luaManagerMethods>` with no group — both are valid, and the two can mix. What matters is
 > that the method exists *somewhere* under `<luaManagerMethods>`; the group is only for organization.
-> When adding a method you can drop it into an existing group or alongside the others ungrouped.
 > (`panel_tool.py` finds methods either way.)
+>
+> The exception is the **`Built-In`** group: it is reserved for CtrlrX's utility methods, and
+> CtrlrX 8 discards its contents on load, so a user method placed there silently disappears. Add
+> methods directly under `<luaManagerMethods>` or in a group of your own, never in `Built-In`.
+
+**Group methods once a panel has more than a handful.** The Lua method editor shows groups as
+folders, so grouping is what makes a large panel navigable. Patterns that have worked on large
+panels:
+
+- **One group per synth section or feature**, named like the panel's sections (`Osc`, `Filter`,
+  `Env1`, `Lfo`, `Fx`, `Sequence`, `Browser` …), holding that section's callbacks and its
+  update/save pair.
+- **A `util` group** for cross-cutting helpers (init patch, randomize, undo).
+- **A `Generated` group** for methods written by a script rather than by hand, so nobody edits them
+  in the GUI by mistake. A fully generated panel can keep all of them in that one group.
+- **Panel-wide entry points stay ungrouped** at the root: `panelLoaded`/`createPanel`,
+  `midiReceived`, the SysEx encoder/decoder. They are what a reader looks for first.
+
+Groups can nest. When the Lua lives in files (`luaMethodSource="1"`), mirror the groups as
+subdirectories of the lua dir (`lua/Filter/changeFlt1Freq.lua`), which is also the layout the GUI's
+"convert to files" writes. Grouping does not change behaviour except through **document order**
+(see "Method bodies run at load" below): a group's methods load where the group sits.
 
 | Attribute | Meaning |
 |---|---|
