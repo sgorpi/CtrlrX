@@ -687,7 +687,7 @@ Two things to know about the reports this mode emits:
 |------|---------|
 | `0`  | Clean run (and, in `--stdin` mode, EOF reached). |
 | `1`  | `summary.errorCount > 0`. The full report is still printed. |
-| `2`  | Fatal: the panel file was missing or failed to load, or the script file was missing/malformed. |
+| `2`  | Fatal: the panel file was missing or failed to load (XML that does not parse, corrupt binary data, a root element other than `<panel>`), or the script file was missing/malformed. |
 
 On a fatal failure stdout carries a minimal object instead of a report:
 `{ "reportVersion": 1, "error": "<what>", "detail": "<which>", "exitCode": 2 }`. This happens
@@ -718,9 +718,11 @@ CtrlrPanelProbe MySynth.panel check.json | jq '{
 }'
 ```
 
-If `steps[0].deviceMidiOut` is empty, the slider's MIDI wiring is dead. If `steps[1].deviceMidiOut`
-is empty, the button callback never fired. To read a value straight out of the panel's Lua rather
-than inferring it from a label:
+If `steps[0].deviceMidiOut` is empty, either the slider already held 1200 (setting a value a
+control already holds sends nothing and runs no callback) or its MIDI wiring is dead; set a
+different value first to tell the two apart. If `steps[1].deviceMidiOut` is empty, the button
+callback never fired. To read a value straight out of the panel's Lua rather than inferring it from
+a label:
 
 ```bash
 echo '{"steps":[{"action":"eval","lua":"return codec.get(img, \"filters.speed\")"}]}' > e.json
@@ -763,6 +765,6 @@ CtrlrPanelProbe MySynth.panel e.json | jq '.steps[0].returnValue, .summary.error
   the clock of a mouse press, but not the clock of a panel's `timer` callbacks: those fire on real
   time, so a `wait` floor has to be long enough on the slowest machine.
 - **Self-test:** `ctest -R PanelProbeSelfTest` (see [probe_selftest.py](../Tests/probe_selftest.py)) —
-  33 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
+  34 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
   changing `probe_*.cpp`; it is also the best worked reference for what each report field looks
   like in practice.

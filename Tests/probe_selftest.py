@@ -725,6 +725,38 @@ def scenario_33_edit_mode(probe):
             f"scenario 33 a run-mode file: {rep['panel']} {rep.get('warnings')}")
 
 
+def scenario_34_unreadable_panel(probe):
+    # A file that is not a panel must exit 2 with a JSON error that says why. A file that ends
+    # inside its root's start tag used to parse without error and load as an empty panel with a
+    # clean run; other XML errors exited 2 as "no panel was loaded", without the parser's reason.
+    with open("fixtures/fixture_probe_midi.panel", encoding="utf-8") as f:
+        good = f.read()
+    cut = good.index('<modulator', len(good) // 2)
+    stray_quote = good[:cut] + '<modulator name="a"b"' + good[cut + len('<modulator'):]
+    for name, text in (("truncated", '<?xml version="1.0"?>\n<panel name="x"'),
+                       ("cut-in-half", good[:len(good) // 2]),
+                       ("stray-quote", stray_quote),
+                       ("not-a-panel", '<?xml version="1.0"?>\n<notAPanel name="x"/>\n')):
+        with tempfile.NamedTemporaryFile("w", suffix=".panel", delete=False) as f:
+            f.write(text)
+            path = f.name
+        try:
+            code, rep, raw = run(probe, path)
+            require(code == 2 and rep is not None and rep.get("error") == "panel failed to load",
+                    f"scenario 34 {name}: expected exit 2 with 'panel failed to load', got {code}: {raw[:300]}")
+            assert rep is not None
+            require("summary" not in rep, f"scenario 34 {name}: a fatal report has no summary: {rep}")
+            expect = "<notAPanel>" if name == "not-a-panel" else "does not parse"
+            require(expect in rep.get("detail", ""), f"scenario 34 {name}: detail should say '{expect}': {rep}")
+            if name == "truncated":
+                proc = subprocess.run([probe, "--stdin", path], input='{"steps": []}\n',
+                                      capture_output=True, text=True, timeout=90)
+                require(proc.returncode == 2 and '"panel failed to load"' in proc.stdout,
+                        f"scenario 34 --stdin: expected exit 2, got {proc.returncode}: {proc.stdout[:300]}")
+        finally:
+            os.unlink(path)
+
+
 def main():
     if len(sys.argv) < 2:
         fail("usage: probe_selftest.py <path-to-CtrlrPanelProbe>")
@@ -1002,7 +1034,10 @@ def main():
     # --- Scenario 33: a panel saved in edit mode is probed as played ---
     scenario_33_edit_mode(probe)
 
-    print("SELFTEST PASS: all 33 scenarios ok")
+    # --- Scenario 34: an unreadable panel file is fatal, not an empty clean run ---
+    scenario_34_unreadable_panel(probe)
+
+    print("SELFTEST PASS: all 34 scenarios ok")
     sys.exit(0)
 
 

@@ -1674,27 +1674,82 @@ namespace
     // run mode too. CtrlrX itself opens such a file half in edit mode -- CtrlrPanel::bootstrapPanel
     // re-applies the mode read from the panel root, not from <uiPanelEditor> -- and in that state a
     // control hidden after load only dims. Tests mean the panel as played.
+    // CtrlrPanel::openXmlPanel drops JUCE's parse error, so a broken file only shows up as "no
+    // panel was loaded" -- and a file that ends inside its root's start tag parses with no error
+    // at all and loads as an empty panel that runs clean. Parse the file once more, the way
+    // openXmlPanel reads it, and return what is wrong with it (empty if nothing).
+    juce::String xmlParseError(const juce::File& file)
+    {
+        juce::String text;
+        if (file.hasFileExtension("panelz"))
+        {
+            juce::FileInputStream in(file);
+            if (! in.openedOk())
+                return "cannot read the file";
+            juce::GZIPDecompressorInputStream gz(&in, false);
+            text = gz.readEntireStreamAsString();
+        }
+        else
+        {
+            text = file.loadFileAsString();
+        }
+        juce::XmlDocument doc(text);
+        std::unique_ptr<juce::XmlElement> xml = doc.getDocumentElement();
+        if (doc.getLastParseError().isNotEmpty())
+            return doc.getLastParseError();
+        if (xml == nullptr)
+            return "no XML element in the file";
+        // XmlDocument reports nothing when the input ends inside a start tag; every complete
+        // document ends with '>'.
+        if (! text.trimEnd().endsWithChar('>'))
+            return "the file ends inside a tag (truncated?)";
+        return {};
+    }
+
     bool openPanel(Session& s, juce::String& errorOut)
     {
         try
         {
             CtrlrManager& manager = s.processor.getManager();
             manager.setProperty(Ids::panelLastSaveDir, s.panelFile.getParentDirectory().getFullPathName());
-            juce::ValueTree tree = s.panelFile.getFileExtension().startsWith(".b")
-                                       ? CtrlrPanel::openBinPanel(s.panelFile)
-                                       : CtrlrPanel::openXmlPanel(s.panelFile);
-            if (tree.isValid())
+            const bool binary = s.panelFile.getFileExtension().startsWith(".b");
+            if (! binary)
             {
-                tree.setProperty(Ids::panelFilePath, s.panelFile.getFullPathName(), nullptr);
+                const juce::String parseError = xmlParseError(s.panelFile);
+                if (parseError.isNotEmpty())
+                {
+                    errorOut = "the XML does not parse: " + parseError;
+                    return false;
+                }
+            }
+            juce::ValueTree tree = binary ? CtrlrPanel::openBinPanel(s.panelFile)
+                                          : CtrlrPanel::openXmlPanel(s.panelFile);
+            if (! tree.isValid())
+            {
+                errorOut = "not a readable panel file";
+                return false;
+            }
+            if (! tree.hasType(Ids::panel))
+            {
+                errorOut = "the root element is <" + tree.getType().toString() + ">, not <panel>";
+                return false;
+            }
 
-                // No attribute opens in edit mode: CtrlrPanelEditor's constructor sets it, and its
-                // restoreState copies only the attributes that are there. So set it in every case.
-                juce::ValueTree editor = tree.getChildWithName(Ids::uiPanelEditor);
-                s.savedEditMode = editor.isValid() && (bool) editor.getProperty(Ids::uiPanelEditMode, true);
-                if (editor.isValid())
-                    editor.setProperty(Ids::uiPanelEditMode, (s.savedEditMode && s.editModeAsSaved) ? "1" : "0", nullptr);
+            tree.setProperty(Ids::panelFilePath, s.panelFile.getFullPathName(), nullptr);
 
-                manager.addPanel(tree, true);
+            // No attribute opens in edit mode: CtrlrPanelEditor's constructor sets it, and its
+            // restoreState copies only the attributes that are there. So set it in every case.
+            juce::ValueTree editor = tree.getChildWithName(Ids::uiPanelEditor);
+            s.savedEditMode = editor.isValid() && (bool) editor.getProperty(Ids::uiPanelEditMode, true);
+            if (editor.isValid())
+                editor.setProperty(Ids::uiPanelEditMode, (s.savedEditMode && s.editModeAsSaved) ? "1" : "0", nullptr);
+
+            const int panelsBefore = manager.getNumPanels();
+            manager.addPanel(tree, true);
+            if (manager.getNumPanels() <= panelsBefore)
+            {
+                errorOut = "CtrlrX did not add the panel";
+                return false;
             }
         }
         catch (...)
