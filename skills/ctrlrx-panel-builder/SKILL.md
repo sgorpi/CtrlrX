@@ -96,9 +96,13 @@ All are stdlib `python3`; `--help` on each is complete. Paths are relative to th
 | `python3 scripts/png_sample.py shot.png X Y --expect rrggbb` | check one pixel of a probe screenshot. |
 
 **The probe binary.** `probe_harness.py` uses `$CTRLRX_PANEL_PROBE` if set, otherwise the newest
-`build*/Tests/CtrlrPanelProbe` (or `.exe`) in a CtrlrX checkout found from the current directory
-upwards, or given with `--ctrlrx DIR`. `probe_harness.py where` shows which one it picked. If
-there is none, build it in the checkout: `cmake --build build --target CtrlrPanelProbe`.
+`build*/Tests/CtrlrPanelProbe` (or `.exe`, also one `<Config>/` level deeper) in a CtrlrX clone
+found from the current directory upwards, or given with `--ctrlrx DIR`. `probe_harness.py where`
+shows which one it picked. If there is none: in a clone, build it
+(`cmake --build build --target CtrlrPanelProbe`); without a clone, ask the user to download the
+`CtrlrPanelProbe-<OS>` artifact of a CI run of https://github.com/damiensellier/CtrlrX (Actions → a
+`build_and_test` run → Artifacts; needs a GitHub login) and set `CTRLRX_PANEL_PROBE` to the
+unzipped binary.
 
 ## Pick your task
 
@@ -195,8 +199,14 @@ All references are in `references/`. Copy the checklist into your notes and tick
 ## Ground truth: the CtrlrX source
 
 The references were checked against CtrlrX's source. When a detail is missing or the panel
-disagrees with them, the source of the user's CtrlrX version decides. If you have no checkout
-path, ask the user for one.
+disagrees with them, the source of the user's CtrlrX version decides:
+
+1. A local clone, if you know where it is (ask the user if one might exist).
+2. Otherwise the repository on GitHub: https://github.com/damiensellier/CtrlrX. Read a file
+   at the user's release tag (tags look like `v5.6.36`; the default branch is `master`) as raw
+   text:
+   `https://raw.githubusercontent.com/damiensellier/CtrlrX/<tag>/<path>`, e.g.
+   `…/v5.6.36/Source/Core/CtrlrIDs.h`.
 
 | Question | Look in |
 |---|---|
@@ -209,8 +219,9 @@ path, ask the user for one.
 | Panels guaranteed to load | `Tests/fixtures/fixture_*.panel` |
 | The probe's full schema | `Doc/PanelProbe.md` |
 
-The probe is built from the checkout's source, so a green probe run does not prove a panel runs
-on an older installed CtrlrX; check bindings at the user's release tag (`git show <tag>:<file>`).
+The probe is built from current source, so a green probe run does not prove a panel runs on an
+older installed CtrlrX; check bindings at the user's release tag (`git show <tag>:<file>` in a
+clone, or the raw URL above).
 
 ## Reference files
 
@@ -234,4 +245,5 @@ Read the one the task needs; each starts with a table of contents.
 
 Don't edit the skill during a task. When something here contradicts what you measured, say so in
 your answer: what the skill says, what you observed, and the probe script or source line that
-shows it.
+shows it. Tell the user they can report it, with that evidence, at
+https://github.com/damiensellier/CtrlrX/issues.

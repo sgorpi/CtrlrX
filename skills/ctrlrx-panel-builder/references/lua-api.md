@@ -284,10 +284,11 @@ end
 
 ## Version floor
 
-The probe and the CtrlrX checkout you read may be newer than the user's installed CtrlrX. Bindings
+The probe and the CtrlrX source you read may be newer than the user's installed CtrlrX. Bindings
 added later (the string / table MIDI forms above, `CtrlrMidiMessage({…})`) then fail with "No
 matching overload" in the user's app while every probe run passes. When the user names a version,
-check the binding at that release tag (`git show <tag>:Source/Lua/CtrlrLuaManager.cpp`) and avoid
+check the binding at that release tag (`git show <tag>:Source/Lua/CtrlrLuaManager.cpp` in a clone,
+or `https://raw.githubusercontent.com/damiensellier/CtrlrX/<tag>/Source/Lua/CtrlrLuaManager.cpp`) and avoid
 copying components from a newer panel, which bring newer properties.
 
 ## A complete small example

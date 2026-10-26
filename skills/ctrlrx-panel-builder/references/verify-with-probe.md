@@ -3,7 +3,8 @@
 `CtrlrPanelProbe` loads a panel headlessly, rebinds its MIDI to mock devices, runs a JSON script
 of actions and prints a JSON report: the MIDI each step sent, every error, Lua return values, and a
 final snapshot of every control. It runs CtrlrX's own code, so it shows what CtrlrX would do. This
-page is the working guide; the full schema is `Doc/PanelProbe.md` in the CtrlrX repository.
+page is the working guide; the full schema is `Doc/PanelProbe.md` in the CtrlrX repository
+(https://github.com/damiensellier/CtrlrX/blob/master/Doc/PanelProbe.md).
 
 ## Contents
 
@@ -22,7 +23,7 @@ page is the working guide; the full schema is `Doc/PanelProbe.md` in the CtrlrX 
 ## Getting the probe
 
 `python3 scripts/probe_harness.py where` prints the binary the harness will use (how it is
-found: `SKILL.md`, "Tools"). If it finds none, build one in the CtrlrX checkout:
+found, and how to get one without a clone: `SKILL.md`, "Tools"). In a CtrlrX clone, build it:
 `cmake -B build . && cmake --build build --target CtrlrPanelProbe`. CI also publishes it as a
 build artifact (`Doc/PanelProbe.md`, "Getting the binary"). A Release build is faster and is what
 wall-clock assertions should use.

@@ -23,8 +23,10 @@ dialogs; then warnings and summary.errorCount. It is what you assert on, minus f
 (use --report and jq for that).
 
 Locating the probe: $CTRLRX_PANEL_PROBE if set; otherwise the newest
-build*/Tests/CtrlrPanelProbe[.exe] under --ctrlrx DIR, or under the current directory, any of
-its parents, or a "ctrlrx" directory inside any of them.
+build*/Tests/[<Config>/]CtrlrPanelProbe[.exe] under --ctrlrx DIR, or under the current directory,
+any of its parents, or a "ctrlrx" directory inside any of them. Without a CtrlrX clone, download
+the CtrlrPanelProbe-<OS> artifact of a CI run of https://github.com/damiensellier/CtrlrX and set
+CTRLRX_PANEL_PROBE.
 
 As a module (put this directory on sys.path):
 
@@ -72,12 +74,14 @@ def find_probe(ctrlrx: str | None = None) -> str:
     for root in roots:
         for name in ("CtrlrPanelProbe", "CtrlrPanelProbe.exe"):
             found += glob.glob(os.path.join(root, "build*", "Tests", name))
+            # multi-config generators (Visual Studio, Xcode): build/Tests/<Config>/
+            found += glob.glob(os.path.join(root, "build*", "Tests", "*", name))
     found = [f for f in found if os.access(f, os.X_OK)]
     if not found:
         raise ProbeError(
-            "CtrlrPanelProbe not found: set CTRLRX_PANEL_PROBE=/path/to/CtrlrPanelProbe, or pass "
-            "--ctrlrx <CtrlrX checkout> after building it there "
-            "(cmake --build build --target CtrlrPanelProbe)")
+            "CtrlrPanelProbe not found: set CTRLRX_PANEL_PROBE=/path/to/CtrlrPanelProbe (a CI "
+            "artifact of github.com/damiensellier/CtrlrX), or pass --ctrlrx <CtrlrX clone> after "
+            "building it there (cmake --build build --target CtrlrPanelProbe)")
     return max(found, key=os.path.getmtime)
 
 

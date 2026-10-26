@@ -58,6 +58,11 @@ Optional environment:
 - `EVAL_JUDGE_CMD` — a command that reads a prompt on stdin and answers YES/NO, e.g.
   `claude -p --model haiku`. Without it, eval 2's diagnosis is checked by keywords.
 
+## Changing the skill
+
+`../MAINTAINING.md` lists where changes go and the checks before a pull request, including the
+old-vs-new eval run described above.
+
 ## Writing a new case
 
 Ground it in something a real panel needed. Assert on observable behaviour (bytes, state), not
