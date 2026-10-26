@@ -104,7 +104,7 @@ ones the plugin packages use. Builds of forks and pull requests never have them,
 ## Invocation
 
 ```bash
-CtrlrPanelProbe [--verbose] [--global-console] [--stdin] <panel-file> [<script-file>]
+CtrlrPanelProbe [--verbose] [--global-console] [--stdin] [--edit-mode-as-saved] <panel-file> [<script-file>]
 ```
 
 - `<panel-file>` — a `.panel` (or `.bpanelz`) path, resolved relative to the current directory.
@@ -120,6 +120,8 @@ CtrlrPanelProbe [--verbose] [--global-console] [--stdin] <panel-file> [<script-f
   `console()` line the script produced. Opt-in because a chatty panel can emit a lot; the per-step
   `steps[i].console` arrays are always present regardless.
 - `--stdin` — persistent mode; see [below](#persistent-mode---stdin).
+- `--edit-mode-as-saved` — load a panel saved in edit mode the way CtrlrX opens it, instead of in
+  run mode; see [Edit mode](#edit-mode). No effect on a panel saved in run mode.
 
 The **JSON report is written to stdout**; all of CtrlrX's own logging goes to stderr, so stdout is
 always clean, parseable JSON (or a JSON error object on a fatal failure).
@@ -288,6 +290,9 @@ one with the Python standard library alone: `pixel(load(path), x, y)` gives `(r,
 `close(a, b, tol)` compares two colours. Sample a solid fill away from text, edges and
 anti-aliasing. Do not compare whole images: fonts and anti-aliasing differ between platforms.
 
+The snap grid and dimmed hidden controls appear only with `--edit-mode-as-saved` (see
+[Edit mode](#edit-mode)).
+
 #### `paint`
 
 ```json
@@ -442,7 +447,9 @@ nothing, because no real mouse is down. No drop target hears of it. Each such `d
     "name": "SysEx Token",
     "originalDevices": { "input": "Device 00, port 00", "output": "Device 00, port 01" },
     "luaCompileErrors": [],
-    "dialogs": []
+    "dialogs": [],
+    "savedEditMode": false,
+    "editMode": false
   },
   "steps": [
     {
@@ -493,6 +500,8 @@ nothing, because no real mouse is down. No drop target hears of it. Each such `d
 - `panel.luaCompileErrors` — an array of `"method 'name': <error>"` strings for methods that failed
   to compile at load, captured **before any step runs** (so a runtime error later cannot be
   misreported here).
+- `panel.savedEditMode` / `panel.editMode` — the mode the file was saved in, and the mode the
+  script ran in; see [Edit mode](#edit-mode).
 - Per step: `deviceMidiOut` / `hostMidiOut` are lowercase-hex byte strings captured during that
   step's settle; `console` is that step's `console()` output; `ok` is `errors` being empty.
 - `finalState` is a snapshot taken once, **after the last step**. There is no per-step state
@@ -514,6 +523,7 @@ Do not test for a key by comparing it to `null` — check whether it exists.
 | `console` (top level) | only with `--global-console` |
 | `steps[i].index` / `action` / `deviceMidiOut` / `hostMidiOut` / `errors` / `console` / `dialogs` / `ok` | always |
 | `panel.dialogs` | always; `[]` when the panel opened no dialog while loading |
+| `panel.savedEditMode`, `panel.editMode` | always |
 | `steps[i].returnValue` | only for `callLuaMethod`, `eval`, `waitFor` — and its value is `null` when Lua returned `nil` |
 | `steps[i].screenshot` | only for a `screenshot` action that wrote a file |
 | `steps[i].paint` | only for a `paint` action that painted; its `file` only when one was written |
@@ -549,6 +559,7 @@ call a failure. They are **not** in `errorCount` and do not change the exit code
 |---|---|
 | `"paint"` | A `uiCustomComponent` was invalidated and never painted after (end of script; off with `"paintWarnings": false`), or `paint` painted a component whose paint callback an earlier error disabled (`step` set). |
 | `"mouse"` | A `drag` reached a drag-and-drop container, where the drag-and-drop itself is not simulated (`step` set). |
+| `"editMode"` | The panel file is saved in edit mode (`modulator` is `""`, no `step`; in every report in `--stdin` mode). See [Edit mode](#edit-mode). |
 
 ### Dialogs
 
@@ -589,6 +600,31 @@ Three fields, because they answer three different questions:
 
 `liveVisible` / `effectiveVisible` are omitted when the modulator has no live component;
 `canvasRectangle` additionally needs that component to have a parent (see the fixture gotcha below).
+
+### Edit mode
+
+A panel file saves the mode it was in: `uiPanelEditMode` on its `<uiPanelEditor>` element, `"1"` for
+edit mode (designing the panel) and `"0"` for run mode (playing it). The probe **always runs a panel
+in run mode, as a user plays it**, whatever mode it was saved in. It switches the mode in the loaded
+tree before the panel is built, so a file saved in edit mode loads exactly like the same file saved
+in run mode, including what `luaPanelLoaded` sees.
+
+CtrlrX itself opens a file saved in edit mode half in edit mode until the user toggles the mode once.
+A control hidden while the panel loads is hidden, but `componentVisibility = 0` set **after** load
+only dims the control (it stays visible), slider drags send nothing, and the canvas shows the snap
+grid. `--edit-mode-as-saved` reproduces that state, for when the question is what CtrlrX shows when
+it opens the file. To avoid the difference altogether, save panels with `uiPanelEditMode="0"`.
+
+- `panel.savedEditMode` is the mode the file opens in: `true` when it is saved in edit mode (or its
+  `<uiPanelEditor>` has no `uiPanelEditMode`, which CtrlrX also opens in edit mode).
+- `panel.editMode` is the mode the script ran in: `false` unless `--edit-mode-as-saved` is given and
+  the file is saved in edit mode.
+- A file saved in edit mode adds one `"editMode"` [warning](#warnings) to every report, which says
+  which way it was probed.
+- Actions work the same in both modes: `setValue`, `click` and `mouse` go straight to the component,
+  so a slider moved by `setValue` sends its MIDI under `--edit-mode-as-saved` too. The flag changes
+  what CtrlrX shows and decides, not how the probe drives the controls.
+- `screenshot` draws the snap grid and the dimmed controls only with the flag.
 
 ### Geometry and overlaps
 
@@ -727,6 +763,6 @@ CtrlrPanelProbe MySynth.panel e.json | jq '.steps[0].returnValue, .summary.error
   the clock of a mouse press, but not the clock of a panel's `timer` callbacks: those fire on real
   time, so a `wait` floor has to be long enough on the slowest machine.
 - **Self-test:** `ctest -R PanelProbeSelfTest` (see [probe_selftest.py](../Tests/probe_selftest.py)) —
-  32 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
+  33 scenarios, most of which pin a specific defect so it cannot come back silently. Run it after
   changing `probe_*.cpp`; it is also the best worked reference for what each report field looks
   like in practice.

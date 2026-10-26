@@ -36,13 +36,13 @@ def run(probe, *args):
     return proc.returncode, report, proc.stdout
 
 
-def run_script(probe, panel, script):
+def run_script(probe, panel, script, *flags):
     """Run an inline script dict against a panel; return (exit_code, report, raw_stdout)."""
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(script, f)
         path = f.name
     try:
-        return run(probe, panel, path)
+        return run(probe, *flags, panel, path)
     finally:
         os.unlink(path)
 
@@ -208,7 +208,7 @@ def scenario_19_silent_repaint(probe):
         {"action": "eval", "lua": "panel:getModulatorByName('surface'):getComponent():repaint() return 1"},
     ]})
     assert rep is not None
-    require(rep["warnings"] == [] and rep["summary"]["warningCount"] == 0,
+    require(not [w for w in rep["warnings"] if w.get("type") == "paint"],
             f"scenario 19 paintWarnings false should silence the warning: {rep['warnings']}")
     p = find_mod(rep, "surface").get("paint")
     require(p is not None and p["pendingRepaint"] is True and p["paints"] == 0,
@@ -644,6 +644,87 @@ def scenario_32_png_pixels(probe):
                 os.unlink(p)
 
 
+# Saved with uiPanelEditMode="1". knobA is hidden from luaPanelLoaded, knobB by `sel`'s value-change
+# callback when it goes to 1 ("Hide"); `cc` is a plain CC 7 slider.
+EDITMODE = "fixtures/fixture_probe_editmode.panel"
+
+
+def editmode_warnings(rep):
+    return [w for w in rep.get("warnings", []) if w.get("type") == "editMode"]
+
+
+def scenario_33_edit_mode(probe):
+    # A panel saved in edit mode is probed as played (run mode), whatever the file says. CtrlrX
+    # itself opens such a file half in edit mode, where a control hidden at runtime only dims and
+    # stays visible; a test of what the user sees would pass or fail on that by accident.
+    shots = {mode: os.path.abspath(f"probe_selftest_editmode_{mode}.png") for mode in ("run", "saved")}
+    reps = {}
+    try:
+        for mode, flags in (("run", ()), ("saved", ("--edit-mode-as-saved",))):
+            code, rep, raw = run_script(probe, EDITMODE, {"steps": [
+                {"action": "setValue", "modulator": "sel", "value": 1},
+                {"action": "setValue", "modulator": "cc", "value": 42},
+                {"action": "screenshot", "file": shots[mode]},
+            ]}, *flags)
+            require(rep is not None, f"scenario 33 ({mode}) stdout was not valid JSON:\n{raw}")
+            assert rep is not None
+            require(code == 0, f"scenario 33 ({mode}) expected exit 0, got {code}: "
+                               f"{[s['errors'] for s in rep['steps']]}")
+            # Actions are the same in both modes: setValue drives the component directly.
+            require("b3 07 2a" in rep["steps"][1]["deviceMidiOut"],
+                    f"scenario 33 ({mode}) setValue on cc emits its CC: {rep['steps'][1]['deviceMidiOut']}")
+            w = editmode_warnings(rep)
+            require(len(w) == 1 and w[0]["modulator"] == "" and "step" not in w[0],
+                    f"scenario 33 ({mode}) one load-time editMode warning: {rep.get('warnings')}")
+            reps[mode] = rep
+
+        run, saved = reps["run"], reps["saved"]
+        require(run["panel"].get("savedEditMode") is True and run["panel"].get("editMode") is False,
+                f"scenario 33 saved in edit mode, probed in run mode: {run['panel']}")
+        require("--edit-mode-as-saved" in editmode_warnings(run)[0]["message"],
+                f"scenario 33 the default warning names the opt-out: {editmode_warnings(run)}")
+        for name in ("knobA", "knobB"):  # hidden at load, hidden at runtime: both really hidden
+            require(find_mod(run, name)["effectiveVisible"] is False,
+                    f"scenario 33 {name} should be hidden in run mode: {find_mod(run, name)}")
+
+        require(saved["panel"].get("savedEditMode") is True and saved["panel"].get("editMode") is True,
+                f"scenario 33 --edit-mode-as-saved keeps edit mode: {saved['panel']}")
+        require("probed as saved" in editmode_warnings(saved)[0]["message"],
+                f"scenario 33 the flag's warning: {editmode_warnings(saved)}")
+        # Pins CtrlrX's own split state on purpose (CtrlrPanel::bootstrapPanel re-applies the mode
+        # from the panel root, not from <uiPanelEditor>): hidden at load is hidden, hidden at runtime
+        # only dims. A CtrlrX fix shows up here as a deliberate change.
+        require(find_mod(saved, "knobA")["effectiveVisible"] is False
+                and find_mod(saved, "knobB")["effectiveVisible"] is True,
+                f"scenario 33 as saved: knobA hidden, knobB dimmed but visible: "
+                f"{find_mod(saved, 'knobA')} {find_mod(saved, 'knobB')}")
+
+        # Pixels: the 8 px snap grid and the dimmed knobB are drawn only in edit mode.
+        bg = (0xEF, 0xEF, 0xEF, 0xFF)  # uiPanelBackgroundColour1
+        img = {mode: png_sample.load(shots[mode]) for mode in shots}
+        grid = (400, 304)  # on a grid line, in an empty canvas area
+        require(png_sample.close(png_sample.pixel(img["run"], *grid), bg)
+                and not png_sample.close(png_sample.pixel(img["saved"], *grid), bg),
+                f"scenario 33 grid line: run {png_sample.pixel(img['run'], *grid)}, "
+                f"saved {png_sample.pixel(img['saved'], *grid)}")
+        thumb = (119, 83)  # knobB's thumb at value 0, off the grid lines
+        require(png_sample.close(png_sample.pixel(img["run"], *thumb), bg)
+                and not png_sample.close(png_sample.pixel(img["saved"], *thumb), bg),
+                f"scenario 33 knobB: run {png_sample.pixel(img['run'], *thumb)}, "
+                f"saved {png_sample.pixel(img['saved'], *thumb)}")
+    finally:
+        for p in shots.values():
+            if os.path.exists(p):
+                os.unlink(p)
+
+    # A file saved in run mode says so, and gets no warning.
+    code, rep, raw = run_script(probe, "fixtures/fixture_probe_visibility.panel", {"steps": []})
+    assert rep is not None
+    require(rep["panel"].get("savedEditMode") is False and rep["panel"].get("editMode") is False
+            and not editmode_warnings(rep),
+            f"scenario 33 a run-mode file: {rep['panel']} {rep.get('warnings')}")
+
+
 def main():
     if len(sys.argv) < 2:
         fail("usage: probe_selftest.py <path-to-CtrlrPanelProbe>")
@@ -918,7 +999,10 @@ def main():
     scenario_31_value_shapes(probe)
     scenario_32_png_pixels(probe)
 
-    print("SELFTEST PASS: all 32 scenarios ok")
+    # --- Scenario 33: a panel saved in edit mode is probed as played ---
+    scenario_33_edit_mode(probe)
+
+    print("SELFTEST PASS: all 33 scenarios ok")
     sys.exit(0)
 
 

@@ -66,6 +66,7 @@ namespace probe_fd
 #include "CtrlrComponents/CtrlrComponent.h"
 #include "CtrlrComponents/CtrlrCustomComponent.h"
 #include "CtrlrPanel/CtrlrPanelCanvas.h"
+#include "CtrlrPanel/CtrlrPanelEditor.h"
 #include <CtrlrMIDIDeviceManager.h>
 #include "CtrlrLuaManager.h"
 #include "Methods/CtrlrLuaMethodManager.h"
@@ -1552,9 +1553,11 @@ namespace
         std::vector<juce::MidiMessage>& deviceSends;
         LogCapture& log;
         juce::File panelFile;
+        bool editModeAsSaved = false; // --edit-mode-as-saved
 
         // Rebuilt on every (re)load:
         CtrlrPanel* panel = nullptr;
+        bool savedEditMode = false; // the mode the file opens in, before the probe's patch
         juce::String origIn, origOut;
         juce::var compileErrors;
         juce::Array<juce::var> loadDialogs; // dismissed while the panel loaded
@@ -1664,11 +1667,35 @@ namespace
     }
 
     // Open the panel file and bind it. Returns false (with a reason) on failure.
+    //
+    // This is CtrlrManager::openPanelInternal(const File&), plus one patch before addPanel: a panel
+    // saved in edit mode is switched to run mode in its tree (unless --edit-mode-as-saved). That
+    // makes it load exactly like a file saved with uiPanelEditMode="0", so luaPanelLoaded runs in
+    // run mode too. CtrlrX itself opens such a file half in edit mode -- CtrlrPanel::bootstrapPanel
+    // re-applies the mode read from the panel root, not from <uiPanelEditor> -- and in that state a
+    // control hidden after load only dims. Tests mean the panel as played.
     bool openPanel(Session& s, juce::String& errorOut)
     {
         try
         {
-            s.processor.openFileFromCli(s.panelFile);
+            CtrlrManager& manager = s.processor.getManager();
+            manager.setProperty(Ids::panelLastSaveDir, s.panelFile.getParentDirectory().getFullPathName());
+            juce::ValueTree tree = s.panelFile.getFileExtension().startsWith(".b")
+                                       ? CtrlrPanel::openBinPanel(s.panelFile)
+                                       : CtrlrPanel::openXmlPanel(s.panelFile);
+            if (tree.isValid())
+            {
+                tree.setProperty(Ids::panelFilePath, s.panelFile.getFullPathName(), nullptr);
+
+                // No attribute opens in edit mode: CtrlrPanelEditor's constructor sets it, and its
+                // restoreState copies only the attributes that are there. So set it in every case.
+                juce::ValueTree editor = tree.getChildWithName(Ids::uiPanelEditor);
+                s.savedEditMode = editor.isValid() && (bool) editor.getProperty(Ids::uiPanelEditMode, true);
+                if (editor.isValid())
+                    editor.setProperty(Ids::uiPanelEditMode, (s.savedEditMode && s.editModeAsSaved) ? "1" : "0", nullptr);
+
+                manager.addPanel(tree, true);
+            }
         }
         catch (...)
         {
@@ -1691,6 +1718,19 @@ namespace
         // Paint counters are per script: --stdin scripts share a process.
         for (auto& t : s.paintTracking)
             t.second.counters = PaintCounters();
+
+        // The mode this script runs in, and a load-time warning that every script repeats (each
+        // --stdin report stands alone).
+        CtrlrPanelEditor* editor = s.panel->getEditor(false);
+        const bool editMode = editor != nullptr && (bool) editor->getProperty(Ids::uiPanelEditMode);
+        if (s.savedEditMode)
+            addWarning(ctx, "editMode", "", s.editModeAsSaved
+                ? "saved in edit mode and probed as saved (--edit-mode-as-saved): componentVisibility=0 "
+                  "set after load only dims the control, and CtrlrX ignores slider drags; the probe's "
+                  "actions still act"
+                : "saved in edit mode (uiPanelEditMode=1); probed in run mode, as played. CtrlrX opens "
+                  "this file half in edit mode; save it with uiPanelEditMode=0, or run with "
+                  "--edit-mode-as-saved to probe it as CtrlrX opens it");
 
         juce::Array<juce::var> stepResults;
         int actionErrorCount = 0;     // the probe could not carry out what a step asked for
@@ -1758,6 +1798,8 @@ namespace
         probeReport::setProp(panelInfo, "originalDevices", origDevices);
         probeReport::setProp(panelInfo, "luaCompileErrors", s.compileErrors);
         probeReport::setProp(panelInfo, "dialogs", s.loadDialogs);
+        probeReport::setProp(panelInfo, "savedEditMode", s.savedEditMode);
+        probeReport::setProp(panelInfo, "editMode", editMode);
         probeReport::setProp(report, "panel", panelInfo);
 
         probeReport::setProp(report, "steps", stepResults);
@@ -1818,20 +1860,23 @@ int main(int argc, char** argv)
     // --global-console (add a per-script aggregate of console() output to the report),
     // --stdin (persistent mode: one script object per input line, one report object per output
     // line, so a suite pays the ~0.9 s process startup once instead of per test),
+    // --edit-mode-as-saved (load a panel saved in edit mode as CtrlrX opens it, not in run mode).
     juce::StringArray positional;
     bool verbose = false;
     bool globalConsole = false;
     bool stdinMode = false;
+    bool editModeAsSaved = false;
     for (int i = 1; i < argc; ++i)
     {
         const juce::String a(argv[i]);
-        if (a == "--verbose")             verbose = true;
-        else if (a == "--global-console") globalConsole = true;
-        else if (a == "--stdin")          stdinMode = true;
-        else if (! a.startsWith("-"))     positional.add(a);
+        if (a == "--verbose")                  verbose = true;
+        else if (a == "--global-console")      globalConsole = true;
+        else if (a == "--stdin")               stdinMode = true;
+        else if (a == "--edit-mode-as-saved")  editModeAsSaved = true;
+        else if (! a.startsWith("-"))          positional.add(a);
     }
     if (positional.isEmpty())
-        failFatal("usage: CtrlrPanelProbe [--verbose] [--global-console] [--stdin] "
+        failFatal("usage: CtrlrPanelProbe [--verbose] [--global-console] [--stdin] [--edit-mode-as-saved] "
                   "<panel-file> [<script-file>]",
                   "CtrlrPanelProbe drives a CtrlrX panel from a JSON script and reports what it did "
                   "-- MIDI out, Lua errors, final state. No hardware, no display. See Doc/PanelProbe.md.");
@@ -1911,6 +1956,7 @@ int main(int argc, char** argv)
     }
 
     Session session{ *processor, midi, buffer, sendsMutex, deviceSends, logCapture, panelFile };
+    session.editModeAsSaved = editModeAsSaved;
 
     juce::String loadError;
     if (! openPanel(session, loadError))
