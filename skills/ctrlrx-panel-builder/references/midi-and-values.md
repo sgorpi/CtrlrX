@@ -1,216 +1,202 @@
-# MIDI Messages & Value Mapping
+# MIDI messages and value mapping
 
-Everything here is set on a modulator's `<midi>` child and on the modulator's value attributes.
-When the source disagrees with this page, the source wins — see `Source/MIDI/CtrlrMidiMessage.*`
-and `Source/Core/CtrlrSysexProcessor.*` / `CtrlrSysexToken.*`.
+Everything here is set on a modulator's `<midi>` child and its value attributes. When the source
+disagrees with this page, the source wins: `Source/MIDI/CtrlrMidiMessage.*`,
+`Source/MIDI/CtrlrOwnedMidiMessage.cpp`, `Source/Core/CtrlrSysexProcessor.*`.
+
+## Contents
+
+- `midiMessageType` — the integer enum
+- Channels: panel channel vs. a modulator's own
+- Raw range and where the value byte comes from
+- Multi messages: NRPN, RPN, 14-bit CC (long form only)
+- NRPN pitfalls: signed values, merged bursts, header latching
+- SysEx formulas and tokens
+- Value expressions
+- Value maps
+- Receiving MIDI
 
 ## `midiMessageType` — the integer enum
 
-The `<midi midiMessageType="N">` attribute is an **integer**, not a name:
-
 | N | Type | Wire bytes | Typical use |
 |---|---|---|---|
-| 0 | CC | `Bn cc vv` | The workhorse — most parameters. |
+| 0 | CC | `Bn cc vv` | Most parameters. |
 | 1 | Aftertouch (poly) | `An nn vv` | Per-note pressure. |
 | 2 | ChannelPressure | `Dn vv` | Channel aftertouch. |
-| 3 | NoteOn | `9n nn vv` | Trigger a note/pad. |
+| 3 | NoteOn | `9n nn vv` | Trigger a note / pad. |
 | 4 | NoteOff | `8n nn vv` | Release a note. |
-| 5 | SysEx | `F0 … F7` | Manufacturer params via a formula (below). |
-| 6 | Multi | several messages | 14-bit, NRPN/RPN, or any sequence (below). |
-| 7 | ProgramChange | `Cn pp` | Select a patch/program. |
-| 8 | PitchWheel | `En ll mm` | 14-bit bend — set max value `16383`. |
+| 5 | SysEx | `F0 … F7` | Parameters via a formula (below). |
+| 6 | Multi | several messages | NRPN, RPN, 14-bit CC (below). |
+| 7 | ProgramChange | `Cn pp` | Select a program. |
+| 8 | PitchWheel | `En ll mm` | 14-bit bend; range `0..16383`, centre 8192. |
 | 9 | None | — | No MIDI (Lua-only or display control). |
-| 10–14 | MidiClock / …Continue / …Stop / …Start / ActiveSense | realtime | Clock / transport. |
+| 10–14 | MidiClock / Continue / Stop / Start / ActiveSense | realtime | Clock / transport. |
 
-(`n` = channel nibble, channel 1 → `0`.) For a simple control, set `midiMessageType`,
-`midiMessageChannel` (1–16), and `midiMessageCtrlrNumber` (the CC/note/program number). For a switch,
-set `modulatorMax="1"`.
+`n` is the channel nibble (channel 1 → `0`). `midiMessageCtrlrNumber` is the CC / note / program
+number (for Multi: the NRPN/RPN parameter number, 0..16383).
 
-## Raw range and the value attributes
+## Channels: panel channel vs. a modulator's own
 
-A control's raw value lives between `modulatorMin` and `modulatorMax` (on `<modulator>`), and the
-current value is `modulatorValue`. Match the max to the MIDI resolution:
-
-- 7-bit CC / note / program → `0`..`127`
-- 14-bit (PitchWheel, or 14-bit CC / NRPN) → `0`..`16383`
-- on/off switch → `0`..`1`
-
-> ⚠️ Gotcha — **the value byte comes from the modulator's value, never from
-> `midiMessageCtrlrValue`.** For CC, NoteOn, NoteOff, Aftertouch, ChannelPressure and PitchWheel,
-> CtrlrX builds the message as `…(ch, getNumber(), getValue())`, where `getValue()` is the
-> modulator's *current value* (`CtrlrMidiMessage.cpp:1004-1019`). The `midiMessageCtrlrValue`
-> attribute is not consulted on that path despite its name. Two consequences that bite:
-> - A trigger button with `modulatorMin/Max` of `0..1` emits **velocity 0 or 1**, whatever
->   `midiMessageCtrlrValue` says. Velocity 0 *is* a NoteOff by MIDI convention, so the device
->   typically ignores it entirely and the button appears dead. Widening `modulatorMax` does not
->   help either if the component's value never reaches it — see the `uiButton` valueMap trap in
->   `components.md`.
-> - To send a **fixed** value byte (a set velocity, a constant CC), set `midiMessageType="9"`
->   (None) and emit it from Lua: `panel:sendMidiMessageNow("9F 36 64")`.
-
-> ⚠️ Gotcha — **a PitchWheel modulator left at `0..127` silently throws away 99.2% of its range.**
-> Type 8 emits a 14-bit value as `En ll mm`, so `modulatorMax="127"` maps full travel onto
-> 14-bit 0..127 — the very bottom of the bend range (`ef 7f 00`), and inbound centre (`EF 00 40`,
-> 8192) clamps to the top of the control. Set **both** `modulatorMax="16383"` *and* the component's
-> `uiSliderMax="16383"` (the visible range is a separate property — see `components.md`).
-> Centre is `8192` (`ef 00 40`). Note that a 16384-step range on a small knob needs
-> `uiSliderMouseWheelInterval` raised, or fine adjustment is unreachable by mouse.
-
-## Multi messages (14-bit, NRPN/RPN, sequences)
-
-Set `midiMessageType="6"` and fill `midiMessageMultiList`. The string is a sequence of messages
-separated by **colons** `:`; each message is comma-separated:
-
-```
-Type[,Number[,Value]] : Type[,Number[,Value]] : …
-```
-
-For **Number** and **Value** you can use a literal or a token:
-
-| Token | Means |
-|---|---|
-| `Direct`, `Default`, `Value`, or `-1` | The modulator's current value. |
-| `Number`, `CtrlNumber`, or `-2` | The modulator's MIDI number. |
-| a decimal, e.g. `74` | A literal number. |
-| a 1–2 digit hex written bare, e.g. `40` (= 0x40) | A literal hex byte. |
-
-**14-bit CC** (0–16383 across CC 1 MSB + CC 33 LSB) — set `modulatorMax="16383"`:
-```
-CC,1,Direct : CC,33,Direct
-```
-CtrlrX splits the high/low 7 bits across the two messages when the value exceeds 127.
-
-**NRPN** (select param with CC 99/98, set with CC 6 [+38]):
-```
-CC,99,2 : CC,98,10 : CC,6,Direct
-```
-(Parameter 2/10, data = the modulator value.)
-
-**Fixed sequence** (e.g. a panic button, type `None` on the modulator, triggered from Lua/Multi):
-```
-CC,123,0 : CC,120,0
-```
-
-> Legacy form: older panels use a longer token form (`ByteValue`, `MSB7bitValue`, `LSB7bitValue`,
-> e.g. `CC,ByteValue,MSB7bitValue,28,-1:…`). CtrlrX still understands it (routed through the SysEx
-> engine), but prefer the short `Type,Number,Value` form for new panels.
-
-## SysEx messages (formula & tokens)
-
-Set `midiMessageType="5"` and write `midiMessageSysExFormula`: the raw bytes of the message as
-two-character literal **hex**, with short **token codes** (not long names) where dynamic data goes.
-The formula string is space-separated; each entry is either a hex byte or one of these codes, mapped
-by `CtrlrSysexProcessor::sysExIdentifyToken` (`Source/Core/CtrlrSysexProcessor.cpp`):
-
-| Code | Inserts | Enum |
+| `midiMessageChannelOverride` | sends on | matches incoming MIDI on |
 |---|---|---|
-| `xx` | Modulator value as one 7-bit byte | `ByteValue` |
-| `MS` / `LS` | Value high / low 7 bits (values > 127) | `MSB7bitValue` / `LSB7bitValue` |
-| `ms` / `ls` | Value high / low 4-bit nibble | `MSB4bitValue` / `LSB4bitValue` |
-| `yy` | MIDI channel (7-bit); `0y` = channel in low nibble (4-bit) | `ByteChannel` / `ByteChannel4Bit` |
-| `r1`–`r4` | Roland address/value byte splits | `RolandSplitByte1..4` |
-| `q0`–`q3` / `Q0`–`Q3` | 16-bit value as 4-bit nibbles, LSB / MSB first | `Nibble16bitLsb/Msb0..3` |
-| `tp` / `tb` | Current program / bank number | `CurrentProgram` / `CurrentBank` |
-| `k…` `o…` `p…` `n…` | Panel global variable (hex digit selects which) | `GlobalVariable` |
-| `Xn` `zn` `wn` `On` `tc` | Checksum over the *n* preceding bytes — XOR, 2's-complement (Roland/Yamaha), simple sum, 1's-complement, Technics | `Checksum*` |
-| `ii` | Wildcard / ignore this byte on incoming match | `Ignore` |
-| `f0` / `f7` | Literal `F0` / `F7` | — |
-| `u…` / `v…` | Byte computed by Lua / a sub-formula | `LUAToken` / `FormulaToken` |
+| `0` (default) | the panel's `panelMidiOutputChannelDevice` | the same channel |
+| `1` | the modulator's `midiMessageChannel` | the same channel |
 
-> ⚠️ These short codes are the SysEx-**formula** vocabulary. They are **different** from the *Multi
-> list* legacy long names (`ByteValue`, `MSB7bitValue`, `LSB7bitValue`) parsed by `indirectFromString`.
-> In a SysEx formula write `xx`, not `ByteValue`.
+`panelMidiInputChannelDevice` does **not** decide which channel a modulator matches
+(`CtrlrOwnedMidiMessage::getChannel`; measured: with input channel 2 and output channel 4, a
+modulator without the override matched `B3`, channel 4). So a control meant for a second device
+or part on its own channel needs `midiMessageChannelOverride="1"` **and** `midiMessageChannel`;
+setting only the channel silently keeps the panel channel in both directions. Bytes that Lua builds
+itself (`sendMidiMessageNow`) carry whatever status byte the code wrote.
 
-The digit after a checksum code is how many preceding bytes it covers:
-`startByte = tokenPosition - digit`.
+## Raw range and where the value byte comes from
 
-**Example** — manufacturer `7D`, set parameter `0x12` to the knob value, XOR checksum over the 3
-bytes before it:
+A control's raw value lies between `modulatorMin` and `modulatorMax`; match the max to the MIDI
+resolution: 7-bit `0..127`, 14-bit (PitchWheel, NRPN, 14-bit CC) `0..16383`, switch `0..1`. A
+slider also needs the same range on its component (`uiSliderMin` / `uiSliderMax`, see
+`components.md`).
+
+- **The value byte is the modulator's current value, never `midiMessageCtrlrValue`.** For CC,
+  NoteOn, NoteOff, Aftertouch, ChannelPressure and PitchWheel, CtrlrX builds the message from
+  `getValue()` (`CtrlrMidiMessage.cpp`). A `0..1` trigger button therefore sends velocity 0 or 1
+  whatever `midiMessageCtrlrValue` says, and velocity 0 is a NoteOff. To send a fixed value byte,
+  set `midiMessageType="9"` and send it from Lua.
+- **A PitchWheel left at `0..127` uses 0.8 % of its range** (`ef 7f 00` at full travel). Set
+  `modulatorMax="16383"` and `uiSliderMax="16383"`; raise `uiSliderMouseWheelInterval` too, or fine
+  adjustment is unreachable by mouse.
+
+## Multi messages: NRPN, RPN, 14-bit CC (long form only)
+
+Set `midiMessageType="6"` and `midiMessageMultiList`. Messages are separated by `:`. Use the
+**long form**, one message per part:
+
+```
+CC,ByteValue,<half>,<cc number>,<source>
+```
+
+- `<half>`: `MSB7bitValue` (bits 7–13) or `LSB7bitValue` (bits 0–6) of the source.
+- `<source>`: `-2` = the modulator's `midiMessageCtrlrNumber` (the parameter number), `-1` = the
+  modulator's value.
+
+Measured forms (copy them; set `midiMessageCtrlrNumber` to the parameter number):
+
+| Purpose | `midiMessageMultiList` | number 300, value 1000 sends |
+|---|---|---|
+| NRPN, 14-bit data | `CC,ByteValue,MSB7bitValue,99,-2:CC,ByteValue,LSB7bitValue,98,-2:CC,ByteValue,MSB7bitValue,6,-1:CC,ByteValue,LSB7bitValue,38,-1` | `b0 63 02, b0 62 2c, b0 06 07, b0 26 68` |
+| NRPN, 7-bit data (`modulatorMax="127"`) | `CC,ByteValue,MSB7bitValue,99,-2:CC,ByteValue,LSB7bitValue,98,-2:CC,ByteValue,LSB7bitValue,6,-1` | value 100: `b0 63 02, b0 62 2c, b0 06 64` |
+| RPN, 14-bit data | as NRPN with `101` / `100` instead of `99` / `98` | number 0, value 8192: `b0 65 00, b0 64 00, b0 06 40, b0 26 00` |
+| 14-bit CC (CC 1 + CC 33) | `CC,ByteValue,MSB7bitValue,1,-1:CC,ByteValue,LSB7bitValue,33,-1` | `b0 01 07, b0 21 68` |
+
+**Do not use the short form** (`CC,99,2 : CC,98,10 : CC,6,Direct`). In the current parser it
+ignores the number in every part: all messages go out on the modulator's own number and the first
+literal becomes the value (measured: number 5 → `b0 05 02, b0 05 2c, b0 05 7f, b0 05 7f`). A fixed
+sequence of different CCs (a panic button) is therefore a Lua job:
+`panel:sendMidiMessageNow(CtrlrMidiMessage("B0 7B 00"))`, one call per message.
+
+Always probe a Multi modulator once and assert the exact bytes and their order.
+
+## NRPN pitfalls: signed values, merged bursts, header latching
+
+- **Signed parameters.** For a device that wants two's-complement 14-bit data, keep the
+  modulator signed (`modulatorMin="-64"` …) and convert in `modulatorValueExpression`:
+  `lt(modulatorValue,0,16384+modulatorValue,modulatorValue)`. `lt` takes four arguments
+  (`lt(a, b, ifTrue, ifFalse)`).
+- **Merged bursts.** With `panelMidiGlobalDelay="0"`, every buffer sent within the same
+  millisecond gets the same start time, so several Multi modulators set in one Lua chunk interleave
+  on the wire (`99 a, 99 b, 98 a, 98 b, 06 a, 06 b, …`). The device then writes the wrong
+  parameters. Set `panelMidiGlobalDelay="2"` (each buffer starts 1 ms after the previous one; an
+  NRPN takes ~3.8 ms on a DIN wire anyway). The same mechanism interleaves a `uiCombo`'s double
+  send under the probe (`verify-with-probe.md`).
+- **Header latching.** With `midiMessageLatchAndStream` on, CtrlrX skips the CC 99/98 header when
+  the parameter is the same as the previous message's, so later writes are a bare CC 6/38 pair.
+  The latch is panel-wide state: whatever sent last decides whether the header is resent.
+- **NRPN is one-way.** Multi modulators are never updated by incoming MIDI (see "Receiving").
+
+## SysEx formulas and tokens
+
+Set `midiMessageType="5"` and `midiMessageSysExFormula`: space-separated two-character hex bytes,
+with token codes where dynamic data goes (`CtrlrSysexProcessor::sysExIdentifyToken`):
+
+| Code | Inserts |
+|---|---|
+| `xx` | the value as one 7-bit byte |
+| `MS` / `LS` | value bits 7–13 / 0–6 |
+| `ms` / `ls` | value high / low 4-bit nibble |
+| `yy` / `0y` | MIDI channel (7-bit) / channel in the low nibble |
+| `r1`–`r4` | Roland address/value byte splits |
+| `q0`–`q3` / `Q0`–`Q3` | 16-bit value as 4-bit nibbles, LSB / MSB first |
+| `tp` / `tb` | current program / bank |
+| `k…` `o…` `p…` `n…` | a panel global variable (hex digit selects which) |
+| `Xn` `zn` `wn` `On` `tc` | checksum over the `n` preceding bytes: XOR, 2's complement (Roland/Yamaha), sum, 1's complement, Technics |
+| `ii` | ignore this byte when matching incoming SysEx |
+| `u…` / `v…` | a byte computed by Lua / by a sub-formula |
+
+Example: manufacturer `7D`, parameter `12` = the value, XOR checksum over the 3 bytes before it:
+
 ```
 F0 7D 12 xx X3 F7
 ```
-On a value change CtrlrX substitutes `xx`, replaces `X3` with `7D ^ 12 ^ value`, and emits the full
-`F0 … F7`. Full list on the CtrlrX wiki "SysEx Token List". For devices too complex for the token
-language, compute the bytes in Lua and send with `panel:sendMidiMessageNow(...)` (see `lua-api.md`).
 
-## Value expressions (math without Lua)
+The Roland checksum `z<n>` wraps 128 to 0 correctly. These codes belong to SysEx formulas only;
+they are not Multi-list tokens. For anything the tokens can't express, build the bytes in Lua and
+send them (`lua-api.md`, "Sending MIDI"), and end every frame with `F7` yourself.
 
-Each modulator has three expression attributes (default = pass-through). Use them for linear scaling
-and bit-twiddling; reach for Lua only for lookup tables or real logic.
+## Value expressions
 
 | Attribute | Direction | Default |
 |---|---|---|
-| `modulatorValueExpression` | modulator value → outgoing MIDI value | `modulatorValue` |
-| `modulatorValueExpressionReverse` | incoming MIDI value → modulator value | `midiValue` |
-| `modulatorControllerExpression` | MIDI-learn controller input → modulator value | `value` |
+| `modulatorValueExpression` | value → outgoing MIDI value | `modulatorValue` |
+| `modulatorValueExpressionReverse` | incoming MIDI value → value | `midiValue` |
+| `modulatorControllerExpression` | MIDI-learn input → value | `value` |
 
-**Variables**: `modulatorValue`, `modulatorMappedValue`, `midiValue`, `midiNumber`, `vstIndex`, plus
-`panel.<prop>` and `global.<n>` scopes.
-**Functions**: `abs`, `ceil`, `floor`, `mod`, `fmod`, `pow`, `min`, `max`; comparisons
-`eq`/`lt`/`lte`/`gt`/`gte`; bit helpers `setBit`/`isBitSet`/`clearBit`/`getBitRangeAsInt`/
-`setBitRangeAsInt`; `setGlobal`; and ordinary `+ - * /`.
+Variables: `modulatorValue`, `modulatorMappedValue`, `midiValue`, `midiNumber`, `vstIndex`,
+`panel.<prop>`, `global.<n>`. Functions: `abs`, `ceil`, `floor`, `mod`, `fmod`, `pow`, `min`,
+`max`, `eq`/`lt`/`lte`/`gt`/`gte` (four arguments: `a, b, ifTrue, ifFalse`), `setBit`/`isBitSet`/
+`clearBit`/`getBitRangeAsInt`/`setBitRangeAsInt`, `setGlobal`, `+ - * /`.
 
-**Example** — halve on the way out, double on the way back:
 ```
-modulatorValueExpression       = floor(modulatorValue / 2)
+modulatorValueExpression        = floor(modulatorValue / 2)
 modulatorValueExpressionReverse = midiValue * 2
 ```
 
-> ⚠️ Expressions shape the **MIDI number** sent/received — they do **not** change what the control
-> *displays*. To put a mapped/computed value on a knob's own readout (Hz, a named step, "Off"), use a
-> `uiFixedSlider` + value map (see `components.md`); a plain `uiSlider` readout is only
-> `number + uiSliderValueSuffix`.
+Expressions change the MIDI number only, never what the control **displays**. Per-value text on a
+knob needs a `uiFixedSlider` + value map (`components.md`).
 
-## Value maps (named choices)
+## Value maps
 
-A value map turns raw values into named choices (for `uiCombo`, `uiFixedSlider`,
-`uiFixedImageSlider`). Conceptually it's an ordered list of *raw value → mapped value → display
-text*; the component shows the text, the processor sends the raw value. Set `modulatorMax` to the
-highest index.
+A value map gives a `uiCombo`, `uiFixedSlider` or `uiFixedImageSlider` named entries. The
+modulator holds the **0-based index** of the entry, not a device value. Write it one entry per
+line in `uiComboContent` / `uiFixedSliderContent` (newlines as `&#10;` in the XML):
 
 ```
-0=Sine
-1=Triangle
-2=Sawtooth
-3=Square
+Sine
+Triangle
+Saw
 ```
 
-The exact XML child-element names for a stored value map vary by build, so **copy a value-map block
-from a panel that already has a working combo and edit the entries** rather than synthesizing the
-structure. Confirm against `Source/Core/` (`CtrlrValueMap`) if you must build one from scratch.
+- `Label=raw` lines carry a device value per entry; still confirm with the probe which number
+  your callback and the MIDI get before relying on it (`components.md`, "Combos").
+- The map sets the range: `modulatorMax` becomes `entries - 1`. A blank line or a line starting
+  with `__` is skipped and shifts every entry below it; use a visible placeholder label instead.
+- A reverse lookup (device value → index) that misses a value silently picks index 0, and the next
+  touch sends that wrong value to the device. Make the table total, or fail loudly in Lua.
 
 ## Receiving MIDI
 
-Incoming MIDI is matched to a modulator automatically by **message type + channel + number** (and,
-for SysEx, by data pattern). A control that *sends* CC 74 ch 1 also *receives* CC 74 ch 1 with no
-extra config — its on-screen value follows the hardware. For custom handling (bulk SysEx dumps, one
-message updating many controls), use the panel callback `luaPanelMidiReceived` (see `lua-api.md`),
-and use the `source` argument on `luaModulatorValueChange` to avoid MIDI feedback loops.
+Incoming single messages (CC, Note, Program Change, PitchWheel, SysEx by pattern) are matched to
+modulators by type + channel (table above) + number, and the matching control follows the
+hardware. The match table is built when the panel loads (`CtrlrPanel::bootstrapPanel`), also for a
+panel saved in edit mode. Panel Lua can't rebuild or inspect it at runtime
+(`panel:getInputComparator()` is not usable from Lua).
 
-### `Multi` modulators do **not** receive — verified 2026-09-15
-
-The automatic matching above holds for single-message types. **A `Multi` (NRPN/RPN/14-bit)
-modulator is never updated by incoming MIDI**, even though the code path looks complete
-(`CtrlrMidiInputComparatorMulti::match` → `setValueFromMIDI`). Measured on a shipped 225-NRPN
-panel, on CtrlrX's own `Tests/fixtures/fixture_lua_multi_received.panel`, and by CtrlrX's own
-test suite: `MidiLua.device_input_invokes_lua_multiMidiReceived_once` **fails**, while
-`MidiRouting.device_input_matching_cc_updates_modulator` and
-`MidiSysex.sysex_input_updates_modulator` pass in the same run.
-
-Consequences for panel design:
-
-- **Never promise bidirectional sync through NRPN.** If the device must drive the panel, use a
-  SysEx bulk dump decoded in `luaPanelMidiReceived`, or plain CC / Program Change — the
-  single-message shapes that do match. A `modulatorValueExpressionReverse` on a `Multi`
-  modulator is dead code; write the correct one anyway, but do not expect to test it.
-- **Testing this under the probe: inject fast.** `match()` arms a **200 ms** timer whose
-  callback clears the part-assembled message, so a script that settles between the four CCs of
-  an NRPN burst measures the timer, not the comparator. Use `"settleMs": 10` on each
-  `injectDeviceMidi` step and settle only on the last one.
-- **A negative test here passes vacuously unless you pair it with a control.** Assert
-  alongside it that an injected SysEx (or CC) *does* move a modulator, or a broken probe
-  binding looks like the same result.
-
-The match table is built once, at load, from `CtrlrPanel::bootstrapPanel` →
-`editModeChanged(uiPanelEditMode)`, so a panel saved with `uiPanelEditMode="1"` never builds
-one at all — worth checking first if *no* input matches.
+- **Multi (NRPN/RPN/14-bit) modulators never update from incoming MIDI**, although the code path
+  exists. If the device must drive the panel, decode a SysEx dump or plain CCs in
+  `luaPanelMidiReceived`.
+- A part-received Multi message is discarded after 200 ms, so a probe test that injects the four
+  CCs of an NRPN must use `"settleMs": 10` on each `injectDeviceMidi` step.
+- A negative result ("no modulator moved") needs a positive control in the same run (an injected
+  CC that *does* move one), or a broken test looks the same.
+- Avoid feedback loops with the `source` argument of `luaModulatorValueChange` (2 = MIDI in), and
+  keep `panelMidiThruD2D="0"` unless device→device thru is wanted: with it on, every device
+  message is echoed straight back to the device.
+- SysEx reaches `luaPanelMidiReceived` only once complete; there is no progress for a long dump.

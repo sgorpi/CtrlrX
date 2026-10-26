@@ -1,287 +1,205 @@
-# Panel File Format
+# Panel file format
 
-A `.panel` file is a JUCE `ValueTree` serialized to XML. The same tree also ships as `.panelz`
-(gzipped XML), `.bpanelz` and `.bpanel`. A `.bpanelz` is **not** gzipped XML: it is a gzipped
-*binary* `ValueTree::writeToStream` dump, which additionally carries the panel's **resources**
-(images, fonts, data) base64-encoded in `<resource>` nodes.
+A `.panel` file is a JUCE `ValueTree` serialized as XML. The same tree also ships as `.panelz`
+(gzipped XML), `.bpanelz` (gzipped *binary* ValueTree that also embeds resources) and `.bpanel`
+(the binary, uncompressed). `scripts/panel_tool.py` reads all four (`summary`, `lint`, `dump`); it
+writes nothing, and you author the XML form.
 
-`scripts/panel_tool.py` decodes all four formats, so you can `summary`, `lint` and `dump` a
-`.bpanelz` directly rather than treating it as opaque. What you still cannot do is *write* one:
-to ship a `.bpanelz` with resources, have the user export it from the CtrlrX app
-(**File → Export**). Note the asymmetry — the app's XML export drops resource payload (across a
-468-panel survey, 0 of 257 `.panel` files carried any, against 138 of 253 `.bpanelz`), so
-`.bpanelz → .panel` is lossy for artwork even though it preserves everything structural.
-Everything below describes the XML rendering of the tree, which is what you author and edit.
+## Contents
 
-### The binary wire format
+- Top-level shape and element order
+- The `<panel>` root: settings that change behaviour
+- `<uiPanelEditor>`: edit mode and canvas layers
+- The `<modulator>` element and its `<midi>` / `<component>` children
+- Attribute order is behaviour
+- The `<luaManager>` block and method groups
+- Escaping `luaMethodCode`
+- Lua in external files (`luaMethodSource="1"`)
+- Method code runs at load; method order is not stable
+- `.bpanelz`, export and resources
+- Authoring checklist
 
-Should you ever need to decode it by hand (`panel_tool.py` already does):
-
-```
-tree  := string tag, compressedInt numProps, {string name, var value} * numProps,
-         compressedInt numChildren, tree * numChildren
-var   := compressedInt numBytes, byte marker, payload of numBytes-1 bytes
-marker  1=int32  2=true  3=false  4=double  5=string  6=int64  7=array  8=binary  9=undefined
-```
-
-Strings are NUL-terminated UTF-8. A "compressed int" is one length byte — low 7 bits give how many
-little-endian bytes follow, bit 7 means negative. See `ValueTree::readFromStream` and
-`var::readFromStream` in JUCE, and `CtrlrPanel::openBinPanel` in the CtrlrX source.
-
-## Top-level shape
+## Top-level shape and element order
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<panel name="My Panel" ...many panel attributes...>
+<panel name="My Panel" ...about 80 attributes...>
   <uiWindowManager/>
   <luaManager>
     <luaManagerMethods>
-      <luaMethodGroup name="Built-In" uuid="…">
-        <luaMethod .../>   <!-- CtrlrX's utility methods only -->
-      </luaMethodGroup>
+      <luaMethodGroup name="Built-In" uuid="…"> <!-- CtrlrX's utility methods only --> </luaMethodGroup>
       <luaMethod .../>     <!-- the panel's own methods -->
-      ...
     </luaManagerMethods>
   </luaManager>
-  <uiPanelEditor uiPanelCanvasRectangle="0 0 600 400" name="Test Panel" uiPanelEditMode="1" .../>
-  <modulator ...>
-    <midi .../>
-    <component ... uiType="uiSlider"/>
-  </modulator>
-  <modulator ...> ... </modulator>
+  <uiPanelEditor uiPanelCanvasRectangle="0 0 600 400" uiPanelEditMode="0" ...>
+    <uiPanelCanvasLayer uiPanelCanvasLayerUid="…" uiPanelCanvasLayerIndex="0" .../>
+  </uiPanelEditor>
+  <modulator ...> <midi .../> <component .../> </modulator>
   ...
 </panel>
 ```
 
-Order matters to readers expecting it: `<uiWindowManager/>` and `<luaManager>` come first, then
-`<uiPanelEditor>`, then the `<modulator>` elements. Keep that order when generating a panel.
+Keep this order when generating a panel: `<uiWindowManager/>`, `<luaManager>`, `<uiPanelEditor>`,
+then the modulators.
 
-## The `<panel>` root attributes
+## The `<panel>` root: settings that change behaviour
 
-There are ~80 of them. You rarely set more than a handful; copy the rest from a template. The ones
-worth knowing:
+Copy the root from `assets/template-panel.panel` and change only what you need.
 
-| Attribute | Meaning |
+| Attribute | Meaning | Recommended |
+|---|---|---|
+| `name`, `panelVendor`, `panelDevice`, `panelVersionMajor`/`Minor` | identity, shown in hosts | set per panel |
+| `panelMidiOutputChannelDevice` | **the channel every modulator without `midiMessageChannelOverride="1"` sends on and matches on** | the device's channel (template: 1) |
+| `panelMidiInputChannelDevice` | panel input channel setting; does **not** pick which channel modulators match | same as output |
+| `panelMidiInputDevice` / `panelMidiOutputDevice` | selected ports (device-specific strings; the probe rebinds them to mocks) | leave |
+| `panelMidiThruD2D` | device → device thru: every device message is echoed back to the device | `0` unless the user wants thru |
+| `panelMidiThruH2D`, `…D2H`, `…H2H` | host↔device thru | leave unless asked |
+| `panelMidiGlobalDelay` | ms between outgoing buffers; at `0`, Multi/NRPN bursts sent together interleave | `2` |
+| `luaPanelLoaded`, `luaPanelMidiReceived`, … | panel-level callbacks: a method name or `"-- None"` (`lua-api.md`) | as needed |
+| `panelGlobalVariables` | 64 colon-separated ints (`-1` = unset) | leave |
+| `panelUID`, `panelInstanceUID` | identity; unique per panel | new value per new panel |
+
+## `<uiPanelEditor>`: edit mode and canvas layers
+
+- **`uiPanelEditMode="0"`** saves the panel in run mode, the way users play it. A panel saved with
+  `"1"` (or without the attribute) opens in edit mode, where CtrlrX only **dims** a control hidden
+  via its `componentVisibility` property and ignores slider drags. The match table for incoming
+  MIDI is built either way. The probe runs panels in run mode unless `--edit-mode-as-saved` is
+  given, and warns (`editMode`) about a file saved in edit mode.
+- **Layers.** Each `<uiPanelCanvasLayer>` has a `uiPanelCanvasLayerUid`; a component's
+  `componentLayerUid` must equal one of them or the component is never shown (no error). Layers
+  stack by `uiPanelCanvasLayerIndex` (higher on top); `uiPanelCanvasLayerVisibility="0"` starts a
+  layer hidden. Lift the whole element with `panel_tool.py dump FILE editor`.
+
+## The `<modulator>` element and its `<midi>` / `<component>` children
+
+| `<modulator>` attribute | Meaning |
 |---|---|
-| `name` | Panel name (tab title, plugin name). |
-| `panelAuthorName`, `panelVersionMajor`/`Minor`/`Name` | Metadata. |
-| `panelVendor`, `panelDevice` | Shown when the panel runs as a plugin. |
-| `panelPlugType` | e.g. `Instrument\|Synth`. |
-| `panelMidiInputDevice`, `panelMidiOutputDevice`, `panelMidiControllerDevice` | Selected MIDI ports (device-specific strings; in fixtures these are mock names like `"Device 00, port 00"`). |
-| `panelMidiInputChannelDevice`, `…OutputChannelDevice` | Default channels. |
-| `panelMidiInputFromHost`, `panelMidiOutputToHost`, `panelMidiThruH2H`/`H2D`/`D2H`/`D2D` | MIDI routing flags (host↔device thru). |
-| `luaPanel…` (many) | **Panel-level Lua callbacks**, each holds a method *name* or `"-- None"`. See `lua-api.md`. |
-| `panelGlobalVariables` | 64 colon-separated ints — the panel's global variable slots (`-1` = unset). |
-| `panelUID`, `panelInstanceUID`, `panelInstanceManufacturerID` | Identity; keep unique per panel. |
+| `name` | identity; unique, case-sensitive; what `getModulatorByName` finds |
+| `modulatorMin`, `modulatorMax`, `modulatorValue` | raw range and value |
+| `modulatorIsStatic` | `1` for labels, images, groups |
+| `vstIndex` | host parameter index; unique per panel |
+| `modulatorValueExpression` / `…Reverse` | value ↔ MIDI math (`midi-and-values.md`) |
+| `luaModulatorValueChange`, `luaModulatorGetValueForMIDI`, `luaModulatorGetValueFromMIDI` | method names or `"-- None"` |
+| `modulatorCustomIndex` | free Text slot for per-control data |
 
-> When you build a fixture, the simplest path is to copy an existing fixture's `<panel …>` line
-> wholesale and change only `name`, version/vendor/device, and any `luaPanel…` callbacks you need.
-
-## The `<modulator>` element
-
-The wrapper for one control. Key attributes (full list is large; these carry meaning):
-
-| Attribute | Meaning |
+| `<midi>` attribute | Meaning |
 |---|---|
-| `name` | Identity. Case-sensitive, unique. Lua looks it up by this. |
-| `modulatorMin`, `modulatorMax` | Raw value range (floats, e.g. `0.0`/`127.0`). |
-| `modulatorValue` | Current raw value. |
-| `modulatorIsStatic` | `1` for display-only elements (labels/images/groups) that hold no value. |
-| `vstIndex` | Host-automation parameter index. **Unique per panel**; `-1`/absent = not exported. |
-| `modulatorVstExported` | Whether this modulator is exposed to the host. |
-| `modulatorValueExpression` | value → MIDI math (default `modulatorValue`). |
-| `modulatorValueExpressionReverse` | MIDI → value math (default `midiValue`). |
-| `modulatorControllerExpression` | MIDI-learn input → value (default `value`). |
-| `luaModulatorValueChange` | Method name called when the value changes (or `"-- None"`). |
-| `luaModulatorGetValueForMIDI` | Method name: custom value→MIDI conversion. |
-| `luaModulatorGetValueFromMIDI` | Method name: custom MIDI→value conversion. |
-| `modulatorGlobalVariable` | Index of a panel global to mirror, or `-1`. |
-| `modulatorExcludeFromSnapshot`, `modulatorMute`, `modulatorMuteOnStart` | Behavior flags. |
-| `modulatorLinkedTo…` | Link this modulator's value to another modulator/property. |
+| `midiMessageType` | integer enum (`midi-and-values.md`) |
+| `midiMessageChannelOverride` | `1` = use `midiMessageChannel` in both directions; `0` = panel channel |
+| `midiMessageChannel` | 1–16, used only with the override |
+| `midiMessageCtrlrNumber` | CC / note / program number, or NRPN parameter for Multi |
+| `midiMessageCtrlrValue` | ignored for ordinary messages (the value byte is the modulator value) |
+| `midiMessageMultiList` | Multi list (long form only) |
+| `midiMessageSysExFormula` | SysEx formula |
 
-### The `<midi>` child
+| `<component>` attribute | Meaning |
+|---|---|
+| `uiType` | the widget kind (`components.md`) |
+| `componentRectangle` | `x y w h` inside its parent (group-relative for a grouped control) |
+| `componentVisibleName`, `componentLabelVisible` | the name label (drawn inside the rectangle) |
+| `componentVisibility` | `1`/`0`; what Lua should set to hide a control |
+| `componentLayerUid` | the canvas layer (see above) |
+| `componentLuaMouseDown` / `componentLuaMouseUp` | mouse callbacks for any component |
+| type-specific: `uiSliderMin`/`Max`, `uiComboContent`, `uiButtonContent`, … | look and behaviour per type |
+
+## Attribute order is behaviour
+
+CtrlrX restores a modulator's properties in file order, and some properties write the same
+target: `uiButtonContent` and `uiButtonTrueValue` both set `modulatorMax`, a slider's
+`uiSliderMax` rewrites `modulatorMax`. Which one wins depends on their order in the file.
+
+- Edit attributes in place; never sort, rebuild or re-serialize an element's attribute list in a
+  script (one script that sorted attributes flipped `modulatorMax` on every one-line button).
+- After any scripted bulk edit, load the panel in the probe before and after and diff
+  `finalState`: lint and `errorCount` do not see this kind of damage.
+
+## The `<luaManager>` block and method groups
 
 ```xml
-<midi midiMessageType="0" midiMessageChannelOverride="0" midiMessageChannel="1.0"
-      midiMessageCtrlrNumber="74.0" midiMessageCtrlrValue="0.0"
-      midiMessageMultiList="" midiMessageSysExFormula=""/>
+<luaMethod luaMethodName="doSend"
+           luaMethodCode="doSend = function(mod, value, source)&#10;&#9;console(&quot;sent&quot;)&#10;end"
+           luaMethodLinkedProperty="" luaMethodSource="0" uuid="00000000000000000000000000000013"
+           luaMethodValid="1"/>
 ```
 
 | Attribute | Meaning |
 |---|---|
-| `midiMessageType` | **Integer enum** — `0=CC, 1=Aftertouch, 2=ChannelPressure, 3=NoteOn, 4=NoteOff, 5=SysEx, 6=Multi, 7=ProgramChange, 8=PitchWheel, 9=None, 10=MidiClock, 11=MidiClockContinue, 12=MidiClockStop, 13=MidiClockStart, 14=ActiveSense`. |
-| `midiMessageChannel` | 1–16 (stored as a float like `1.0`). |
-| `midiMessageChannelOverride` | `1` to use this channel instead of the panel default. |
-| `midiMessageCtrlrNumber` | CC/note/program number. |
-| `midiMessageCtrlrValue` | **Ignored for ordinary messages** — CC/Note/Aftertouch/ChannelPressure/PitchWheel take their value byte from the modulator's current value, not from here. See `midi-and-values.md`. |
-| `midiMessageMultiList` | Sequence string for `Multi`. See `midi-and-values.md`. |
-| `midiMessageSysExFormula` | Token template for `SysEx`. See `midi-and-values.md`. |
+| `luaMethodName` | the name callbacks refer to; the inner function name must match |
+| `luaMethodCode` | the Lua, XML-escaped (absent with `luaMethodSource="1"`) |
+| `luaMethodSource` | `0` code in `luaMethodCode`; `1` code in an external file |
+| `luaMethodSourcePath` | with `1`: the file, relative to the panel's lua directory |
+| `uuid` | unique id (32 hex digits) |
+| `luaMethodValid` | `1` |
 
-### The `<component>` child
+- Methods may sit directly under `<luaManagerMethods>` or in `<luaMethodGroup>`s of your own
+  (groups may nest). **Never in `Built-In`**: CtrlrX discards that group's contents on load, so a
+  method there vanishes.
+- Group once a panel has more than a handful of methods: one group per section or feature
+  (`Osc`, `Filter`, `Env`, …), a `util` group for helpers, a `Generated` group for script-written
+  methods; keep panel-wide entry points (`panelLoaded`, `midiReceived`, the SysEx codec) at the
+  root, where readers look first.
 
-Holds the visual. **Many** attributes (every colour, the label font, effect offsets, mouse-callback
-names, plus a big block of type-specific look properties). The ones you actually set:
+## Escaping `luaMethodCode`
 
-| Attribute | Meaning |
+| Character | Escape |
 |---|---|
-| `uiType` | The component kind — `uiSlider`, `uiCombo`, `uiToggleButton`, `uiLabel`, … (see `components.md`). |
-| `componentRectangle` | `"x y w h"` — position and size on the canvas, in px. |
-| `componentVisibleName` | The label text. |
-| `componentLabelVisible` | `1`/`0` — show the name label. |
-| `componentLabelPosition` | `top`/`bottom`/`left`/`right`. |
-| `componentValueDecimalPlaces` | Decimals shown in a value readout. |
-| `componentGroupName`, `componentGroupped` | Group membership. |
-| `componentLayerUid` | Which canvas layer it's on — a hex UID matching a `<uiPanelCanvasLayer uiPanelCanvasLayerUid>` in `<uiPanelEditor>`. Layers stack by `uiPanelCanvasLayerIndex`, **higher on top** (`CtrlrPanelCanvas::compareElements`); every layer is full-canvas but, outside edit mode, passes clicks through to the layers below (`setInterceptsMouseClicks(false, true)`), so a layer used as a page needs its own opaque group. A layer saved with `uiPanelCanvasLayerVisibility="0"` starts hidden; `panel:getCanvas():getLayerByName(n):setVisible(b)` switches it at runtime. |
-| `componentLua…` (Mouse*, etc.) | Legacy per-component mouse-callback method names. |
-| type-specific, e.g. `uiSliderStyle`, `uiComboContent`, `uiImageButtonResource` | Look/behavior for that `uiType`. |
+| newline | `&#10;` |
+| carriage return | `&#13;` |
+| tab | `&#9;` |
+| `"` | `&quot;` |
+| `&` | `&amp;` |
+| `<` / `>` | `&lt;` / `&gt;` |
 
-> The `uiSliderStyle` (and similar) values are strings: `LinearHorizontal`, `LinearVertical`,
-> `LinearBar`, `Rotary`, `RotaryHorizontalDrag`, `RotaryVerticalDrag`,
-> `RotaryHorizontalVerticalDrag`, `IncDecButtons`, `TwoValueHorizontal/Vertical`,
-> `ThreeValueHorizontal/Vertical`.
+- When you write XML text yourself, run the plain Lua through `panel_tool.py escape` (it keeps
+  every byte, CR included).
+- When a script writes the panel through an XML library (`xml.etree`, lxml, JUCE), hand it the
+  **plain** Lua: the library escapes on write, and pre-escaped input comes out as `&amp;quot;`.
+- Lint after every write: a bad escape makes the file unparseable or truncates the method.
 
-## Value maps (named choices in XML)
-
-A value map turns raw values into named choices (for `uiCombo`, `uiFixedSlider`,
-`uiFixedImageSlider`). It is stored as child data of the modulator/component as an ordered set of
-entries, each pairing a *non-mapped* (raw) value with a *mapped* value and display *text*. The
-component shows the text; the processor sends the raw value. When authoring, the most reliable
-approach is to copy a value-map block from a panel that already has a working combo and edit the
-entries, rather than synthesizing the structure — the exact child element names vary by build, so
-confirm against a real example in the repo (search panels for `uiCombo` + a values list).
-
-## The `<luaManager>` block
-
-```xml
-<luaManager>
-  <luaManagerMethods>
-    <luaMethodGroup name="Built-In" uuid="49c3f79ca3dc4f868d5cfc5e48e56199">
-      <!-- CtrlrX's own utility methods only: table_dump, what, how, json4lua, debugger.lua, inspect -->
-    </luaMethodGroup>
-    <luaMethod luaMethodName="doSend"
-               luaMethodCode="doSend = function(mod, value)&#10;&#9;panel:sendMidiMessageNow(&quot;B0 0E 42&quot;)&#10;end"
-               luaMethodLinkedProperty="" luaMethodSource="0"
-               uuid="00000000000000000000000000000013" luaMethodValid="1"/>
-    <!-- a group of your own is fine too: -->
-    <luaMethodGroup name="Helpers" uuid="…">
-      <luaMethod luaMethodName="helper" luaMethodCode="helper = function() end"
-                 luaMethodLinkedProperty="" luaMethodSource="0" uuid="…" luaMethodValid="1"/>
-    </luaMethodGroup>
-  </luaManagerMethods>
-</luaManager>
-```
-
-> `<luaMethod>` elements can be organized into one or more `<luaMethodGroup>`s **or** placed directly
-> inside `<luaManagerMethods>` with no group — both are valid, and the two can mix. What matters is
-> that the method exists *somewhere* under `<luaManagerMethods>`; the group is only for organization.
-> (`panel_tool.py` finds methods either way.)
->
-> The exception is the **`Built-In`** group: it is reserved for CtrlrX's utility methods, and
-> CtrlrX 8 discards its contents on load, so a user method placed there silently disappears. Add
-> methods directly under `<luaManagerMethods>` or in a group of your own, never in `Built-In`.
-
-**Group methods once a panel has more than a handful.** The Lua method editor shows groups as
-folders, so grouping is what makes a large panel navigable. Patterns that have worked on large
-panels:
-
-- **One group per synth section or feature**, named like the panel's sections (`Osc`, `Filter`,
-  `Env1`, `Lfo`, `Fx`, `Sequence`, `Browser` …), holding that section's callbacks and its
-  update/save pair.
-- **A `util` group** for cross-cutting helpers (init patch, randomize, undo).
-- **A `Generated` group** for methods written by a script rather than by hand, so nobody edits them
-  in the GUI by mistake. A fully generated panel can keep all of them in that one group.
-- **Panel-wide entry points stay ungrouped** at the root: `panelLoaded`/`createPanel`,
-  `midiReceived`, the SysEx encoder/decoder. They are what a reader looks for first.
-
-Groups can nest. When the Lua lives in files (`luaMethodSource="1"`), mirror the groups as
-subdirectories of the lua dir (`lua/Filter/changeFlt1Freq.lua`), which is also the layout the GUI's
-"convert to files" writes. Grouping does not change behaviour except through **document order**
-(see "Method bodies run at load" below): a group's methods load where the group sits.
-
-| Attribute | Meaning |
-|---|---|
-| `luaMethodName` | The method's name — referenced by callback attributes elsewhere. |
-| `luaMethodCode` | The Lua source, **XML-escaped**, with the inner function named to match `luaMethodName`. |
-| `luaMethodLinkedProperty` | Usually empty; set when the method is bound to a specific property template. |
-| `luaMethodSource` | `0` = the code is in `luaMethodCode` (normal). `1` = the code lives in an **external `.lua` file** named by `luaMethodSourcePath`; see below. |
-| `luaMethodSourcePath` | Only with `luaMethodSource="1"`: the file holding the code, relative to the panel's lua dir (or absolute). `luaMethodCode` is then absent. |
-| `uuid` | Unique id for the method. |
-| `luaMethodValid` | `1`. |
-
-### Lua in external files — `luaMethodSource="1"`
-
-A method's code does **not** have to live inside the XML. Set `luaMethodSource="1"`, add
-`luaMethodSourcePath`, and drop `luaMethodCode` entirely:
+## Lua in external files (`luaMethodSource="1"`)
 
 ```xml
 <luaMethod luaMethodName="codec" luaMethodSourcePath="codec.lua"
            luaMethodLinkedProperty="" luaMethodSource="1" uuid="…" luaMethodValid="1"/>
 ```
 
-This is worth knowing for any panel whose Lua is large or version-controlled: the `.lua` files get
-real syntax highlighting, diffs, linting and `luac -p`, and they can be run under a plain `lua5.1`
-interpreter in a test harness — while the *shipped* panel stays self-contained (see export, below).
+- The file is looked up in `<panel path without extension>/lua/`: for `…/MyPanel.panel` that is
+  `…/MyPanel/lua/codec.lua`. An absolute path is used as is. CtrlrX resets `panelFilePath` to the
+  file being opened, so a stale path in the XML doesn't matter.
+- Export (`.bpanelz` / `.panelz`) inlines the files back into `luaMethodCode`, so the exported
+  panel needs no lua directory.
+- **A missing file is silent.** The method loads as an empty chunk and is reported valid: no
+  compile error, no load error, its globals simply `nil` until something calls them.
+  `panel_tool.py lint` reports every `luaMethodSourcePath` that doesn't resolve; run it.
+- To keep Lua in files but ship a self-contained `.panel`, inline with a script instead
+  (`workflow-lua-in-files.md`).
 
-**Where the file is looked up.** `<panelFilePath minus its extension>/lua/<luaMethodSourcePath>`,
-i.e. for `…/MyPanel.panel` the dir is `…/MyPanel/lua/`. An absolute `luaMethodSourcePath` is honoured
-as-is (`CtrlrPanel::getLuaMethodSourceFile`). The path is **relative to that lua dir, not to the
-panel file**.
+## Method code runs at load; method order is not stable
 
-**A stale `panelFilePath` in the XML does not break it.** `CtrlrManager::openPanelInternal(const
-File&)` overwrites `panelFilePath` with the file actually being opened before the panel is added, and
-`CtrlrPanel::restoreState` sets that property immediately *before* restoring the `<luaManager>` —
-there is a comment in the source saying it does so precisely to make these relative paths resolve.
-So a panel with someone else's absolute path baked in still finds its own lua dir, including under
-`CtrlrPanelProbe` (which opens via the same CLI path).
+Each method's code runs as a chunk when the panel loads, so top-level statements execute then and
+one method may define several helpers and constants. Do **not** rely on the order of methods:
+CtrlrX's exporter reorders `<luaManagerMethods>` on save, so a top-level statement that reads a
+global another method defines works in one file and breaks after the next export. Read such
+globals inside function bodies, which run after loading has finished.
 
-**Export inlines the files automatically.** `getPanelExportTree` calls
-`convertLuaMethodsToPropeties(getPanelLuaDir(), exportTree)`, so an exported `.bpanelz`/`.panelz`
-carries the code back in `luaMethodCode` and needs no lua dir. The GUI also goes the other way —
-`convertLuaMethodsToFiles` explodes an existing panel's Lua into that dir, **one file per method,
-named after the method**, in subdirectories mirroring `<luaMethodGroup>` nesting.
+## `.bpanelz`, export and resources
 
-> **Hazard: a missing file is not reported at load.** Measured with the probe — with the lua dir
-> renamed away, the panel loaded with `luaCompileErrors` **empty** and no load error; the method's
-> globals were simply `nil`, and the failure only surfaced when something called them. So a `.panel`
-> copied without its lua dir looks fine and breaks at first use. Distribute the **exported** panel,
-> and have your tooling check that every `luaMethodSource="1"` path resolves (`panel_tool.py lint`
-> does).
+- A `.bpanelz` carries **resources** (images, fonts, data) as `<resource>` nodes. An XML `.panel`
+  export drops their data, so `resources:getResource(name)` returns `nil` in a `.panel` and any
+  panel Lua that silently guards that `nil` loses its artwork. Ship artwork-bearing panels as
+  `.bpanelz`, produced by the user via File → Export.
+- An export is not the `.panel` you wrote: it records the **live** slider ranges (after Lua changed
+  them), may add newer attributes, reorders methods and keeps stale root metadata (name, author,
+  version). Verify an export by running `panel_tool.py summary` and `lint` on both files and
+  comparing, and by loading both in the probe and diffing `finalState`.
 
-### Method bodies run at load, in document order
+## Authoring checklist
 
-Each `<luaMethod>`'s code is executed as a Lua **chunk** when the panel is restored
-(`CtrlrLuaMethod::setCodeInternal` → `runCode`), and `CtrlrLuaMethodManager::restoreState` walks the
-methods in document order. Two consequences:
-
-- **Top-level statements in a method body run at panel load**, so a `<luaMethod>` is a perfectly good
-  place to define shared constants or several helper functions — it need not define a function of its
-  own name at all. (Many real panels rely on this.)
-- **Order between methods matters** for top-level code: a method whose body *reads* a global at the
-  top level must appear after the one that sets it. Reading it inside a function body instead makes
-  the ordering irrelevant — prefer that.
-
-### XML escaping for `luaMethodCode`
-
-The code is a single attribute value, so escape it:
-
-| Character | Escape |
-|---|---|
-| newline | `&#10;` |
-| tab | `&#9;` |
-| `"` | `&quot;` |
-| `&` | `&amp;` |
-| `<` | `&lt;` |
-| `>` | `&gt;` |
-
-Get the escaping wrong and the file fails XML parsing (or silently truncates the method). Always run
-the well-formedness check after writing Lua into a panel.
-
-## Minimal authoring checklist
-
-- [ ] `<panel>` root copied from a template; `name`/version/device set.
-- [ ] `<uiWindowManager/>`, `<luaManager>`, `<uiPanelEditor>` present and in order.
-- [ ] Each `<modulator>` has a unique `name` and (if exported) unique `vstIndex`.
-- [ ] Each modulator has a `<midi>` and a `<component uiType=…>`.
-- [ ] Any Lua method referenced by a callback attribute exists in `<luaManager>` with a matching
-      inner function name, properly escaped.
-- [ ] File passes an XML well-formedness check and loads in the test harness / app.
+- [ ] Root copied from the template; `name`, vendor, device, version set; channel, D2D thru,
+      global delay and `uiPanelEditMode="0"` as in the root table.
+- [ ] Element order: `<uiWindowManager/>`, `<luaManager>`, `<uiPanelEditor>`, modulators.
+- [ ] Every modulator: unique `name` and `vstIndex`, a `<midi>` and a `<component uiType=…>`,
+      a `componentLayerUid` that names a layer.
+- [ ] Every referenced Lua method exists, outside `Built-In`, with a matching inner name.
+- [ ] `panel_tool.py lint` clean; the panel loads in the probe with every control present.

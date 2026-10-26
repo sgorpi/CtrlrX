@@ -1,428 +1,237 @@
 ---
 name: ctrlrx-panel-builder
 description: >-
-  Author and edit CtrlrX panel files (.panel / .bpanelz) and their Lua by hand — building or
-  modifying the XML ValueTree directly rather than clicking around the CtrlrX GUI. Use this
-  whenever the task involves a CtrlrX panel: adding or changing a modulator (knob/slider/button/
-  combo/label), wiring a control to MIDI (CC, Note, Program Change, Pitch Bend, NRPN/RPN, 14-bit,
-  or SysEx), writing or attaching a Lua method/callback, building a value map or value expression,
-  creating a test fixture panel for the GoogleTest harness, or debugging why a hand-edited panel
-  won't load or behave. Trigger it even when the user just says ".panel file", "modulator",
-  "uiSlider/uiCombo/uiToggleButton", "SysEx formula", "Multi message list", "panel Lua", or names
-  a synth editor they want to build for CtrlrX — they almost always need this format knowledge.
+  Authors, edits, debugs and tests CtrlrX panels (.panel, .panelz, .bpanelz) and their Lua by
+  editing the panel's XML ValueTree directly instead of clicking through the CtrlrX GUI, and
+  verifies them headlessly with CtrlrPanelProbe. Use it whenever a task touches a CtrlrX or Ctrlr
+  panel: adding or changing a modulator (uiSlider, uiCombo, uiButton, uiToggleButton, uiLabel,
+  uiCustomComponent), wiring MIDI (CC, NRPN/RPN, 14-bit, Program Change, Pitch Bend, a SysEx
+  formula or a Multi message list), writing panel Lua (luaModulatorValueChange,
+  luaPanelMidiReceived, timers, paint and mouse callbacks), decoding a SysEx dump, building a value
+  map, generating a panel from a spec, building a test-fixture panel, testing a panel without
+  hardware, or finding out why a panel won't load or sends the wrong MIDI. Use it even when the
+  user only names a synth they want a CtrlrX editor for.
 ---
 
-# Building CtrlrX Panels (by editing the file)
+# Building CtrlrX panels by editing the file
 
-A CtrlrX **panel** is a JUCE `ValueTree`. The same tree is saved in four forms: `.panel` (plain
-XML), `.panelz` (gzipped XML), `.bpanelz` (a gzipped *binary* ValueTree that also embeds the
-panel's resources — images, fonts, data) and `.bpanel` (the same binary, uncompressed).
-Everything structural about a panel lives in that tree: the controls, their MIDI mappings, the value
-maps, and the Lua source.
+A CtrlrX **panel** is a JUCE `ValueTree`, saved as XML in a `.panel` file. Controls, their MIDI,
+value maps and the Lua source all live in that tree. You author the `.panel` (XML) form; the
+CtrlrX app's **File → Export** produces the `.bpanelz` that also embeds images and fonts.
 
-`scripts/panel_tool.py` **reads all four** and presents them identically, so you can inspect a
-`.bpanelz` directly instead of asking the user to export one. You still **author in the `.panel`
-(XML) form**, which is what you do when you generate panels, build test fixtures, or fix a panel
-programmatically. Producing a `.bpanelz` is still the user's job via the CtrlrX app's export —
-the XML export path drops embedded resources, so a `.panel` round-trip loses the panel's artwork.
-(The end-user GUI building workflow is documented for humans in `Doc/manual/` of the CtrlrX
-repo; you rarely need it here.)
+## Rules that prevent the most common failures
 
-## Use the bundled tool — don't read the raw XML
+Each of these has cost real panels silent wrong MIDI, lost data or a crash. Details are in the
+reference named at the end of each rule.
 
-A real `.panel` is tens of thousands of tokens of verbose XML, and a `.bpanelz` cannot be read at
-all without decoding the binary ValueTree. A bundled script, `scripts/panel_tool.py` (stdlib
-Python 3, no deps), does the token-heavy and error-prone parts for you. **`FILE` below may be any
-of `.panel`, `.panelz`, `.bpanelz` or `.bpanel`** — the tool sniffs the format and every subcommand
-behaves the same way on all of them:
+1. **Copy, don't invent.** Start a new panel from `assets/template-panel.panel`. Add a control by
+   copying a whole working `<modulator>` of the same `uiType` (`panel_tool.py dump FILE
+   modulator:NAME`) and changing only the attributes in "The panel model" below. Never rebuild or
+   sort an element's attributes: CtrlrX applies them in file order, and two attributes can write
+   the same target. (`references/panel-file-format.md`)
+2. **A modulator's own channel is ignored unless `midiMessageChannelOverride="1"`, in both
+   directions.** Without the override it sends on, and only matches incoming MIDI on, the panel's
+   `panelMidiOutputChannelDevice`, not on `panelMidiInputChannelDevice`.
+   (`references/midi-and-values.md`)
+3. **Value-change callbacks run after the setter returns** (asynchronously), so a flag set around
+   a set cannot suppress them. Choose the setter by what it does (measured):
 
-```bash
-python3 scripts/panel_tool.py summary FILE          # compact overview: each modulator's name,
-                                                   # uiType, MIDI mapping, value range, attached Lua
-python3 scripts/panel_tool.py lint    FILE          # XML well-formedness + structural checks:
-                                                   # unique names, dangling Lua refs, missing uiType,
-                                                   # duplicate vstIndex, plus MIDI wiring traps that
-                                                   # load fine but emit wrong bytes (one-line
-                                                   # uiButtonContent, 7-bit PitchWheel, ignored
-                                                   # midiMessageCtrlrValue, slider range mismatch).
-                                                   # Exit 0 = clean.
-python3 scripts/panel_tool.py escape  lua.txt      # XML-escape raw Lua for a luaMethodCode attribute
-echo 'f = function() end' | python3 scripts/panel_tool.py escape   # (or from stdin)
-python3 scripts/panel_tool.py dump FILE modulator:NAME   # one element's XML as a copy-template
-                                                   # (also: 'dump FILE editor|panel|modulators')
-                                                   # dump output is XML-escaped, so an element
-                                                   # lifted out of a .bpanelz pastes straight
-                                                   # into a .panel
-```
+   | Lua call | sends the modulator's MIDI | runs its `luaModulatorValueChange` |
+   |---|---|---|
+   | `m:setValue(v, false)` | yes, only if `v` changed | yes, later, `source` 5, only if changed |
+   | `m:setValue(v, true)` | yes, even if unchanged | yes, later, `source` 5 |
+   | `m:setValue(v, false, true)` | no (muted) | yes, later, `source` 5 |
+   | `m:setModulatorValue(v, false, false, false)` | no | yes, later, `source` 5 |
+   | `m:setModulatorValue(v, false, false, true)` | no | **never** (`ui=true` marks it "changed by program") |
+   | `m:setValue(v)` (one argument) | error "No matching overload"; the calling method is **disabled** | — |
 
-Reach for `summary` first to understand an existing panel, `dump` to lift a known-good element
-(a modulator, or the `<uiPanelEditor>` with its canvas-layer defs) as a copy-template instead of
-reading the huge raw XML, `escape` whenever you put Lua into the XML, and `lint` after every edit
-before you claim it's done.
+   A real knob turn arrives with `source` 4. To load a device dump without echoing it back, use
+   the silent `setModulatorValue(v, false, false, true)` (then run dependent updates yourself), or
+   gate the callback's send on `source == 4`. (`references/lua-api.md`)
+4. **`getName()`, `getText()` and `getPropertyString()` return a JUCE `String` userdata.**
+   `== "cutoff"` is always false, and `"" .. s` **crashes CtrlrX**. Identify a modulator by
+   `getVstIndex()` or `getProperty("name")`; read text with `getProperty(...)`.
+   (`references/lua-api.md`)
+5. **A button that triggers an action is wired on `componentLuaMouseUp`**, not on
+   `luaModulatorValueChange`. A button whose `uiButtonContent` has one line never changes value,
+   so its value-change callback never fires. Wire one of the two, never both (it fires twice).
+   (`references/components.md`)
+6. **Lua code is an XML attribute.** Escape it with `panel_tool.py escape` only when you paste
+   raw text into the XML; an XML library (ElementTree, lxml) escapes on write, and escaping first
+   gives `&amp;quot;`. The inner function name equals `luaMethodName`. Never put your methods in
+   the `Built-In` group (CtrlrX empties it on load). The language is Lua 5.1 (LuaJIT 2.1 from
+   CtrlrX 5.6.36): no `//` or `&`/`|` operators; `goto` and `bit.band` only from 5.6.36.
+   Top-level code in one method must not read another method's globals: CtrlrX's exporter
+   reorders methods. (`references/panel-file-format.md`)
+7. **Panel settings that bite:** save with `uiPanelEditMode="0"` (in edit mode a control hidden
+   through its property is only dimmed); keep `panelMidiThruD2D="0"` unless the user wants
+   device→device thru (it echoes every device message, a dump included, straight back); set
+   `panelMidiGlobalDelay="2"` when Lua sets several NRPN/Multi modulators in one go (at 0 their
+   bursts interleave on the wire). The template already has all three.
+   (`references/panel-file-format.md`)
+8. **The tree is not the screen.** Hide a control by setting its `componentVisibility` property
+   (`comp:setPropertyInt("componentVisibility", 0)`); `comp:setVisible()` changes the screen only.
+   Nothing runs a value-change callback on load, so state derived from a selector (visibility,
+   dependent ranges, labels) needs an init call from `luaPanelLoaded`.
+   (`references/lua-api.md`)
+9. **Verify, then claim.** Run `panel_tool.py lint` after every edit. Prove every behaviour claim
+   (bytes sent, callback ran, control hidden) with the probe, assert on `summary.errorCount`, and
+   run each new check once against a broken panel to see it fail: a check that never failed proves
+   nothing. (`references/verify-with-probe.md`)
+10. **Never hand-edit a generated panel**, and when Lua lives in `.lua` files the files win: edit
+    the source, then regenerate or re-inline. (`references/workflow-generated-panel.md`,
+    `references/workflow-lua-in-files.md`)
 
-## Ground truth: the CtrlrX source tree
+## Tools — run them, don't read them
 
-The reference files bundled here were distilled from a specific CtrlrX version. Formats evolve and
-builds differ, so **when a detail is missing, ambiguous, or your panel behaves unexpectedly, consult
-the user's CtrlrX source — it is the final authority.** Assume the user has the repository checked
-out; if you don't already know where it lives, **ask** ("Where's your CtrlrX source checkout?")
-rather than guessing a path. Once you know it, these are the files that answer most questions:
+All are stdlib `python3`; `--help` on each is complete. Paths are relative to this skill directory.
 
-| Question | Look in |
+| Command | Use it to |
 |---|---|
-| Exact `midiMessageType` (and other) enum integer values | `Source/MIDI/CtrlrMidiMessage.h` |
-| Property / attribute names used in the XML | `Source/Core/CtrlrIDs.h`, `CtrlrIDManager` |
-| What component types exist and their properties/defaults | `Source/UIComponents/CtrlrComponents/` |
-| Which methods/classes Lua actually exposes (the real API) | `Source/Lua/CtrlrLuaManager.cpp`, `Source/Lua/CtrlrComponentLuaRegistration.cpp`, `Source/MIDI/CtrlrMidiMessage.cpp` |
-| SysEx tokens and checksum kinds | `Source/Core/CtrlrSysexProcessor.*`, `Source/Core/CtrlrSysexToken.*` |
-| Callback hook names + their pre-filled signatures | `Source/Resources/XML/CtrlrLuaMethodTemplates.xml` |
-| Real, guaranteed-loadable panel examples to copy | `Tests/fixture_*.panel`, `Panels/` |
-| The human-facing manual (deeper GUI/Lua walkthroughs) | `Doc/manual/` |
+| `python3 scripts/panel_tool.py summary FILE` | see every modulator: name, uiType, MIDI, range, Lua. Works on all four formats. |
+| `python3 scripts/panel_tool.py dump FILE modulator:NAME` | print one element as a copy-template (also `editor`, `panel`, `modulators`). |
+| `python3 scripts/panel_tool.py lint FILE` | check structure and wiring traps. Exit 0 = no errors; read the warnings too. |
+| `python3 scripts/panel_tool.py escape lua.txt` | escape raw Lua for a `luaMethodCode` attribute (stdin with `-`). |
+| `python3 scripts/probe_harness.py run PANEL SCRIPT.json` | run the panel headlessly and print what it sent, returned and raised. |
+| `python3 scripts/png_sample.py shot.png X Y --expect rrggbb` | check one pixel of a probe screenshot. |
 
-For C/C++ navigation in the source, prefer clangd (goToDefinition / findReferences / workspaceSymbol)
-over grep when it's available — it's faster and more accurate for enums, bindings, and call sites.
+**The probe binary.** `probe_harness.py` uses `$CTRLRX_PANEL_PROBE` if set, otherwise the newest
+`build*/Tests/CtrlrPanelProbe` (or `.exe`) in a CtrlrX checkout found from the current directory
+upwards, or given with `--ctrlrx DIR`. `probe_harness.py where` shows which one it picked. If
+there is none, build it in the checkout: `cmake --build build --target CtrlrPanelProbe`.
 
-## The one model to hold in your head
+## Pick your task
 
-Everything you add to a panel is a **modulator**. A modulator is three nested pieces:
+| Task | Do | Read |
+|---|---|---|
+| New panel | checklist A | `panel-file-format.md` |
+| Add or change a control | checklist B | `components.md` |
+| Wire or fix MIDI | checklist C | `midi-and-values.md` |
+| Write or attach Lua | checklist D | `lua-api.md` |
+| Panel won't load / sends the wrong thing / a control is dead | checklist E | `verify-with-probe.md` |
+| Prove behaviour, write a regression test | checklist F | `verify-with-probe.md` |
+| Panel built by a generator, or Lua kept in `.lua` files | checklist G | `workflow-generated-panel.md`, `workflow-lua-in-files.md` |
 
-```
-<modulator ...value, range, expressions, Lua-callback names...>   ← identity + behavior
-  <midi ...message type, channel, number, value, multi/sysex... /> ← what MIDI it sends/matches
-  <component ...look, position, size... uiType="uiSlider"/>        ← the visual; uiType picks the kind
+All references are in `references/`. Copy the checklist into your notes and tick it off.
+
+**A. New panel**
+- [ ] Copy `assets/template-panel.panel`; set the root `name`, `panelVendor`, `panelDevice`.
+- [ ] Keep the template's channel (1), `uiPanelEditMode="0"`, `panelMidiThruD2D="0"`,
+      `panelMidiGlobalDelay="2"` unless the task needs otherwise.
+- [ ] Add controls with checklist B. Every modulator: unique `name`, unique `vstIndex`, a
+      `componentLayerUid` that names a layer in `<uiPanelEditor>`.
+- [ ] Lint → fix → lint until clean. Load it in the probe (no script) and check `finalState`
+      lists every control with `effectiveVisible: true`.
+
+**B. Add or change a control**
+- [ ] Pick the `uiType` (`components.md`, "Quick chooser"). Dump a same-type modulator and copy it.
+- [ ] Set `name`, `vstIndex`, `componentRectangle`, `componentVisibleName`, the range on **both**
+      the modulator (`modulatorMin`/`Max`) and a slider's component (`uiSliderMin`/`Max`).
+- [ ] Set the `<midi>` child (checklist C) or `midiMessageType="9"` for no MIDI.
+- [ ] Lint; probe a `setValue` and assert the bytes (rule 9).
+
+**C. Wire or fix MIDI**
+- [ ] `midiMessageType` is an integer: 0 CC, 3 NoteOn, 5 SysEx, 6 Multi, 7 Program Change,
+      8 PitchWheel, 9 None (full table in `midi-and-values.md`).
+- [ ] Own channel? Set `midiMessageChannelOverride="1"` (rule 2).
+- [ ] NRPN / RPN / 14-bit CC → `midiMessageType="6"` with a long-form Multi list copied from
+      `midi-and-values.md` (the short `CC,99,2 : …` form ignores its numbers); SysEx → a formula.
+      Multi modulators never update from incoming MIDI; decode replies in Lua.
+- [ ] Every SysEx frame starts with `F0` and ends with `F7`; a frame built in Lua gets no `F7`
+      added for you.
+- [ ] Probe: `setValue` → assert exact `deviceMidiOut`; `injectDeviceMidi` → assert the value moved.
+
+**D. Write or attach Lua**
+- [ ] Write the method in plain Lua; the callback's parameter list is fixed (`lua-api.md`,
+      "Callback hooks").
+- [ ] Add a `<luaMethod>` under `<luaManagerMethods>` (not in `Built-In`), escaped (rule 6), and
+      set the callback attribute to its name.
+- [ ] Check the setter table (rule 3) and the `String` rule (rule 4) against your code.
+- [ ] Lint; probe with `callLuaMethod` or `eval`; assert `errorCount` 0 and the effect.
+
+**E. Debug a panel**
+- [ ] `panel_tool.py lint` — fix every error first (the probe refuses XML that doesn't parse).
+- [ ] `panel_tool.py summary` — is the control's callback name a real method? Its channel what you
+      think (rule 2)? Its type and number right?
+- [ ] Probe a script that reproduces the symptom; read `errors`, `dialogs`, `deviceMidiOut`,
+      `disabledMethods` (`verify-with-probe.md`, "Reading a report").
+- [ ] Fix one cause, re-run the same script, and keep it as a regression check.
+
+**F. Prove behaviour**
+- [ ] One probe script per claim; assert exact bytes / values / `effectiveVisible`, and
+      `summary.errorCount == 0`.
+- [ ] Make it fail once: run it against the unfixed panel or a deliberately broken copy.
+- [ ] For timer- or callback-driven output, wait with `waitFor` on a Lua condition, not a fixed `wait`.
+
+**G. Generated panel or Lua in files**
+- [ ] Find the source of truth (spec + generator, or the `.lua` files) and edit only that.
+- [ ] Regenerate / re-inline, then lint, then run the panel's probe checks; commit source and
+      output together.
+
+## The panel model
+
+```xml
+<modulator name="cutoff" modulatorMin="0" modulatorMax="127" vstIndex="3"
+           luaModulatorValueChange="cutoffChanged" ...>      <!-- value, range, Lua names -->
+  <midi midiMessageType="0" midiMessageChannelOverride="0" midiMessageChannel="1"
+        midiMessageCtrlrNumber="74" .../>                     <!-- what it sends and matches -->
+  <component uiType="uiSlider" componentRectangle="16 16 72 96"
+             componentVisibleName="Cutoff" uiSliderMin="0" uiSliderMax="127" .../>
 </modulator>
 ```
 
-- The **modulator** carries the value, the min/max range, the value-conversion expressions, and the
-  *names* of any Lua methods attached to it.
-- The **`<midi>`** child is the MIDI message it emits (and the pattern it matches on the way in).
-- The **`<component>`** child is the on-screen widget; its `uiType` attribute (e.g. `uiSlider`,
-  `uiCombo`, `uiToggleButton`, `uiLabel`) decides which kind of control it is.
+- **`<modulator>`**: `name` (unique, case-sensitive, what Lua looks up), `modulatorMin`/`Max`/
+  `Value`, `vstIndex` (unique), value expressions, and the *names* of attached Lua methods
+  (`"-- None"` = none).
+- **`<midi>`**: `midiMessageType`, channel, `midiMessageCtrlrNumber`, plus
+  `midiMessageMultiList` (Multi) or `midiMessageSysExFormula` (SysEx). The value byte comes from
+  the modulator's value; `midiMessageCtrlrValue` is ignored for ordinary messages.
+- **`<component>`**: `uiType`, `componentRectangle` (`x y w h`), `componentVisibleName`,
+  `componentLayerUid`, type-specific look.
+- **Lua** lives once, in `<luaManager><luaManagerMethods>` near the top of the file; modulators,
+  components and the `<panel>` root refer to methods by name. In every method the globals `panel`,
+  `utils`, `timer`, `resources` are available.
 
-Lua is stored **separately** in a `<luaManager>` block near the top of the panel, and modulators
-*reference methods by name*. Keep that split in mind — it's the thing that surprises people.
+## Ground truth: the CtrlrX source
 
-## The golden rule: copy a working modulator, then change it — don't hand-write from scratch
+The references were checked against CtrlrX's source. When a detail is missing or the panel
+disagrees with them, the source of the user's CtrlrX version decides. If you have no checkout
+path, ask the user for one.
 
-A single `<modulator>` carries **dozens** of attributes (label font, every colour, effect offsets,
-VST export flags, link properties…), most with non-obvious defaults. CtrlrX is forgiving about some
-missing attributes and silently wrong about others — a panel with a malformed or partial modulator
-may fail to load, load with the control invisible, or load with surprising behavior. You will waste
-far more time inventing attributes than copying them.
+| Question | Look in |
+|---|---|
+| Enum values (`midiMessageType`, …) | `Source/MIDI/CtrlrMidiMessage.h` |
+| Property / attribute names | `Source/Core/CtrlrIDs.h` |
+| Component types and their properties | `Source/UIComponents/CtrlrComponents/` |
+| What Lua can call | `Source/Lua/CtrlrLuaManager.cpp`, `Source/Lua/CtrlrComponentLuaRegistration.cpp`, `Source/Lua/JuceClasses/` |
+| SysEx tokens and checksums | `Source/Core/CtrlrSysexProcessor.cpp`, `Source/Core/CtrlrSysexToken.*` |
+| Callback names and signatures | `Source/Resources/XML/CtrlrLuaMethodTemplates.xml` |
+| Panels guaranteed to load | `Tests/fixtures/fixture_*.panel` |
+| The probe's full schema | `Doc/PanelProbe.md` |
 
-So the reliable workflow is **duplicate-and-edit**:
+The probe is built from the checkout's source, so a green probe run does not prove a panel runs
+on an older installed CtrlrX; check bindings at the user's release tag (`git show <tag>:<file>`).
 
-1. Find a known-good modulator of the right `uiType` — in the CtrlrX repo, `Tests/fixture_*.panel`
-   are compact, guaranteed-loadable templates, and `assets/template-panel.panel` (bundled here) is a
-   minimal one-slider panel. Pick the closest match.
-2. Copy that whole `<modulator>…</modulator>` block.
-3. Change only the handful of attributes that define *your* control (see below).
-4. Give it a unique `name`, and a unique `vstIndex` / `componentLayerUid` if the format needs it.
+## Reference files
 
-Only the small set of attributes in the next sections actually encodes intent; treat the rest as
-boilerplate you carry along.
+Read the one the task needs; each starts with a table of contents.
 
-## The attributes that actually matter
+- `references/panel-file-format.md` — the XML: root attributes (routing, channels, edit mode,
+  delay), modulator / midi / component attributes, `<luaManager>`, escaping, Lua in external files,
+  load order, `.bpanelz` and export differences.
+- `references/midi-and-values.md` — message types, channels, Multi lists (14-bit, NRPN, signed
+  values, burst merging), SysEx formulas and checksums, value expressions, value maps, receiving.
+- `references/lua-api.md` — globals, `CtrlrPanel` / `CtrlrModulator` / `CtrlrComponent`, setters
+  and callbacks, sending MIDI, timers, `String` / `MemoryBlock` / `File` traps, painting.
+- `references/components.md` — the `uiType` catalogue, slider ranges, buttons, combos and value
+  maps, labels, custom components.
+- `references/verify-with-probe.md` — running the probe, actions incl. paint and mouse, reading a
+  report, dialogs and timers, edit mode, writing checks that can fail.
+- `references/workflow-generated-panel.md` — a panel generated from a spec: the loop and its guards.
+- `references/workflow-lua-in-files.md` — Lua kept in `.lua` files and inlined into the panel.
 
-When you copy a modulator, these are the ones you deliberately set. Everything else is look-and-feel
-boilerplate.
+## If this skill is wrong
 
-**On `<modulator>`:**
-- `name` — the control's identity. **Case-sensitive**, must be unique, this is what Lua's
-  `panel:getModulatorByName("…")` looks up.
-- `modulatorMin`, `modulatorMax`, `modulatorValue` — raw value range and current value (e.g.
-  `0`/`127` for a 7-bit CC, `0`/`16383` for 14-bit, `0`/`1` for a switch).
-- `modulatorValueExpression` / `modulatorValueExpressionReverse` — math applied value↔MIDI
-  (default pass-through `modulatorValue` / `midiValue`). See `references/midi-and-values.md`.
-- `luaModulatorValueChange`, `luaModulatorGetValueForMIDI`, `luaModulatorGetValueFromMIDI` — the
-  **name** of a Lua method to call, or `"-- None"` for none. The method must exist in `<luaManager>`.
-
-**On `<midi>`:**
-- `midiMessageType` — an **integer** enum (this trips people up):
-  `0=CC, 1=Aftertouch, 2=ChannelPressure, 3=NoteOn, 4=NoteOff, 5=SysEx, 6=Multi, 7=ProgramChange,
-  8=PitchWheel, 9=None`, then `10=MidiClock, 11=MidiClockContinue, 12=MidiClockStop,
-  13=MidiClockStart, 14=ActiveSense`.
-- `midiMessageChannel` — 1–16.
-- `midiMessageCtrlrNumber` — CC number / note number / program number.
-- `midiMessageCtrlrValue` — **not** the value byte of an ordinary message, despite the name. For
-  CC / NoteOn / NoteOff / Aftertouch / ChannelPressure / PitchWheel, CtrlrX builds the message from
-  the **modulator's current value** (`getValue()`) and never consults this attribute
-  (`CtrlrMidiMessage.cpp:1004-1019`). You therefore *cannot* give a trigger button a fixed velocity
-  by setting `midiMessageCtrlrValue="100"` — a `0..1` button still emits velocity 0 or 1. To send a
-  fixed value byte, set `midiMessageType="9"` and emit the message from Lua.
-- `midiMessageMultiList` — the sequence string for `Multi` type.
-- `midiMessageSysExFormula` — the byte-template string for `SysEx` type.
-
-**On `<component>`:**
-- `uiType` — which widget (`uiSlider`, `uiCombo`, `uiToggleButton`, `uiLabel`, …). See
-  `references/components.md`.
-- `componentRectangle` — `"x y w h"` position and size on the canvas.
-- `componentVisibleName` — the label text shown to the user.
-- type-specific look (e.g. `uiSliderStyle`) — copy/adjust from a same-`uiType` template.
-
-## Lua: stored once, referenced by name
-
-Lua methods do **not** live on the modulator. They live in the panel's `<luaManager>` block:
-
-```xml
-<luaManager>
-  <luaManagerMethods>
-    <luaMethodGroup name="Built-In" uuid="…">
-      <!-- CtrlrX's own utility methods (table_dump, what, how, json4lua, …) -->
-    </luaMethodGroup>
-    <luaMethod luaMethodName="cutoffChanged"
-               luaMethodCode="cutoffChanged = function(mod, value)&#10;&#9;console(value)&#10;end"
-               luaMethodLinkedProperty="" luaMethodSource="0" uuid="…" luaMethodValid="1"/>
-  </luaManagerMethods>
-</luaManager>
-```
-
-Methods can be grouped under one or more `<luaMethodGroup>` elements, **or** placed directly inside
-`<luaManagerMethods>` with no group at all — both are valid and can coexist. The group is just
-organization; what matters is that the method exists somewhere under `<luaManagerMethods>`.
-**Never put your own methods in the `Built-In` group**: it holds CtrlrX's utility methods, and
-CtrlrX 8 discards that group's contents when it loads a panel, so a method there silently
-vanishes. Add new methods directly under `<luaManagerMethods>` (or in a group of your own), and
-move any user method you find in `Built-In` out of it. On anything beyond a small panel, group
-methods by section or feature so the method editor stays navigable; follow the panel's existing
-groups when adding to one (conventions in `references/panel-file-format.md`).
-
-Two rules that bite if you forget them:
-
-1. **The code is an XML attribute, so it must be XML-escaped.** Newline → `&#10;`, tab → `&#9;`,
-   `"` → `&quot;`, `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`. The body is one long escaped string.
-   Don't escape by hand — write the Lua plainly and run it through
-   `python3 scripts/panel_tool.py escape` to get the attribute-ready string.
-2. **The inner `function` name must match `luaMethodName`.** The code reads
-   `cutoffChanged = function(...)`, and the modulator references it as
-   `luaModulatorValueChange="cutoffChanged"`. All three names are the same string. A callback
-   attribute set to a method name that doesn't exist in `<luaManager>` simply never fires.
-
-To attach a method to a control: add the `<luaMethod>` to `<luaManager>`, then set the right
-callback attribute on the modulator (or `<component>`, or the `<panel>` root) to that method's name.
-
-CtrlrX embeds **Lua 5.1** (1-based arrays, `..` for concat). Inside any method you get ready-made
-globals: `panel`, `utils`, `timer`, `devices`, `resources`. The callback's parameter list is fixed
-per callback type — don't change it. Full API and the callback catalogue: `references/lua-api.md`.
-
-## Typical workflow for an edit
-
-1. **Read the target panel** and locate the `<modulator>`s, the `<luaManager>`, and the `<panel>`
-   root attributes — use `panel_tool.py summary`/`dump`, which handle `.bpanelz` and `.panelz` as
-   readily as `.panel`. (A `.bpanelz` is *not* gzipped XML: it is a gzipped binary ValueTree, so
-   gunzip alone gets you nothing readable.)
-2. **Plan the change** in terms of the model above: new modulator? change a MIDI mapping? add Lua?
-3. **Copy a template** modulator/method of the right kind and edit only the meaningful attributes.
-4. **Keep names and IDs unique** (`name`, and `vstIndex`/`uuid`/`componentLayerUid` where present).
-5. **Verify it loads** before claiming done (next section). A panel that won't load is the #1
-   failure mode of hand-editing.
-
-## Verify — never assume a hand-edited panel is valid
-
-Two cheap checks, in order:
-
-1. **Lint** — `python3 scripts/panel_tool.py lint your.panel`. This catches the common hand-edit
-   failures: malformed XML (usually mis-escaped Lua), a callback pointing at a Lua method that
-   doesn't exist, a missing `uiType`, duplicate modulator names, or a duplicate `vstIndex`. It also
-   warns about MIDI wiring that loads happily but emits the wrong bytes — a one-line
-   `uiButtonContent`, a PitchWheel left at 7-bit range, a `midiMessageCtrlrValue` that will be
-   ignored, a slider whose component range disagrees with its modulator range. Exit 0 means no
-   *errors*; read the warnings, they are usually real. 
-2. **It actually loads in CtrlrX.** In the CtrlrX repo the GoogleTest harness is the fastest loader:
-   the `ProcessorInstance` fixture loads a `.panel` and you can assert on it (e.g. modulator count,
-   that a control exists, that moving it emits the expected MIDI). See `Tests/test_ProcessorPanel.cpp`
-   and `Tests/test_ProcessorFixture.h`. Build/run with `./test.sh && ./build/Tests/TestsProcessor`.
-   Outside the repo, load the panel in the Standalone app and confirm the controls appear and respond.
-
-Report what you actually verified — "XML is well-formed and it loads with N modulators" beats "looks
-right".
-
-### Verifying *behavior* (not just loading) — `CtrlrPanelProbe`
-
-Lint + load prove the panel is well-formed, not that it *works*. Dead button wiring, a slider that
-clamps silently, a `luaModulatorValueChange` that never fires, a SysEx formula that emits the wrong
-bytes — all pass lint and load fine. To catch those without hardware, use the headless probe (in
-the CtrlrX repo, on the `headless-panel-runner`/`basic_test_coverage` branch line):
-
-```bash
-cmake --build build --target CtrlrPanelProbe -j 12
-
-cat > check.json <<'EOF'
-{ "settleMs": 300, "steps": [
-  { "action": "setValue", "modulator": "cutoff", "value": 100 },
-  { "action": "click",    "modulator": "fetchBtn" }
-] }
-EOF
-./build/Tests/CtrlrPanelProbe your.panel check.json
-```
-
-It loads the panel, rebinds its MIDI to mock devices, runs the action script, and prints a JSON
-report: per-step `deviceMidiOut` / `hostMidiOut` (hex bytes actually emitted), `errors`, and a
-`finalState` snapshot of every modulator. Actions: `setValue` (drives the real GUI wiring, so MIDI +
-value-change Lua fire), `click`, `injectDeviceMidi`, `injectHostMidi`, `callLuaMethod`, `eval`,
-`waitFor`, `screenshot`, `setLayerVisible`, `wait`. Exit `0` clean / `1` an error occurred / `2` load
-or script failure. It **reports observations; you assert** — e.g. "step 0 `deviceMidiOut` should
-contain `b0 4a 64`". Empty `deviceMidiOut` after a `setValue` means the control's MIDI wiring is
-dead.
-
-**`setValue` bypasses the component's own range**, so emitted bytes alone cannot prove a range is
-right: a `uiSlider` limited to 0..127 driving a PitchWheel still emits `ef 7f 7f` when the script
-sets 16383, even though a user could never turn the knob past 1/128 of the bend. Assert the declared
-range separately — `eval` back `modulatorMax` and `uiSliderMax` — whenever the range is the thing
-under test. Full schema + worked example: **`Tests/PanelProbe.md`** in the repo — read it, the notes here
-are only the highlights.
-
-**A `uiCombo` sends its MIDI *twice* under `setValue`** — expect the doubled stream, do not report it
-as a panel bug. `CtrlrCombo::setComponentValue` (`CtrlrCombo.cpp`) calls
-`ctrlrCombo->setSelectedId(v + 1, sendNotificationSync)` and *then* `setValueGeneric(…changedByGUI)`.
-Entered from the API with a **changed** id, `setSelectedId` synchronously re-enters `comboBoxChanged`,
-which calls `setComponentValue` and sends; the outer call then sends again. A real user click enters at
-`comboBoxChanged` with the id already current, so JUCE fires nothing and only one send happens. The two
-identical `MidiBuffer`s merge by sample index, so the bytes arrive *interleaved*
-(`b0 63 00  b0 63 00  b0 62 01  b0 62 01  …`), not as two clean bursts. Sliders and buttons emit once.
-Collapse runs of byte-identical consecutive messages before asserting; that undoes exactly this and
-leaves a genuine double-fire (two *different* values) visible.
-
-**Assert on `summary.errorCount`.** Reports carry `"reportVersion": 1`. Every failure — an action the
-probe could not perform, a Lua method that threw, a method that failed to compile — lands in one
-array, `steps[i].errors = [{type: "action"|"lua", message}]`, and `summary.errorCount` totals all of
-them. (Older probe versions split these across `step.error` / `step.luaErrors` with a `summary.luaErrorCount`
-that excluded step errors, so a test checking one number passed vacuously while the method it called
-threw on every call. If you meet a report with no `reportVersion`, that is the old shape.)
-
-`callLuaMethod` reports the method's return value as `steps[i].returnValue` **with or without `args`**
-— no dummy argument needed — and `args` may contain nested arrays/objects, which arrive as Lua tables.
-
-**Reading panel internals: use `eval`, not an injected scratch method.**
-`{ "action": "eval", "lua": "return codec.get(img, 'filters.speed')" }` runs the chunk in the panel's
-own `lua_State`, so module tables and globals are directly readable; the result converts to JSON
-(Lua tables → arrays when keyed `1..n`, else objects). The chunk is tried as an expression first, so
-a bare call yields its value. This retires the old "inject a throwaway `<luaMethod>` into a scratch
-copy of the panel" trick for probing bindings — do it with `eval` instead.
-
-**`settleMs` is a ceiling, not a floor.** Settling stops as soon as the panel has been quiet
-(no MIDI, no log line) for `quietMs` (default 30). Both are settable per action as well as
-script-wide. Use `wait` (a true floor) or `waitFor` (polls a Lua condition) for async flows.
-
-**Verifying a `uiCustomComponent`'s paint headlessly.** The panel's component tree *is* built and
-laid out under the probe (there is no window, but `getCanvas()` is not null), so the simplest check
-is `{ "action": "screenshot", "file": "out.png" }` — it renders the canvas via
-`createComponentSnapshot` and writes a real PNG you can look at.
-
-**`repaint()` is inert under the probe, and it reports no error.** With a counter inside the paint
-callback, `comp:repaint()` followed by a 600 ms wait leaves the count at **0**; each `screenshot`
-raises it by exactly **1**. `repaint()` only marks the component dirty for a message loop that never
-runs headlessly, while `createComponentSnapshot` paints synchronously. The step returns normally and
-`summary.errorCount` stays 0 — so a test that drives state, calls `repaint()` and then asserts on a
-paint side effect **passes vacuously, for ever**. Paint via `screenshot` or the offscreen `Graphics`
-recipe below, never via `repaint()`.
-
-**`click` cannot drive a drawing surface.** It reaches a `uiCustomComponent`'s
-`uiCustomMouseDownCallback`, but the probe builds *every* click at the component's dead centre
-(`makeClickEvent`, `probe_Main.cpp`) and has **no drag action at all** — measured on a 1400x530
-component: one `click` delivered 1 mouseDown at exactly `(w/2, h/2)` and 0 drags. So `click` proves
-the wiring is live and nothing more. **Put a drawing surface's hit-testing and edit logic in pure
-functions over plain numbers**, with the `uiCustom*` callbacks as thin wrappers that read `e.x`/`e.y`
-and call them; then drive the core with coordinates through `eval`/`callLuaMethod` (and, being pure,
-under a bare `lua5.1` too).
-
-To assert on specific pixels instead, drive the callback against real JUCE bindings with `eval`,
-building a `Graphics` over an offscreen image:
-
-```lua
-local comp = panel:getModulatorByName("my_canvas"):getComponent()
-local img  = Image(Image.ARGB, comp:getWidth(), comp:getHeight(), true)
-local g    = Graphics(img)                      -- Graphics has a constructor<Image&>
-myPaintCallback(comp, g)                        -- the shipped callback, unmodified
-return string.format("%08x", img:getPixelAt(x, y):getARGB())
-```
-
-This catches a wrong `Graphics` overload or a nil glyph table, which lint and a plain load both miss.
-
-**Overlapping components.** A custom component paints over whatever it overlaps and clips it
-silently. `finalState.overlaps` now reports intersecting pairs of effectively-visible controls, so
-you no longer need to hand-roll a clearance check in a generator — but note it uses
-`canvasRectangle` (absolute), *not* `componentRectangle`, which is `getBoundsInParent()` and
-therefore group-relative for a grouped control.
-
-**Visibility has three fields**, and the one you usually want is `effectiveVisible` (the component
-and every ancestor up to the canvas). `visible` is only the `componentVisibility` tree property,
-which a Lua `comp:setVisible(false)` never writes; `liveVisible` is the component's own flag.
-All three are absent when a component was never parented — which happens silently whenever its
-`componentLayerUid` matches no `uiPanelCanvasLayerUid`, a real hazard in hand-built panels.
-
-**Make panel Lua headlessly testable: split dialogs from work.** Anything behind a modal dialog
-(`utils.openFileWindow`, `askForTextInputWindow`) cannot run in the probe. Put the dialog in a thin
-wrapper and the real work in a function taking plain scalars, then drive the worker with
-`callLuaMethod`:
-
-```lua
-savePresetTo = function(path)        -- worker: testable, returns a status string
-    ...
-    return "ok " .. #frame
-end
-savePreset = function()              -- wrapper: dialog only, not covered by tests
-    local f = utils.saveFileWindow("Save", File(""), "*.syx", true)
-    if f:isValid() then savePresetTo(f:getFullPathName()) end
-end
-```
-
-This buys a real assertion — the probe exercises CtrlrX's actual Lua VM, its real `File`/`MemoryBlock`
-bindings, and the SysEx the panel truly emitted — rather than a simulation of them.
-
-**Probing a binding's behaviour.** To settle what a JUCE wrapper actually does (overload picked,
-0- vs 1-based, append vs replace), inject a throwaway `<luaMethod>` returning `type(x)` or a size into
-a *scratch copy* of a panel and call it with `callLuaMethod`. Faster and more reliable than reading
-luabind overload-resolution rules — that is how the traps in `references/lua-api.md` were established.
-
-## Keep this skill current (self-evolution)
-
-This skill is a living distillation, not a frozen document. When a session uncovers **durable,
-generally-useful** knowledge about building CtrlrX panels that the skill is missing or gets wrong,
-fold it back in before the learning evaporates — a future session (and the user) benefit from it.
-
-**What qualifies** (capture it):
-- A corrected fact — an enum value, attribute name, default, or behavior that turned out different
-  from what a reference here says.
-- A newly-learned format detail, token, callback, or gotcha that applies across panels.
-- A reusable authoring pattern you had to work out (e.g. the right way to structure a particular
-  control or wire a particular callback).
-- A repeatable *mechanical* check or transform — that belongs in `scripts/panel_tool.py` as a new
-  subcommand or check, so it's done by code next time, not re-derived.
-
-**What does NOT qualify** (leave it out — it would just bloat the skill):
-- One-off specifics of a single panel or a single device's SysEx implementation.
-- Task trivia, file paths, or anything tied to one conversation.
-
-**How to fold it in:**
-1. **Confirm it against the source tree** first (see *Ground truth* above) — the skill should encode
-   verified facts, not guesses. The user's build is the authority.
-2. Put it in the **most specific place**: the relevant `references/*.md`, or this SKILL.md only if it
-   changes the core model/workflow, or `scripts/panel_tool.py` if it's a mechanical check. Prefer
-   *correcting existing text* over appending a new note that says the opposite.
-3. Keep it lean. If you add something, see whether something stale should be removed or merged —
-   the value of this skill is in being concise and correct, not exhaustive.
-4. **Tell the user** what you changed and why, so they can veto or refine it.
-
-Treat this the way you'd treat keeping a good README accurate: small, well-placed, verified edits as
-you learn — not a changelog, and not speculative additions.
-
-## Reference files (read the one you need)
-
-- `references/panel-file-format.md` — full XML anatomy: the `<panel>` root attributes, the
-  `<modulator>`/`<midi>`/`<component>` triad in detail, value maps in XML, resources, the
-  `<luaManager>` schema, escaping, and the `.bpanelz` format. Read this when building a panel from
-  scratch or when a panel won't load.
-- `references/midi-and-values.md` — the message-type enum in depth, CC/Note/PC mappings, the **Multi
-  Message list** syntax (14-bit, NRPN/RPN), the **SysEx formula** token language (checksums, value
-  splits, Lua tokens), value expressions, and value maps. Read this for anything MIDI.
-- `references/lua-api.md` — the Lua API surface panel authors use: globals, `CtrlrPanel`,
-  `CtrlrModulator`, `CtrlrComponent`, `CtrlrMidiMessage`, sending MIDI, and the full **callback
-  hook** catalogue with signatures and the `source` enum (avoiding feedback loops). Read this for
-  any Lua work.
-- `references/components.md` — the `uiType` catalogue: every component kind, what it's for, and which
-  are *static* (hold no value / send no MIDI). Read this when choosing a control.
-- `assets/template-panel.panel` — a minimal, known-good one-slider panel to copy from.
-
-These references capture a snapshot; if one disagrees with the user's build, the **source tree wins**
-(see *Ground truth* above).
+Don't edit the skill during a task. When something here contradicts what you measured, say so in
+your answer: what the skill says, what you observed, and the probe script or source line that
+shows it.

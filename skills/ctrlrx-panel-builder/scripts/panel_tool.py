@@ -9,9 +9,17 @@ still XML-only: see the note at the end. Subcommands:
   summary  FILE              Compact, token-cheap overview of a panel (use this instead of
                              reading the raw XML, which is huge).
   lint     FILE              Well-formedness + structural checks (unique names, dangling Lua
-                             references, missing uiType, duplicate vstIndex). Exit 0 = clean.
+                             references, unresolved luaMethodSourcePath, missing uiType,
+                             duplicate vstIndex) + warnings for MIDI and Lua-binding traps that
+                             load fine but misbehave, Lua syntax CtrlrX doesn't compile (goto
+                             before 5.6.36, //, bitwise operators) and literal SysEx without F7.
+                             Lua comments and strings are ignored. Exit 0 = no errors (read
+                             the warnings); exit 1 = errors, one per line.
   escape   [FILE|-]          XML-escape raw Lua so it can go into a luaMethodCode attribute.
-                             Reads stdin if FILE is '-' or omitted.
+                             Reads stdin if FILE is '-' or omitted. Bytes are kept verbatim
+                             (CR -> &#13;). Only for text you paste into the XML yourself: an
+                             XML library (ElementTree, lxml) escapes on write, so escaping
+                             first double-escapes (&amp;quot;).
   dump     FILE SELECTOR     Print one element's XML (one attribute per line) so it can be
                              used as a copy-and-edit template instead of reading the raw file.
                              SELECTOR: 'editor' (the <uiPanelEditor>, incl. layer defs),
@@ -334,11 +342,109 @@ def cmd_summary(path):
 _MB_SIZED_CTOR = re.compile(r"\bMemoryBlock\(\s*(?![\){])")
 _SETSIZE_1ARG = re.compile(r":setSize\(\s*[^,()]+\)")
 _GETNAME_TEXT = re.compile(r"getName\(\)\s*(\.\.|==|~=)|(\.\.|==|~=)\s*\w+:getName\(\)")
+# Syntax CtrlrX's Lua doesn't compile. CtrlrX runs the Lua 5.1 language: plain Lua 5.1 up to
+# 5.6.35, LuaJIT 2.1 from 5.6.36 (which adds goto and the `bit` library, not 5.3 operators).
+_POST_51 = [
+    (re.compile(r"\bgoto\b|::[A-Za-z_]\w*::"),
+     "goto / ::label:: compiles only on CtrlrX 5.6.36+ (LuaJIT); older CtrlrX (Lua 5.1) "
+     "rejects the method"),
+    (re.compile(r"//"),
+     "integer division // is Lua 5.3: no CtrlrX compiles it; use math.floor(a / b)"),
+    (re.compile(r"<<|>>|&|\|"),
+     "bitwise operators are Lua 5.3: no CtrlrX compiles them; use bit.band/bor/lshift/rshift "
+     "(CtrlrX 5.6.36+) or arithmetic"),
+]
+# A MIDI message built from a literal: a byte table or a hex string.
+_MIDI_TABLE = re.compile(r"\b(?:CtrlrMidiMessage|sendMidiMessageNow)\s*\(\s*\{([^{}]*)\}")
+_MIDI_HEX = re.compile(r"\b(?:CtrlrMidiMessage|sendMidiMessageNow)\s*\(\s*(['\"])([0-9A-Fa-f\s,]+)\1")
+_LONG_BRACKET = re.compile(r"\[(=*)\[")
+
+
+def lua_strip(code, keep_strings=False):
+    """The code with comments (and, unless keep_strings, string contents) blanked out.
+
+    Blanked characters become spaces and newlines are kept, so positions don't move. Enough of
+    Lua's lexer for linting: short strings with escapes, long brackets [[ ]] / [==[ ]==], and
+    -- / --[[ ]] comments."""
+    out, i, n = [], 0, len(code)
+
+    def blank(s):
+        return re.sub(r"[^\n]", " ", s)
+
+    def long_end(m):
+        close = "]" + m.group(1) + "]"
+        end = code.find(close, m.end())
+        return (n, n) if end < 0 else (end, end + len(close))
+
+    while i < n:
+        c = code[i]
+        if code.startswith("--", i):
+            m = _LONG_BRACKET.match(code, i + 2)
+            if m:
+                end = long_end(m)[1]
+            else:
+                end = code.find("\n", i)
+                end = n if end < 0 else end
+            out.append(blank(code[i:end]))
+            i = end
+            continue
+        m = _LONG_BRACKET.match(code, i)
+        if m or c in "'\"":
+            if m:
+                body_start, (body_end, end) = m.end(), long_end(m)
+            else:
+                j = i + 1
+                while j < n and code[j] != c and code[j] != "\n":
+                    j += 2 if code[j] == "\\" else 1
+                end = min(j + 1, n)
+                body_start, body_end = i + 1, max(i + 1, end - 1)
+            if keep_strings:
+                out.append(code[i:end])
+            else:
+                out.append(code[i:body_start] + blank(code[body_start:body_end])
+                           + code[body_end:end])
+            i = end
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _byte_value(tok):
+    tok = tok.strip()
+    try:
+        return int(tok, 16) if tok.lower().startswith("0x") else int(tok)
+    except ValueError:
+        return None  # a variable or an expression
+
+
+def unterminated_sysex(code):
+    """Literal SysEx messages (byte tables or hex strings) that start with F0 but don't end
+    with F7. Pass code with comments stripped and strings kept."""
+    bad = []
+    for m in _MIDI_TABLE.finditer(code):
+        items = [t for t in m.group(1).split(",") if t.strip()]
+        if items and _byte_value(items[0]) == 0xF0 and _byte_value(items[-1]) != 0xF7:
+            bad.append("{" + " ".join(m.group(1).split()) + "}")
+    for m in _MIDI_HEX.finditer(code):
+        hexs = m.group(2).replace(",", " ").split()
+        if hexs and hexs[0].lower() == "f0" and hexs[-1].lower() != "f7":
+            bad.append('"' + " ".join(hexs) + '"')
+    return bad
 
 
 def lua_binding_traps(code):
-    """Warn about Lua that compiles and loads but misbehaves at runtime."""
+    """Warn about Lua that passes lint and loads (or looks like it would) but misbehaves.
+    Comments and string contents are ignored, so a trap mentioned in a comment doesn't fire."""
     out = []
+    with_strings = lua_strip(code, keep_strings=True)
+    code = lua_strip(code)
+    for rx, what in _POST_51:
+        if rx.search(code):
+            out.append(what)
+    for frame in unterminated_sysex(with_strings):
+        out.append(f"SysEx {frame[:60]} does not end with F7 -- nothing appends it, and real "
+                   "MIDI drivers drop an unterminated frame")
     if _MB_SIZED_CTOR.search(code):
         out.append("MemoryBlock(x) with an argument -- if x is a number luabind picks the "
                    "table constructor and you get an EMPTY block; use MemoryBlock(n, true), "
@@ -467,15 +573,16 @@ def attr_escape(text):
     to stay pasteable into a .panel.
     """
     out = _xml_escape(text, {'"': "&quot;"})
-    return (out.replace("\t", "&#9;").replace("\r\n", "&#10;")
-               .replace("\n", "&#10;").replace("\r", "&#10;"))
+    # Keep every byte: a CR (CRLF files, lone CRs) round-trips as &#13;, not as a newline.
+    return (out.replace("\t", "&#9;").replace("\r", "&#13;").replace("\n", "&#10;"))
 
 
 def cmd_escape(path):
+    # newline="" / the raw buffer: no newline translation, so CRLF and lone CR survive.
     if path in (None, "-"):
-        raw = sys.stdin.read()
+        raw = sys.stdin.buffer.read().decode("utf-8")
     else:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8", newline="") as f:
             raw = f.read()
     sys.stdout.write(attr_escape(raw))
     return 0
@@ -538,6 +645,9 @@ def main(argv):
         print(__doc__)
         return 2
     cmd, args = argv[1], argv[2:]
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
     try:
         if cmd == "summary":
             return cmd_summary(args[0])

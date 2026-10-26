@@ -16,8 +16,10 @@ g.check("panel_tool lint passes", lambda: g.lint(P))
 
 
 def run_mode_copy():
-    """Visibility is judged as a user sees the panel: in run mode. The input is saved in edit
-    mode, where CtrlrX only dims a control hidden via its componentVisibility property."""
+    """Probe a copy saved in run mode, so the verdict doesn't depend on the probe's edit-mode
+    default. The input is saved in edit mode; probes that load it as saved only dim a control
+    hidden via its componentVisibility property. Current probes run in run mode anyway, so the
+    copy only matters for older probe builds."""
     with open(g.path(P), encoding="utf-8") as f:
         xml = re.sub(r'uiPanelEditMode="1"', 'uiPanelEditMode="0"', f.read(), count=1)
     path = os.path.join(g.run_dir, "fx.run-mode.panel")

@@ -159,7 +159,8 @@ def clean(report):
 def messages(report, *step_indexes, collapse=True):
     """Device MIDI out of the given steps as a list of normalised message strings. The byte
     stream is re-split on status bytes (SysEx kept whole), and runs of byte-identical
-    consecutive messages are collapsed (undoes the uiCombo double send, see SKILL.md)."""
+    consecutive messages are collapsed (undoes the uiCombo double send, see
+    references/verify-with-probe.md)."""
     raw = []
     for i in step_indexes:
         for m in report["steps"][i]["deviceMidiOut"]:

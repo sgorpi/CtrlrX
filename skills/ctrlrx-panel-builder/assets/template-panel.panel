@@ -8,17 +8,17 @@
        panelExportPublicKey="" panelExportServerAuthURL="https://localhost:8000/auth/authenticate"
        panelMidiSnapshotAfterLoad="0" panelMidiSnapshotAfterProgramChange="0"
        panelMidiSnapshotDelay="10.0" panelMidiSnapshotShowProgress="0"
-       panelMidiInputDevice="-- None" panelMidiInputChannelDevice="2"
-       panelMidiControllerDevice="-- None" panelMidiControllerChannelDevice="3"
-       panelMidiOutputDevice="Device 00, port 01" panelMidiOutputChannelDevice="4"
+       panelMidiInputDevice="-- None" panelMidiInputChannelDevice="1"
+       panelMidiControllerDevice="-- None" panelMidiControllerChannelDevice="1"
+       panelMidiOutputDevice="Device 00, port 01" panelMidiOutputChannelDevice="1"
        panelMidiInputFromHost="1" panelMidiInputChannelHost="0" panelMidiInputFromHostCompare="1"
        panelMidiOutputToHost="1" panelMidiOutputChannelHost="1" panelMidiThruH2H="1"
        panelMidiThruH2HChannelize="0" panelMidiThruH2D="1" panelMidiThruH2DChannelize="0"
-       panelMidiThruD2H="1" panelMidiThruD2HChannelize="0" panelMidiThruD2D="1"
+       panelMidiThruD2H="1" panelMidiThruD2HChannelize="0" panelMidiThruD2D="0"
        panelMidiThruD2DChannelize="0" panelMidiRealtimeIgnore="0" panelMidiInputThreadPriority="7.0"
        panelMidiProgram="0" panelMidiBankLsb="0" panelMidiBankMsb="0"
        panelMidiSendProgramChangeOnLoad="0" panelMidiProgramCalloutOnprogramChange="0"
-       panelMidiMatchCacheSize="32.0" panelMidiGlobalDelay="0" panelMidiPauseOut="0"
+       panelMidiMatchCacheSize="32.0" panelMidiGlobalDelay="2" panelMidiPauseOut="0"
        panelMidiPauseIn="0" panelOSCEnabled="0" panelOSCPort="-1" panelOSCProtocol="0"
        luaPanelMidiChannelChanged="-- None" luaPanelMidiReceived="-- None"
        luaPanelMidiMultiReceived="-- None" luaPanelLoaded="-- None"
@@ -61,7 +61,7 @@
     </luaManagerMethods>
   </luaManager>
   <panelResources/>
-  <uiPanelEditor uiPanelCanvasRectangle="0 0 600 400" name="Test Panel" uiPanelEditMode="1"
+  <uiPanelEditor uiPanelCanvasRectangle="0 0 600 400" name="Test Panel" uiPanelEditMode="0"
                  uiViewPortWidth="1048" uiViewPortHeight="512" uiPanelLock="0"
                  uiPanelDisabledOnEdit="0" uiPanelMenuBarVisible="1" uiPanelMenuBarHideOnExport="0"
                  uiPanelProgramsMenuHideOnExport="0" uiPanelMidiControllerMenuHideOnExport="0"
@@ -97,7 +97,7 @@
              modulatorCustomIndexGroup="0" modulatorCustomNameGroup="" modulatorVstNameFormat="%n"
              luaModulatorValueChange="-- None" name="test-modulator-1" modulatorMin="0.0"
              modulatorMax="127.0" modulatorValue="0.0">
-    <midi midiMessageType="0" midiMessageChannelOverride="0" midiMessageChannel="2.0"
+    <midi midiMessageType="0" midiMessageChannelOverride="0" midiMessageChannel="1.0"
           midiMessageCtrlrNumber="3.0" midiMessageCtrlrValue="0.0" midiMessageMultiList=""
           midiMessageSysExFormula=""/>
     <component componentVisibility="1" componentSentBack="0" componentMouseCursor="2"
