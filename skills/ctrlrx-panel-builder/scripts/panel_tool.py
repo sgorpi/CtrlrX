@@ -25,6 +25,11 @@ still XML-only: see the note at the end. Subcommands:
                              SELECTOR: 'editor' (the <uiPanelEditor>, incl. layer defs),
                              'panel' (root open tag attributes only), 'modulator:NAME'
                              (a modulator by name), or 'modulators' (list names + uiType).
+  xml      FILE OUT.panel    Write any panel format as an XML .panel you can edit (attribute
+                             order kept). The way to edit a .bpanelz / .panelz / .bpanel: never
+                             save decompressed bytes as .panel, they are not XML. Reports how
+                             many <resource> nodes (images, fonts) the file has; re-attach
+                             those in CtrlrX before exporting a .bpanelz again.
 
 Note: .bpanelz is not gzipped XML — it is a gzipped *binary* JUCE ValueTree, and it also
 embeds the panel's resources (images, fonts) as base64 in <resource> nodes, which the XML
@@ -194,7 +199,8 @@ def parse_bytes(data, path="<data>"):
     if data[:2] == b"\x1f\x8b" or data[:1] == b"\x78":  # .panelz / .bpanelz
         data = _inflate(data)
     if data.lstrip()[:1] == b"<":  # plain or decompressed XML
-        return ET.fromstring(data.lstrip().lstrip(b"\xef\xbb\xbf"))
+        # some .panelz end in a NUL after </panel>; CtrlrX ignores it, ElementTree doesn't
+        return ET.fromstring(data.lstrip().lstrip(b"\xef\xbb\xbf").rstrip(b"\0"))
     try:
         root = _read_tree(_Stream(data))
     except ValueError as exc:
@@ -640,6 +646,17 @@ def cmd_dump(path, selector):
     return 2
 
 
+def cmd_xml(path, out):
+    root = parse(path)
+    if os.path.abspath(out) == os.path.abspath(path):
+        raise ValueError(f"{out}: refusing to overwrite the input; write to a new file")
+    ET.ElementTree(root).write(out, encoding="UTF-8", xml_declaration=True)
+    n_mod = len(root.findall("modulator"))
+    n_res = len(list(root.iter("resource")))
+    print(f"wrote {out}: XML, {n_mod} modulator(s), {n_res} resource node(s)")
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -657,6 +674,8 @@ def main(argv):
             return cmd_escape(args[0] if args else None)
         if cmd == "dump":
             return cmd_dump(args[0], args[1])
+        if cmd == "xml":
+            return cmd_xml(args[0], args[1])
     except IndexError:
         print(f"missing argument for '{cmd}'\n\n{__doc__}")
         return 2

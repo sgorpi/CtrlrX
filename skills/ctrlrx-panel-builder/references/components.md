@@ -179,7 +179,8 @@ on load; re-apply visibility from `luaPanelLoaded`.
 `uiCustomComponent` is a blank area drawn and driven by Lua:
 
 - Paint: `uiCustomPaintCallback` → `f(comp, g)`. `fillRect` / `drawRect` exist only with integer
-  arguments, `drawLine` only with floats, so `math.floor` every rectangle argument.
+  arguments, `drawLine` only with floats, so `math.floor` every rectangle argument;
+  `drawRect(x, y, w, h, lineWidth)` takes all five.
 - Mouse: `uiCustomMouseDownCallback`, `…UpCallback`, `…DragCallback`, `…MoveCallback`,
   `…DoubleClickCallback`, `…WheelMoveCallback` → `f(comp, mouseEvent)` with component-relative
   `e.x` / `e.y`. Wire every callback the interaction needs; an unwired drag fails silently.

@@ -55,6 +55,8 @@ reference named at the end of each rule.
 5. **A button that triggers an action is wired on `componentLuaMouseUp`**, not on
    `luaModulatorValueChange`. A button whose `uiButtonContent` has one line never changes value,
    so its value-change callback never fires. Wire one of the two, never both (it fires twice).
+   A `uiCustomComponent` paints and takes clicks only through its own `uiCustom*Callback` hooks
+   (card below); its `componentLuaMouse*` hooks never fire.
    (`references/components.md`)
 6. **Lua code is an XML attribute.** Escape it with `panel_tool.py escape` only when you paste
    raw text into the XML; an XML library (ElementTree, lxml) escapes on write, and escaping first
@@ -77,10 +79,47 @@ reference named at the end of each rule.
 9. **Verify, then claim.** Run `panel_tool.py lint` after every edit. Prove every behaviour claim
    (bytes sent, callback ran, control hidden) with the probe, assert on `summary.errorCount`, and
    run each new check once against a broken panel to see it fail: a check that never failed proves
-   nothing. (`references/verify-with-probe.md`)
+   nothing. A run with `errorCount` above 0 (`probe_harness.py` exit 1) is a failure, however the
+   rest looks: a method that raised is disabled and does nothing from then on. Read its `errors`
+   and fix them before you report anything as working. `lint` does not run Lua.
+   (`references/verify-with-probe.md`)
 10. **Never hand-edit a generated panel**, and when Lua lives in `.lua` files the files win: edit
     the source, then regenerate or re-inline. (`references/workflow-generated-panel.md`,
     `references/workflow-lua-in-files.md`)
+
+## Lua API card
+
+Everything here is measured. Before using a call that isn't here, look it up in
+`references/lua-api.md` (section in the right column): an invented method or argument list fails
+only at runtime, and CtrlrX then disables the whole method.
+
+**Hooks.** The attribute names a method; its parameter list is fixed.
+
+| Hook attribute (element) | Called as |
+|---|---|
+| `luaModulatorValueChange` (`<modulator>`) | `f(mod, value, source)`; `source` 4 = user, 5 = Lua, 2 = MIDI in |
+| `componentLuaMouseUp` / `…Down` (`<component>`; not on a `uiCustomComponent`) | `f(comp, event)` |
+| `uiCustomPaintCallback` (`uiCustomComponent`) | `f(comp, g)` |
+| `uiCustomMouseDownCallback` / `…Up…` / `…Drag…` (`uiCustomComponent`) | `f(comp, event)`; `event.x`, `event.y` relative to the component |
+| `luaPanelLoaded` (`<panel>`) | `f()` |
+| `luaPanelMidiReceived` (`<panel>`) | `f(midi)`, a `CtrlrMidiMessage`; a SysEx arrives whole |
+| `timer:setCallback(id, f)` | `f(id)` |
+
+More hooks: `lua-api.md`, "Callback hooks and signatures".
+
+**Calls.**
+
+| To | Call | `lua-api.md` section |
+|---|---|---|
+| find a modulator | `panel:getModulatorByName("name")`, `nil` if there is none | CtrlrPanel |
+| read its name, value | `mod:getProperty("name")` (a Lua string, rule 4), `mod:getValue()` | CtrlrModulator |
+| set its value | a setter from the table in rule 3 | CtrlrModulator |
+| show or hide it | `mod:getComponent():setPropertyInt("componentVisibility", 0)` (1 shows) | CtrlrComponent |
+| send MIDI | `panel:sendMidiMessageNow(CtrlrMidiMessage({0xB0, 0x07, 0x64}))`: the one send call; a SysEx byte table runs from `0xF0` to `0xF7` | Sending MIDI |
+| read incoming MIDI | `local d = midi:getData()` (a MemoryBlock), `d:getByte(i)` (0-based), `math.floor(tonumber(d:getSize()))` | Reading an incoming message |
+| paint | `g:setColour(Colour(0xff336699))`, `g:fillRect(x, y, w, h)`, `g:drawRect(x, y, w, h, 1)` (1 = line width); integers only | Painting a `uiCustomComponent` |
+| run code later | `timer:setCallback(id, f)`, `timer:startTimer(id, ms)`, `timer:stopTimer(id)`; every timer repeats until stopped, and ids are shared by the whole panel | Timers |
+| log | `console("text")` | Globals |
 
 ## Tools — run them, don't read them
 
@@ -91,6 +130,7 @@ All are stdlib `python3`; `--help` on each is complete. Paths are relative to th
 | `python3 scripts/panel_tool.py summary FILE` | see every modulator: name, uiType, MIDI, range, Lua. Works on all four formats. |
 | `python3 scripts/panel_tool.py dump FILE modulator:NAME` | print one element as a copy-template (also `editor`, `panel`, `modulators`). |
 | `python3 scripts/panel_tool.py lint FILE` | check structure and wiring traps. Exit 0 = no errors; read the warnings too. |
+| `python3 scripts/panel_tool.py xml IN OUT.panel` | turn a `.bpanelz` / `.panelz` into an XML `.panel` to edit. Decompressed bytes are not XML: never save them as `.panel`. |
 | `python3 scripts/panel_tool.py escape lua.txt` | escape raw Lua for a `luaMethodCode` attribute (stdin with `-`). |
 | `python3 scripts/probe_harness.py run PANEL SCRIPT.json` | run the panel headlessly and print what it sent, returned and raised. |
 | `python3 scripts/png_sample.py shot.png X Y --expect rrggbb` | check one pixel of a probe screenshot. |
@@ -143,9 +183,15 @@ All references are in `references/`. Copy the checklist into your notes and tick
       Multi modulators never update from incoming MIDI; decode replies in Lua.
 - [ ] Every SysEx frame starts with `F0` and ends with `F7`; a frame built in Lua gets no `F7`
       added for you.
+- [ ] Before coding, write the expected bytes for one concrete value straight from the device's
+      spec (every constant byte included) and assert exactly those; an expectation derived from
+      your own code can't catch a missing byte.
 - [ ] Probe: `setValue` → assert exact `deviceMidiOut`; `injectDeviceMidi` → assert the value moved.
 
 **D. Write or attach Lua**
+- [ ] Read `references/lua-api.md` first. Call only functions it shows or that you find in the
+      CtrlrX source: a guessed method or argument list fails only at runtime ("attempt to call
+      method … (a nil value)", "No matching overload"), and CtrlrX then disables the method.
 - [ ] Write the method in plain Lua; the callback's parameter list is fixed (`lua-api.md`,
       "Callback hooks").
 - [ ] Add a `<luaMethod>` under `<luaManagerMethods>` (not in `Built-In`), escaped (rule 6), and

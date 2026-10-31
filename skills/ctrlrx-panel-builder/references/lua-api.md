@@ -19,6 +19,7 @@ object's methods.
 - CtrlrComponent: visibility and properties
 - Callback hooks and signatures
 - Sending MIDI
+- Reading an incoming message
 - Timers
 - Dialogs
 - JUCE `String` userdata
@@ -107,7 +108,8 @@ or keep `setValue` and send from the callback only for genuine user edits:
 ```lua
 cutoffChanged = function(mod, value, source)
     if source ~= 4 then return end          -- 4 = GUI; 5 = Lua; 2 = MIDI in
-    panel:sendMidiMessageNow(CtrlrMidiMessage({0xF0, 0x7D, 0x01, value, 0xF7}))
+    -- F0, manufacturer, device, parameter, value, F7: copy the frame from the device's spec
+    panel:sendMidiMessageNow(CtrlrMidiMessage({0xF0, 0x7D, 0x00, 0x01, value, 0xF7}))
 end
 ```
 
@@ -177,7 +179,7 @@ set (`components.md`, "Custom components"); `uiTabsCurrentTabChanged` `(modulato
 ```lua
 panel:sendMidiMessageNow(CtrlrMidiMessage("B0 4A 7F"))                        -- hex string
 panel:sendMidiMessageNow(CtrlrMidiMessage(MidiMessage(0x90, 60, 100, 0.0)))   -- status, d1, d2
-panel:sendMidiMessageNow(CtrlrMidiMessage({0xF0, 0x7D, 0x12, 0x40, 0xF7}))    -- byte table
+panel:sendMidiMessageNow(CtrlrMidiMessage({0xF0, 0x7D, 0x00, 0x12, 0x40, 0xF7}))  -- byte table
 ```
 
 - **End every SysEx frame with `F7` yourself.** Nothing appends it. The probe reports an
@@ -186,6 +188,33 @@ panel:sendMidiMessageNow(CtrlrMidiMessage({0xF0, 0x7D, 0x12, 0x40, 0xF7}))    --
   modulator's channel settings.
 - A bare string (`panel:sendMidiMessageNow("B0 4A 7F")`) and the byte-table constructor exist only
   from CtrlrX 5.6.35; the `CtrlrMidiMessage(MidiMessage(...))` form works on every version.
+
+## Reading an incoming message
+
+`luaPanelMidiReceived` gets a `CtrlrMidiMessage`; a SysEx arrives whole, `F0` to `F7`.
+
+```lua
+midiIn = function(midi)
+    local d = midi:getData()                       -- a MemoryBlock; getByte is 0-based
+    local n = math.floor(tonumber(d:getSize()))    -- getSize() is a double
+    if n == 6 and d:getByte(0) == 0xF0 and d:getByte(1) == 0x7D then
+        panel:getModulatorByName("cutoff"):setModulatorValue(d:getByte(4), false, false, false)
+    end
+end
+```
+
+| Method | For `B2 4A 33` (CC 74 = 51, channel 3) | For a SysEx |
+|---|---|---|
+| `getMidiMessageType()` (= `getType()`) | `0` (`CtrlrMidiMessage.CC`) | `5` (`CtrlrMidiMessage.SysEx`) |
+| `getChannel()` | `3` (1-based) | meaningless |
+| `getNumber()` / `getValue()` | `74` / `51` | meaningless; read the bytes |
+| `getSize()` | `3` | the frame length |
+| `getData()` (= `getLuaData()`) | `MemoryBlock` of the bytes | the whole frame |
+| `toString()` | `"b2 4a 33"` (a Lua string) | `"f0 7d … f7"` |
+
+Measured in the probe. The other type constants follow `midiMessageType`
+(`midi-and-values.md`). Setting values from a dump: pick the setter from the table in
+"CtrlrModulator" so the dump isn't echoed back.
 
 ## Timers
 
@@ -277,7 +306,8 @@ end
 ```
 
 - `fillRect` / `drawRect` are bound with integer arguments only, `drawLine` with floats only.
-  Floor every rectangle argument.
+  Floor every rectangle argument. `drawRect` needs the line width too: `g:drawRect(x, y, w, h, 1)`;
+  the four-argument call raises "No matching overload".
 - `comp:repaint()` paints nothing under the probe; test painting with the probe's `paint` action
   (`verify-with-probe.md`).
 - Mouse callbacks: `components.md`, "Custom components".

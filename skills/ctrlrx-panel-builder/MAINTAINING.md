@@ -22,6 +22,23 @@ skills directory) are overwritten on update, so a fix made only there is lost.
   leaves the reader to guess which is true.
 - **Run every code sample** in the probe before it goes into a reference.
 
+## When an eval fails
+
+A failing eval shows where an agent went wrong; on its own it doesn't justify a change. Tuning the
+skill to the cases makes it worse for every task they don't cover.
+
+- **Name a real task** besides the eval that the change helps. "The case passes" is not a reason.
+- **Teach the fact, not the case's answer.** No case's names, bytes, CC numbers or sizes in
+  examples, and no worked solution shaped like one case.
+- **SKILL.md only for repeated mistakes**: the same one in at least two cases or on two models.
+  Otherwise the detail goes in its reference.
+- **Ignore noise.** A drop smaller than the run-to-run spread is not a reason to edit.
+- **Stop when a fix moves the failure.** If a change fixes one case and breaks another, narrow or
+  revert it; don't add more.
+- **A model that ignores the pointers it is given** has reached its limit. Record that in
+  `evals/benchmark.md` instead of copying references into `SKILL.md`.
+- Check the result on the `held_out` cases (`evals/README.md`).
+
 ## Where things go
 
 | Kind of content | Place |

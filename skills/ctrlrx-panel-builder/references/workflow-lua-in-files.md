@@ -46,8 +46,11 @@ the panel is the output.
   library escapes it. If it splices text into the XML itself, escape with the same rules as
   `panel_tool.py escape` (including CR as `&#13;`). Doing both gives `&amp;quot;`.
 - **Idempotent.** Running it twice changes nothing; a second run's diff must be empty.
-- **Match by name.** Map file → method by `luaMethodName` (or a path that mirrors the groups),
-  fail on a file with no method and on a method with no file; never append a method silently.
+- **Match by name.** Map file → method by `luaMethodName` (or a path that mirrors the groups).
+  A file with no method either creates it (when the user wants one file = one method) or is an
+  error; a method with no file is an error. Decide which, and report every method the script adds:
+  never append one silently. If you check that a file defines its method, accept both `function name(...)` and
+  `name = function(...)`: they are the same in Lua, and panels use both.
 - **Preserve the panel's attribute order and formatting** (`panel-file-format.md`, "Attribute order
   is behaviour"). Change only `luaMethodCode`.
 - **No load-order dependencies.** Top-level code in one file must not read globals defined by

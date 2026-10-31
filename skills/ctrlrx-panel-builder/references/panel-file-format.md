@@ -189,6 +189,10 @@ globals inside function bodies, which run after loading has finished.
   export drops their data, so `resources:getResource(name)` returns `nil` in a `.panel` and any
   panel Lua that silently guards that `nil` loses its artwork. Ship artwork-bearing panels as
   `.bpanelz`, produced by the user via File → Export.
+- To edit a `.bpanelz` or `.panelz`, convert it first: `panel_tool.py xml IN OUT.panel` writes the
+  XML (attribute order kept) and reports its `<resource>` nodes. A `.bpanelz` decompresses to a
+  binary ValueTree, not XML, so decompressed bytes saved as `.panel` don't load. Edit the XML,
+  lint it, and probe it; for artwork, the user re-exports from CtrlrX.
 - An export is not the `.panel` you wrote: it records the **live** slider ranges (after Lua changed
   them), may add newer attributes, reorders methods and keeps stale root metadata (name, author,
   version). Verify an export by running `panel_tool.py summary` and `lint` on both files and
