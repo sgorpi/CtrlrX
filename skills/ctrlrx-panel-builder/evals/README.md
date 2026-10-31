@@ -1,6 +1,6 @@
 # Evals for `ctrlrx-panel-builder`
 
-Sixteen realistic panel-authoring tasks, each graded by a script that checks the result the way
+Eighteen realistic panel-authoring tasks, each graded by a script that checks the result the way
 CtrlrX would see it: `panel_tool.py lint`, the panel's XML, and **behaviour** observed through
 `CtrlrPanelProbe` (the exact MIDI bytes sent, label text, visibility, Lua state). Only one
 expectation (eval 2's diagnosis) is judged from the agent's prose.
@@ -23,6 +23,13 @@ expectation (eval 2's diagnosis) is judged from the agent's prose.
 | 13 | shared-callback-dispatch | one Lua method for many knobs must tell them apart (`getName()` is a userdata) |
 | 14 | second-device-channel | a knob on its own MIDI channel, out and in (the panel channel wins unless overridden) |
 | 15 | dump-without-echo | load a dump without echoing parameter changes or the dump back (async callbacks, MIDI thru) |
+| 16 | trigger-buttons | two buttons that each send a SysEx frame on every click (held out) |
+| 17 | format-for-diff | a diff-friendly formatter that must not change what the panel does (held out) |
+
+Cases marked `"held_out": true` were added after the skill's last round of changes and were
+never used to change it. They check that a gain on the other cases carries over to tasks the
+skill was not tuned on. Don't edit the skill to pass them; when they have been used that way,
+drop the flag and write new held-out cases.
 
 ## Layout
 
@@ -40,6 +47,12 @@ expectation (eval 2's diagnosis) is judged from the agent's prose.
    this skill directory to `./skill/ctrlrx-panel-builder/` and prefix the prompt with
    `Instructions for this kind of task are in skill/ctrlrx-panel-builder/SKILL.md - read it first.`
    Any agent that can read files and run a shell can take part.
+   - **Isolate the run.** The agent must see only its working directory, the `ctrlrx` checkout
+     and the probe. An agent that searches the disk can find another copy of the skill, these
+     graders or another run's outputs, and the comparison is then void. Hide the home directory
+     and shared temp directories from it, e.g. with `bwrap` (Linux) mounting a tmpfs over them.
+   - **Pin the model by its full id**, not an alias: an alias can move to a newer model between
+     two runs you mean to compare.
 4. Afterwards, put the working directory at `<run-dir>/outputs/` and the agent's last message at
    `<run-dir>/final_message.txt`. Then grade:
 

@@ -2,7 +2,7 @@
   "skill_name": "ctrlrx-panel-builder",
   "environment": {
     "preamble": "You are working non-interactively: do not ask questions; make reasonable assumptions and state them. Your working directory is the current directory; leave all results there. A read-only CtrlrX source checkout is at ./ctrlrx, and a built CtrlrPanelProbe binary is at $CTRLRX_PANEL_PROBE.",
-    "setup": "Each run starts in a fresh empty directory containing the eval's `files` (copied by basename) and a `ctrlrx` symlink to a read-only CtrlrX checkout that has Tests/PanelProbe.md. CTRLRX_PANEL_PROBE points at a built probe. With a skill under test, its directory is copied to ./skill/<name>/ and the prompt is prefixed with: 'Instructions for this kind of task are in skill/<name>/SKILL.md - read it first.'",
+    "setup": "Each run starts in a fresh empty directory containing the eval's `files` (copied by basename) and a `ctrlrx` symlink to a read-only CtrlrX checkout that has Doc/PanelProbe.md. CTRLRX_PANEL_PROBE points at a built probe. With a skill under test, its directory is copied to ./skill/<name>/ and the prompt is prefixed with: 'Instructions for this kind of task are in skill/<name>/SKILL.md - read it first.'",
     "grading": "python3 <grader> <run-dir>, where <run-dir>/outputs is the working directory after the run and <run-dir>/final_message.txt the agent's last message. Needs CTRLRX_PANEL_PROBE; optional EVAL_JUDGE_CMD for the one LLM-judged expectation (eval 2), else a keyword fallback."
   },
   "evals": [
@@ -305,6 +305,51 @@
         "the dump itself is not echoed back to the synth",
         "a second dump 7F 00 40 updates the knobs to 127, 0, 64 before osc2Level is moved",
         "moving osc2Level by hand to 99 still sends exactly f0 7d 01 02 63 f7"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "trigger-buttons",
+      "held_out": true,
+      "prompt": "Add two buttons to synth.panel: 'storePatch', which tells my synth to store the current patch by sending F0 7D 01 20 F7, and 'requestDump', which asks it for a patch dump by sending F0 7D 01 30 F7. Every click must send its message. Edit synth.panel in place.",
+      "expected_output": "Two uiButtons wired to a mouse-up Lua callback (or another hook that fires on every click) that sends each button's frame exactly once per click; the cutoff knob is untouched.",
+      "files": [
+        "evals/files/synth.panel"
+      ],
+      "grader": "evals/graders/eval_16_trigger_buttons.py",
+      "expectations": [
+        "synth.panel is still there",
+        "panel_tool lint passes",
+        "panel runs with no errors",
+        "storePatch is a button",
+        "requestDump is a button",
+        "every click on storePatch sends exactly f0 7d 01 20 f7, once",
+        "every click on requestDump sends exactly f0 7d 01 30 f7, once",
+        "cutoff still sends CC 74"
+      ]
+    },
+    {
+      "id": 17,
+      "name": "format-for-diff",
+      "held_out": true,
+      "prompt": "editor.panel is under git, and its long single-line tags make every diff unreadable. Write tools/format_panel.py, used as `python3 tools/format_panel.py FILE`, that rewrites a panel file in place in one canonical layout: every attribute on its own line, consistently ordered and indented, so that diffs show only real changes. Running it twice must change nothing. Run it on editor.panel. The panel has to behave exactly as before.",
+      "expected_output": "A formatter that keeps each element's attributes in file order (CtrlrX applies them in order; sorting changes the one-line buttons' range), writes one attribute per line, keeps Lua code byte for byte, and is idempotent; editor.panel reformatted with identical behaviour.",
+      "files": [
+        "evals/files/editor.panel"
+      ],
+      "grader": "evals/graders/eval_17_format_for_diff.py",
+      "expectations": [
+        "editor.panel is still there",
+        "tools/format_panel.py exists",
+        "editor.panel was reformatted",
+        "panel_tool lint passes",
+        "every attribute is on its own line",
+        "running the formatter again changes nothing",
+        "every Lua method's code is unchanged, byte for byte",
+        "every element keeps its attributes and values",
+        "the formatted panel runs with no errors",
+        "the panel loads to the same state as before (range, value, visibility of every control)",
+        "each trigger button still sends its frame"
       ]
     }
   ]
