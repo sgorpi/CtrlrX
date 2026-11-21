@@ -10,9 +10,8 @@
 # it gates both live here rather than the build moving to a workflow of its own.
 name: LuaJIT
 
+# Throw-away branch: dispatch only, so only the Windows pluginval job runs on push.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
     inputs:
       force_rebuild:
