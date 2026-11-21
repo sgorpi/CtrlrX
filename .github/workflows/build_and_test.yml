@@ -253,18 +253,29 @@ jobs:
             if [ -n "$LOCALAPPDATA" ]; then echo "$(cygpath -u "$LOCALAPPDATA")/Temp"; fi
           }
           temp_dirs | sort -u | sed 's/^/temp folder: /'
+          # Every run starts from the state the tests leave, as a normal CI run does: snapshot
+          # CtrlrX's settings folder now and restore it before each run (runs 2+ of 44872209739 and
+          # 44876194754 found the previous pluginval run's settings: 0 crashes in 50).
+          state="$(cygpath -u "$APPDATA")/CtrlrX"
+          snap="$PWD/ctrlrx-state-after-tests"
+          rm -rf "$snap"
+          if [ -d "$state" ]; then cp -a "$state" "$snap"; echo "state after tests:"; ls -la "$state"; else echo "no $state after tests"; fi
+          ls -la "$(cygpath -u "$USERPROFILE")/Desktop" 2>/dev/null | grep -i ctrlr || true
           crashes=0
           for i in $(seq 1 30); do
             seed_args=""
             if [ "$i" = 1 ]; then seed_args="--random-seed 0x380dfa4"; fi
             for d in $(temp_dirs); do rm -f "$d/pluginval_crash.txt"; done
+            rm -rf "$state"
+            if [ -d "$snap" ]; then cp -a "$snap" "$state"; fi
             set +e
-            # Output to a pipe, as in the normal CI step (run 44872209739 wrote to a file: 0 of 20).
+            # Output to a pipe, as in the normal CI step.
             ${{ matrix.pluginval-binary }} --strictness-level 10 --verbose $seed_args \
               --validate "${{ env.VST3_PATH }}" 2>&1 | tee "pluginval-runs/run-$i.log"
             rc=${PIPESTATUS[0]}
             set -e
             echo "run $i: exit $rc, $(grep -m1 'Random seed' "pluginval-runs/run-$i.log" || true)"
+            if [ "$i" = 1 ]; then echo "state after run 1:"; ls -la "$state" 2>/dev/null || true; fi
             if [ $rc -ne 0 ]; then
               crashes=$((crashes + 1))
               echo "::group::run $i: last 60 lines"
