@@ -239,7 +239,7 @@ jobs:
           echo "STANDALONE_PATH=$ARTIFACTS_PATH/Standalone/${{ env.PRODUCT_NAME }}.app" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=${{ env.PRODUCT_NAME }}-${{ env.VERSION }}-${{ matrix.name }}" >> $GITHUB_ENV
 
-      # Throw-away branch: run pluginval 20 times (run 1 with the seed of an earlier crash, the
+      # Throw-away branch: run pluginval 30 times (run 1 with the seed of an earlier crash, the
       # rest random, as in CI). On a crash, print pluginval's own crash log (a stack trace that
       # its crash handler writes to the temp folder). Fails at the end if any run failed.
       - name: Pluginval Verification Pass
@@ -254,14 +254,15 @@ jobs:
           }
           temp_dirs | sort -u | sed 's/^/temp folder: /'
           crashes=0
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             seed_args=""
             if [ "$i" = 1 ]; then seed_args="--random-seed 0x380dfa4"; fi
             for d in $(temp_dirs); do rm -f "$d/pluginval_crash.txt"; done
             set +e
+            # Output to a pipe, as in the normal CI step (run 44872209739 wrote to a file: 0 of 20).
             ${{ matrix.pluginval-binary }} --strictness-level 10 --verbose $seed_args \
-              --validate "${{ env.VST3_PATH }}" > "pluginval-runs/run-$i.log" 2>&1
-            rc=$?
+              --validate "${{ env.VST3_PATH }}" 2>&1 | tee "pluginval-runs/run-$i.log"
+            rc=${PIPESTATUS[0]}
             set -e
             echo "run $i: exit $rc, $(grep -m1 'Random seed' "pluginval-runs/run-$i.log" || true)"
             if [ $rc -ne 0 ]; then
@@ -281,7 +282,7 @@ jobs:
               if [ $found = 0 ]; then echo "run $i: no pluginval_crash.txt found"; fi
             fi
           done
-          echo "pluginval: $crashes failed runs of 20"
+          echo "pluginval: $crashes failed runs of 30"
           [ $crashes -eq 0 ]
 
       - name: Collect the VST3 binary and its PDB
