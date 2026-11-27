@@ -245,38 +245,58 @@ void CtrlrPanelResourceEditor::addResourceFromFile()
 
 		if (!filesToOpen.isEmpty())
 	 	{
-			for (int i=0; i<filesToOpen.size(); i++)
-			{
-				if (i == 0)
-					owner.getOwner().getCtrlrManagerOwner().setProperty (Ids::ctrlrLastBrowsedResourceDir, filesToOpen[i].getParentDirectory().getFullPathName());
-
-				if (getResourceManager().resourceExists (filesToOpen[i]))
-				{
-					if ((bool)owner.getOwner().getCtrlrManagerOwner().getProperty(Ids::ctrlrOverwriteResources) == false)
-					{
-						if (!SURE("Resource: "+filesToOpen[i].getFileNameWithoutExtension()+" already exists. Overwrite?", this))
-						{
-							return;
-						}
-					}
-
-					int index = getResourceManager().getResourceIndex(filesToOpen[i].getFileNameWithoutExtension());
-
-					if (index >= 0)
-					{
-						getResourceManager().removeResource(index);
-						getResourceManager().addResource (filesToOpen[i]);
-					}
-				}
-				else
-				{
-	 				getResourceManager().addResource (filesToOpen[i]);
-				}
-			}
+			owner.getOwner().getCtrlrManagerOwner().setProperty (Ids::ctrlrLastBrowsedResourceDir, filesToOpen[0].getParentDirectory().getFullPathName());
+			addResourceFiles (filesToOpen, 0);
+			return;
 	 	}
 
 		updateTable();
 	});
+}
+
+// Adds files[i] and the files after it, one after the other. A file that is already a resource
+// asks "Overwrite?" first (unless the setting says to overwrite); No stops there, without
+// updating the table, as before.
+void CtrlrPanelResourceEditor::addResourceFiles (const Array<File> filesToOpen, const int i)
+{
+	if (i >= filesToOpen.size())
+	{
+		updateTable();
+		return;
+	}
+
+	Component::SafePointer<CtrlrPanelResourceEditor> safeThis (this);
+	const auto add = [this, safeThis, filesToOpen, i]
+	{
+		if (getResourceManager().resourceExists (filesToOpen[i]))
+		{
+			int index = getResourceManager().getResourceIndex(filesToOpen[i].getFileNameWithoutExtension());
+
+			if (index >= 0)
+			{
+				getResourceManager().removeResource(index);
+				getResourceManager().addResource (filesToOpen[i]);
+			}
+		}
+		else
+		{
+			getResourceManager().addResource (filesToOpen[i]);
+		}
+		addResourceFiles (filesToOpen, i + 1);
+	};
+
+	if (getResourceManager().resourceExists (filesToOpen[i])
+		&& (bool)owner.getOwner().getCtrlrManagerOwner().getProperty(Ids::ctrlrOverwriteResources) == false)
+	{
+		AW::showOkCancelBox (AlertWindow::QuestionIcon, "Are you sure?", "Resource: "+filesToOpen[i].getFileNameWithoutExtension()+" already exists. Overwrite?", "Yes", "No", this,
+		                     [safeThis, add] (bool overwrite)
+		{
+			if (overwrite && safeThis != nullptr)
+				add();
+		});
+		return;
+	}
+	add();
 }
 
 void CtrlrPanelResourceEditor::deleteSelectedResources()
@@ -703,10 +723,21 @@ int CtrlrPanelResourceEditor::compareElements(CtrlrPanelResource *first, CtrlrPa
 
 void CtrlrPanelResourceEditor::moveResources()
 {
-	Array <CtrlrPanelResource*> resourcesReloaded;
 	const String location = owner.getOwner().getPanelResourcesDirPath();
-	const int confirm = AlertWindow::showOkCancelBox(AlertWindow::QuestionIcon, "Move resources to panel folder", "Do you want to move all resources to the panel folder (location=" + location + ")?", "Yes", "No");
-	if (confirm == 1)
+	// The resources are moved after the answer, if the editor still exists.
+	Component::SafePointer<CtrlrPanelResourceEditor> safeThis (this);
+	AW::showOkCancelBox(AlertWindow::QuestionIcon, "Move resources to panel folder", "Do you want to move all resources to the panel folder (location=" + location + ")?", "Yes", "No", nullptr,
+	                    [safeThis, location] (bool confirm)
+	{
+		if (safeThis != nullptr)
+			safeThis->moveResourcesTo (location, confirm);
+	});
+}
+
+void CtrlrPanelResourceEditor::moveResourcesTo (const String &location, const bool confirm)
+{
+	Array <CtrlrPanelResource*> resourcesReloaded;
+	if (confirm)
 	{
 		File targetFolder = owner.getOwner().getPanelResourcesDir();
 		if (!targetFolder.exists())
@@ -714,13 +745,13 @@ void CtrlrPanelResourceEditor::moveResources()
 			const Result res = targetFolder.createDirectory();
 			if (res.failed())
 			{
-				AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Failed to create resources folder '"+ location +"'.\n" + res.getErrorMessage());
+				AW::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Failed to create resources folder '"+ location +"'.\n" + res.getErrorMessage());
 				return;
 			}
 		}
 		else if (!targetFolder.isDirectory())
 		{
-			AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Failed to access resources folder '"+ location +"'.");
+			AW::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Failed to access resources folder '"+ location +"'.");
 			return;
 		}
 		for (int i = 0; i<resources.size(); i++)
@@ -737,13 +768,13 @@ void CtrlrPanelResourceEditor::moveResources()
 					File targetFile = targetFolder.getChildFile(originalFile.getFileName());
 					if (targetFile.exists())
 					{
-						AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Target file '" + targetFile.getFullPathName() + "' already exists, resource will be skiped.");
+						AW::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Target file '" + targetFile.getFullPathName() + "' already exists, resource will be skiped.");
 					}
 					else
 					{
 						if (!originalFile.copyFileTo(targetFile))
 						{
-							AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Could not copy resource to file '" + targetFile.getFullPathName() + "', resource will be skiped.");
+							AW::showMessageBox(AlertWindow::WarningIcon, "Move resources to panel folder", "Could not copy resource to file '" + targetFile.getFullPathName() + "', resource will be skiped.");
 						}
 						else
 						{

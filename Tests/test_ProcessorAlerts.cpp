@@ -8,6 +8,8 @@
 #include "CtrlrLua/MethodEditor/CtrlrLuaMethodEditArea.h"
 #include "CtrlrLuaManager.h"
 #include "CtrlrWindowManagers/CtrlrPanelWindowManager.h"
+#include "CtrlrPanel/CtrlrPanelResourceEditor.h"
+#include "CtrlrPanel/CtrlrPanelResourceManager.h"
 
 /**
  * The asynchronous alert helpers in CtrlrInlineUtilitiesGUI.h (namespace AW), through their test
@@ -511,4 +513,58 @@ TEST_F(AlertCallers, export_with_resources_cancelled_warns_after_the_chooser)
 
     ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; }));
     EXPECT_EQ(askedTitles[1], "Panel Export");
+}
+
+// Resource editor, "Add": a file that is already a resource asks "Overwrite?". No stops there (the
+// files after it are not added), Yes replaces it and goes on, as the blocking loop did.
+TEST_F(AlertCallers, resource_add_asks_before_overwriting_and_no_stops)
+{
+    // Resources are copied into the panel's folder in the CtrlrX data directory, named by its UID.
+    // A UID of this test's own, so no other panel (or parallel test) sees these files.
+    const juce::String uid = "test-" + juce::Uuid().toString();
+    juce::ValueTree tree = CtrlrPanel::openXmlPanel (juce::File::getCurrentWorkingDirectory().getChildFile ("fixtures/fixture_lua_values.panel"));
+    ASSERT_TRUE(tree.isValid());
+    tree.setProperty (Ids::panelUID, uid, nullptr);
+    CtrlrPanel *panel = processor->getManager().addPanel (tree, true);
+    ASSERT_NE(panel, nullptr);
+    ASSERT_EQ(panel->getProperty (Ids::panelUID).toString(), uid);
+    struct RemoveFolder
+    {
+        juce::File folder;
+        ~RemoveFolder() { folder.deleteRecursively(); }
+    } removeFolder { panel->getPanelDirectory() };
+    ASSERT_TRUE(removeFolder.folder.getFileName() == uid);
+    processor->getManager().setProperty (Ids::ctrlrOverwriteResources, false);
+    const juce::File existing = dir.getChildFile ("existing.txt");
+    const juce::File added = dir.getChildFile ("added.txt");
+    ASSERT_TRUE(existing.replaceWithText ("one"));
+    ASSERT_TRUE(added.replaceWithText ("two"));
+    CtrlrPanelResourceManager &resources = panel->getResourceManager();
+    ASSERT_TRUE(resources.addResource (existing).wasOk());
+    auto editor = std::make_unique<CtrlrPanelResourceEditor> (*panel->getEditor (false));
+
+    for (const juce::String button : { "No", "Yes" })
+    {
+        askedTitles.clear();
+        chooserAnswer = { existing, added };
+        buttonsToPress = { button };
+        editor->addResourceFromFile();
+        ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; })) << button;
+        EXPECT_EQ(askedTitles[1], "Are you sure?");
+        pump();
+        EXPECT_EQ(resources.resourceExists (added), button == "Yes") << button;
+    }
+}
+
+TEST_F(AlertCallers, resource_move_waits_for_the_answer_and_skips_a_closed_editor)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    auto editor = std::make_unique<CtrlrPanelResourceEditor> (*panel->getEditor (false));
+    buttonsToPress = { "Yes" };
+
+    editor->moveResources();
+    EXPECT_EQ(askedTitles, juce::StringArray ("Move resources to panel folder"));
+    editor.reset();
+    pump(); // the answer reaches a deleted editor: nothing happens (memcheck)
 }

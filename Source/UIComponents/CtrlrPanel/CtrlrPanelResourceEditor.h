@@ -37,6 +37,8 @@ class CtrlrPanelResourceEditor  : public Component,
         void lookAndFeelChanged(); // Added v5.6.34.
 
 	private:
+		void addResourceFiles (const Array<File> filesToOpen, const int i);
+		void moveResourcesTo (const String &location, const bool confirm);
 		Array <CtrlrPanelResource*> resources;
 		CtrlrPanelEditor &owner;
 		int sortByColumnId;
