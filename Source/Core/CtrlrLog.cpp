@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "CtrlrUtilities.h"
 #include "CtrlrLog.h"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 CtrlrLog *CtrlrLog::ctrlrLog = nullptr;
 

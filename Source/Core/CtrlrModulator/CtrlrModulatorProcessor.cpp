@@ -9,6 +9,7 @@
 #include "Plugin/CtrlrProcessor.h"
 #include "CtrlrLog.h"
 #include "CtrlrComponents/CtrlrComponent.h"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 CtrlrModulatorProcessor::CtrlrModulatorProcessor(CtrlrModulator &_owner)
 	: owner(_owner),
@@ -85,7 +86,7 @@ void CtrlrModulatorProcessor::handleAsyncUpdate()
                                                                                     (uint8)currentValue.lastChangeSource);
             }
             else{
-                AlertWindow::showMessageBox (AlertWindow::WarningIcon, "Callback error", owner.getName() + "\n" + "LUA script not valid: luaModulatorValueChange");
+                AW::showMessageBox (AlertWindow::WarningIcon, "Callback error", owner.getName() + "\n" + "LUA script not valid: luaModulatorValueChange");
             }
         }
     }
@@ -107,7 +108,7 @@ void CtrlrModulatorProcessor::handleAsyncUpdate()
                                                                                     (uint8)currentValue.lastChangeSource);
             }
             else{
-                AlertWindow::showMessageBox (AlertWindow::WarningIcon, "Callback error", owner.getName() + "\n LUA script not valid: luaModulatorValueChange");
+                AW::showMessageBox (AlertWindow::WarningIcon, "Callback error", owner.getName() + "\n LUA script not valid: luaModulatorValueChange");
             }
         }
     }

@@ -44,6 +44,7 @@
 #include "Deprecated/CtrlrLuaComponentAnimator.h"
 
 #include "luabind/class_info.hpp"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 CtrlrLuaManager::CtrlrLuaManager(CtrlrPanel& _owner)
 	: owner(_owner),
@@ -1624,7 +1625,7 @@ void CtrlrLuaMultiTimer::timerCallback(int timerId)
 
 				callbacks.set(timerId, cb);
 				const char* a = lua_tostring(e.state(), -1);
-				AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Timer callback error, timer id that failed was: " + String(timerId), String(e.what()) + "\n" + String(a) + "\n\nCallback disabled");
+				AW::showMessageBox(AlertWindow::WarningIcon, "Timer callback error, timer id that failed was: " + String(timerId), String(e.what()) + "\n" + String(a) + "\n\nCallback disabled");
 			}
 		}
 	}

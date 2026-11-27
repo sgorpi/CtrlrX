@@ -748,3 +748,14 @@ TEST_F(LuaEditorDialogs, remove_method_asks_after_the_menu)
     }
     PU::testAnswer() = nullptr;
 }
+
+// CtrlrLog shows every logged error in a warning, from the message loop. Two errors: two
+// warnings, one after the other.
+TEST_F(AlertCallers, logged_errors_warn_one_after_the_other)
+{
+    _ERR("first test error");
+    _ERR("second test error");
+    EXPECT_TRUE(askedTitles.isEmpty()) << "the log shows them from the message loop";
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; }));
+    EXPECT_EQ(askedTitles, juce::StringArray ("WARNING", "WARNING"));
+}

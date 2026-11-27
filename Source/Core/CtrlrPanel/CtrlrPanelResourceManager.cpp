@@ -7,6 +7,7 @@
 #include "CtrlrPanel.h"
 #include "CtrlrUtilities.h"
 #include "CtrlrLog.h"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 /** Resource Manager class implementation
 
@@ -59,6 +60,8 @@ void CtrlrPanelResourceManager::initManager()
 		}
 		else
 		{
+			// Blocking (SURE). Not reached today: initManager() runs only in the constructor, before
+			// resourcesDirectory is set.
 			if (SURE("The resource directory has changed, do you want to delete the old one?",nullptr))
 			{
 				resourcesDirectory.deleteRecursively ();

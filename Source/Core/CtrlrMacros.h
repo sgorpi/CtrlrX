@@ -54,8 +54,13 @@
 
 #define MENU_OFFSET_PROGRAM_LIST		0x80000
 
-#define WARN(x)													AlertWindow::showMessageBox (AlertWindow::WarningIcon, "WARNING", x, "OK", nullptr)
-#define INFO(x,y)												AlertWindow::showMessageBox (AlertWindow::InfoIcon, x, y, "OK", nullptr)
+// Updated v8.0.100. WARN and INFO show their alert asynchronously (AW::showMessageBox, include
+// CtrlrInlineUtilitiesGUI.h where they are used): the code after them runs at once, the alert
+// waits its turn after any alert still open. SURE stays blocking (it returns the answer).
+// #define WARN(x)													AlertWindow::showMessageBox (AlertWindow::WarningIcon, "WARNING", x, "OK", nullptr)
+// #define INFO(x,y)												AlertWindow::showMessageBox (AlertWindow::InfoIcon, x, y, "OK", nullptr)
+#define WARN(x)													AW::showMessageBox (AlertWindow::WarningIcon, "WARNING", x, "OK", nullptr)
+#define INFO(x,y)												AW::showMessageBox (AlertWindow::InfoIcon, x, y, "OK", nullptr)
 #define SURE(x,y)												AlertWindow::showOkCancelBox (AlertWindow::QuestionIcon, "Are you sure?", x, "Yes", "No", y, nullptr)
 #define _STR(x)                                                 String(x)
 #define STR(x)													_STR(x)
