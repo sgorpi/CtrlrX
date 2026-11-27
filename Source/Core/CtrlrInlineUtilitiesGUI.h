@@ -3,6 +3,7 @@
 
 #include "CtrlrMacros.h"
 #include <juce_gui_basics/juce_gui_basics.h> // Make sure this is included for LookAndFeel_V4
+#include <deque>
 
 namespace gui {
 
@@ -291,6 +292,199 @@ namespace PU
         if (target != nullptr)
             options = options.withTargetComponent (target);
         showMenuAsync (menu, options, std::move (callback));
+    }
+}
+
+// Added v8.0.100. Asynchronous alerts and dialog windows, after John Goodland's AW helpers (his
+// v8.04 to v8.79). Each alert helper shows the alert of the blocking AlertWindow::show...Box() it
+// replaces (JUCE builds the same window for both forms, or the same native box when the native
+// alerts setting is on) and gives the callback the result that call returned. A callback that
+// uses a panel or a component must check that it still exists: the user can close it while the
+// alert is open.
+namespace AW
+{
+    // What the test hook is asked to answer.
+    struct Request
+    {
+        juce::String title;
+        juce::String message;
+        juce::StringArray buttons;         // an alert's buttons, in order
+        juce::Component *window = nullptr; // a dialog window shown with runModalAsync()
+    };
+
+    // Test hook. When set, no alert or dialog window is shown: the hook returns the result the
+    // user's answer gives (resultForButton() for an alert; a dialog window's result, after the
+    // hook has filled its fields). The callback still runs later, from the message loop.
+    using TestAnswer = std::function<int (const Request &request)>;
+
+    inline TestAnswer &testAnswer()
+    {
+        static TestAnswer hook;
+        return hook;
+    }
+
+    // The result of an alert's button `index` (0 = the first) as the blocking calls give it: 1 and 0
+    // for OK/Cancel, 1, 2 and 0 for Yes/No/Cancel. Escape gives 0.
+    inline int resultForButton (int index, int numButtons)
+    {
+        return numButtons <= 1 ? 0 : (index + 1) % numButtons;
+    }
+
+    // The callback runs one message later, once the window is gone: JUCE calls it while the window
+    // still exists, and the code after a blocking alert ran after it had closed (it may show
+    // another alert or a file chooser).
+    inline void callBackLater (std::function<void (int)> callback, int result)
+    {
+        juce::MessageManager::callAsync ([callback, result] {
+            if (callback)
+                callback (result);
+        });
+    }
+
+    // One alert at a time, in the order they were asked for. A blocking alert stopped the code
+    // that asked for it, so the alerts of one action (an error, then the summary of that action)
+    // came one after the other. Without this queue they would all open at once, the last one on
+    // top. The next alert opens after the callback of the one before it has run.
+    struct AlertQueue
+    {
+        // `show` opens its alert and calls `closed` once with the result.
+        using Show = std::function<void (std::function<void (int)> closed)>;
+
+        std::deque<std::pair<Show, std::function<void (int)>>> waiting;
+        bool open = false;
+
+        static AlertQueue &get()
+        {
+            static AlertQueue queue;
+            return queue;
+        }
+
+        void add (Show show, std::function<void (int)> callback)
+        {
+            waiting.emplace_back (std::move (show), std::move (callback));
+            if (! open)
+                showNext();
+        }
+
+        void showNext()
+        {
+            if (waiting.empty())
+            {
+                open = false;
+                return;
+            }
+            open = true;
+            auto next = std::move (waiting.front());
+            waiting.pop_front();
+            auto callback = next.second;
+            next.first ([callback] (int result) {
+                juce::MessageManager::callAsync ([callback, result] {
+                    if (callback)
+                        callback (result);
+                    AlertQueue::get().showNext();
+                });
+            });
+        }
+    };
+
+    // Queues the alert of `options`; `showAlert` opens it with JUCE (when no test hook is set).
+    inline void queueAlert (const juce::MessageBoxOptions &options,
+                            std::function<void (juce::ModalComponentManager::Callback *)> showAlert,
+                            std::function<void (int)> callback)
+    {
+        AlertQueue::get().add ([options, showAlert] (std::function<void (int)> closed) {
+            if (const TestAnswer &hook = testAnswer())
+            {
+                Request request;
+                request.title = options.getTitle();
+                request.message = options.getMessage();
+                for (int i = 0; i < options.getNumButtons(); ++i)
+                    request.buttons.add (options.getButtonText (i));
+                closed (hook (request));
+                return;
+            }
+            showAlert (juce::ModalCallbackFunction::create (closed));
+        }, std::move (callback));
+    }
+
+    // For AlertWindow::showMessageBox().
+    inline void showMessageBox (juce::MessageBoxIconType icon, const juce::String &title, const juce::String &message,
+                                const juce::String &buttonText = juce::String(),
+                                juce::Component *associatedComponent = nullptr,
+                                std::function<void()> callback = nullptr)
+    {
+        // The associated component is held weakly, as JUCE's own options do.
+        juce::Component::SafePointer<juce::Component> component (associatedComponent);
+        queueAlert (juce::MessageBoxOptions::makeOptionsOk (icon, title, message, buttonText, associatedComponent),
+                    [=] (juce::ModalComponentManager::Callback *closed) {
+                        juce::AlertWindow::showMessageBoxAsync (icon, title, message, buttonText, component.getComponent(), closed);
+                    },
+                    [callback] (int) {
+                        if (callback)
+                            callback();
+                    });
+    }
+
+    // For AlertWindow::showOkCancelBox(): true for button 1.
+    inline void showOkCancelBox (juce::MessageBoxIconType icon, const juce::String &title, const juce::String &message,
+                                 const juce::String &button1Text, const juce::String &button2Text,
+                                 juce::Component *associatedComponent, std::function<void (bool)> callback)
+    {
+        juce::Component::SafePointer<juce::Component> component (associatedComponent);
+        queueAlert (juce::MessageBoxOptions::makeOptionsOkCancel (icon, title, message, button1Text, button2Text, associatedComponent),
+                    [=] (juce::ModalComponentManager::Callback *closed) {
+                        // This overload, not AlertWindow::showAsync(): with native alerts,
+                        // showAsync() gives the button index, the blocking call the mapped result.
+                        juce::AlertWindow::showOkCancelBox (icon, title, message, button1Text, button2Text, component.getComponent(), closed);
+                    },
+                    [callback] (int result) {
+                        if (callback)
+                            callback (result == 1);
+                    });
+    }
+
+    // For AlertWindow::showYesNoCancelBox(): 1 for button 1, 2 for button 2, 0 for button 3.
+    inline void showYesNoCancelBox (juce::MessageBoxIconType icon, const juce::String &title, const juce::String &message,
+                                    const juce::String &button1Text, const juce::String &button2Text,
+                                    const juce::String &button3Text, juce::Component *associatedComponent,
+                                    std::function<void (int)> callback)
+    {
+        juce::Component::SafePointer<juce::Component> component (associatedComponent);
+        queueAlert (juce::MessageBoxOptions::makeOptionsYesNoCancel (icon, title, message, button1Text, button2Text,
+                                                                    button3Text, associatedComponent),
+                    [=] (juce::ModalComponentManager::Callback *closed) {
+                        juce::AlertWindow::showYesNoCancelBox (icon, title, message, button1Text, button2Text, button3Text,
+                                                               component.getComponent(), closed);
+                    },
+                    std::move (callback));
+    }
+
+    // For runModalLoop() on a window the caller made (an AlertWindow with text boxes, a
+    // DialogWindow): shows it modal, as runModalLoop() did. When it closes it is hidden, and one
+    // message later the callback gets its result and the window, to read its fields; the window
+    // is deleted after the callback.
+    template <typename WindowType>
+    inline void runModalAsync (std::unique_ptr<WindowType> window, std::function<void (int, WindowType &)> callback)
+    {
+        std::shared_ptr<WindowType> held (std::move (window));
+        const auto finish = [held, callback] (int result) {
+            held->setVisible (false);
+            juce::MessageManager::callAsync ([held, callback, result] {
+                if (callback)
+                    callback (result, *held);
+            });
+        };
+
+        if (const TestAnswer &hook = testAnswer())
+        {
+            Request request;
+            request.title = held->getName();
+            request.window = held.get();
+            finish (hook (request));
+            return;
+        }
+
+        held->enterModalState (true, juce::ModalCallbackFunction::create (finish), false);
     }
 }
 
