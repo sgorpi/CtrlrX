@@ -15,7 +15,8 @@ class CtrlrChildWindowContent :	public Component
 		ValueTree &getComponentTree() { return (componentTree); }
 		virtual void restoreState (const ValueTree &) {}
 		virtual uint8 getType()=0;
-		virtual bool canCloseWindow() { return true; }
+		// The callback gets true if the window may close; it may run inside the call.
+		virtual void canCloseWindow (std::function<void (bool)> callback) { callback (true); }
 
 		virtual StringArray getMenuBarNames() { return (StringArray()); }
 		virtual PopupMenu getMenuForIndex(int, const String &) { return (PopupMenu()); }

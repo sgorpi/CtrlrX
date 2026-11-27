@@ -109,10 +109,14 @@ void CtrlrDocumentPanel::buttonClicked (Button *button) // Updated v5.6.34. Get 
             if (panelToClose != nullptr)
             {
                 // Call canClose on the CtrlrPanel instance related to the close button
-                if (panelToClose->canClose(true))
+                // The editor is removed after the answer, if it still exists.
+                Component::SafePointer<CtrlrPanelEditor> editor (ed);
+                CtrlrManager *manager = &owner;
+                panelToClose->canClose (true, [manager, editor] (bool canClose)
                 {
-                    owner.removePanel(ed);
-                }
+                    if (canClose && editor != nullptr)
+                        manager->removePanel (editor.getComponent());
+                });
             }
         }
     }

@@ -148,7 +148,7 @@ class CtrlrPanel:	public ValueTree::Listener,
 		void generateCustomData();
 		int getCurrentProgramNumber();
 		int getCurrentBankNumber();
-		Result savePanel();
+		void savePanel (std::function<void (const Result &)> callback = nullptr);
 		Result saveLuaCode(const File &panelDir, CtrlrPanel *panel);
 		String getPanelContentDirPath();
 		String getPanelLuaDirPath();
@@ -170,7 +170,7 @@ class CtrlrPanel:	public ValueTree::Listener,
 		void setPanelDirty(const bool dirty);
 		void actionPerformed();
 		void actionUndone();
-		bool canClose(const bool closePanel);
+		void canClose (const bool closePanel, std::function<void (bool)> callback);
 		const String getPanelWindowTitle();
 		void updatePanelWindowTitle();
 		void luaManagerChanged();

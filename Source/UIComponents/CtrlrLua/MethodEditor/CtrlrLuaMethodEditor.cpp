@@ -683,7 +683,9 @@ bool CtrlrLuaMethodEditor::closeTab(const int tabIndex)
     return closed;
 }
 
-bool CtrlrLuaMethodEditor::canCloseWindow()
+// Asynchronous: the callback gets the answer (true = close); it runs inside the
+// call when nothing is unsaved.
+void CtrlrLuaMethodEditor::canCloseWindow (std::function<void (bool)> callback)
 {
     bool hasUnsavedChanges = false;
     CtrlrLuaMethodEditorTabs *tabs = methodEditArea->getTabs();
@@ -702,27 +704,34 @@ bool CtrlrLuaMethodEditor::canCloseWindow()
     }
     if (hasUnsavedChanges)
     {
-        int ret = AlertWindow::showYesNoCancelBox(AlertWindow::QuestionIcon, "Save changes ("+getOwner().getName()+")", "There are unsaved changes in Lua code. Do you want to save them before closing ?", "Save", "Discard", "Cancel", this);
-        if (ret == 0)
-        {    // Cancel
-            return false;
-        }
-        else if (ret == 1)
-        {    // Save all
-            saveAndCompilAllMethods();
-            return true;
-        }
-        else
-        {    // Discard
-            return true;
-        }
+        Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+        AW::showYesNoCancelBox(AlertWindow::QuestionIcon, "Save changes ("+getOwner().getName()+")", "There are unsaved changes in Lua code. Do you want to save them before closing ?", "Save", "Discard", "Cancel", this,
+                               [safeThis, callback] (int ret)
+        {
+            if (safeThis == nullptr)
+            {    // Closed meanwhile
+                callback (false);
+            }
+            else if (ret == 0)
+            {    // Cancel
+                callback (false);
+            }
+            else if (ret == 1)
+            {    // Save all
+                safeThis->saveAndCompilAllMethods();
+                callback (true);
+            }
+            else
+            {    // Discard
+                callback (true);
+            }
+        });
     }
     else
     {
-        return true;
+        callback (true);
     }
 }
-
 void CtrlrLuaMethodEditor::updateTabs()
 {
     for (int i=0; i<methodEditArea->getTabs()->getNumTabs(); i++)
@@ -1361,10 +1370,12 @@ void CtrlrLuaMethodEditor::menuItemSelected(int menuItemID, int topLevelMenuInde
             if (isCurrentlyModal())
                 exitModalState(-1);
 
-            if (canCloseWindow())
+            Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+            canCloseWindow ([safeThis] (bool canClose)
             {
-                owner.getWindowManager().toggle(CtrlrPanelWindowManager::LuaMethodEditor, false);
-            }
+                if (canClose && safeThis != nullptr)
+                    safeThis->owner.getWindowManager().toggle(CtrlrPanelWindowManager::LuaMethodEditor, false);
+            });
         }
         break;
 

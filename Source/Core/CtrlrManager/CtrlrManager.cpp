@@ -401,20 +401,39 @@ CtrlrPanel *CtrlrManager::getPanel(const String &panelName)
 	return (0);
 }
 
-bool CtrlrManager::canCloseWindow()
+// Asynchronous: asks the panels one after the other, as before, and stops at
+// the first that says no. The callback gets true if all may close.
+void CtrlrManager::canCloseWindow (std::function<void (bool)> callback)
 {
+	auto panels = std::make_shared<Array<WeakReference<CtrlrPanel>>>();
 	for (int i = 0; i<getNumPanels(); i++)
 	{
-		CtrlrPanel *panel = getPanel(i);
-		if (panel != nullptr)
-		{
-			if (!panel->canClose(false))
-			{
-				return false;
-			}
-		}
+		if (CtrlrPanel *panel = getPanel(i))
+			panels->add (panel);
 	}
-	return true;
+
+	auto askNext = std::make_shared<std::function<void (int)>>();
+	*askNext = [panels, callback, weakNext = std::weak_ptr<std::function<void (int)>> (askNext)] (int i)
+	{
+		while (i < panels->size() && (*panels)[i] == nullptr)
+			++i; // closed meanwhile
+
+		if (i >= panels->size())
+		{
+			callback (true);
+			return;
+		}
+
+		auto next = weakNext.lock();
+		(*panels)[i]->canClose (false, [next, callback, i] (bool result)
+		{
+			if (!result)
+				callback (false);
+			else if (next != nullptr)
+				(*next) (i + 1);
+		});
+	};
+	(*askNext) (0);
 }
 
 void CtrlrManager::valueTreePropertyChanged (ValueTree &treeWhosePropertyHasChanged, const Identifier &property)

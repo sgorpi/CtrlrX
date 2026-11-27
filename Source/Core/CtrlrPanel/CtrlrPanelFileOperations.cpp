@@ -131,7 +131,10 @@ void CtrlrPanel::convertLuaMethodsToPropeties(const File &panelLuaDir, ValueTree
 	}
 }
 
-Result CtrlrPanel::savePanel()
+// Updated v8.0.100. The result goes to a callback. A panel that was never saved asks for its file
+// with an asynchronous chooser and is saved in its callback, so a close waits for the answer. A
+// panel with a file is saved at once and the callback runs inside the call.
+void CtrlrPanel::savePanel (std::function<void (const Result &)> callback)
 {
     _DBG("CtrlrPanel::savePanel");
     
@@ -139,12 +142,30 @@ Result CtrlrPanel::savePanel()
     bool panelWasDirty = isPanelDirty(); // return getProperty(Ids::panelIsDirty,false); with false (0) being the defaultReturnValue
     setPanelDirty(false);
     
-    Result res = Result::ok();
     const String filePath = getProperty(Ids::panelFilePath);
     File panelFile(filePath);
+
+    // The end of both branches.
+    const auto finish = [this, panelWasDirty, callback] (const Result &res)
+    {
+        if (res.wasOk())
+        {
+            getUndoManager()->clearUndoHistory();
+            updatePanelWindowTitle();
+        }
+        
+        else if (panelWasDirty)
+        {
+            setPanelDirty(panelWasDirty); // setProperty(Ids::panelIsDirty, dirty);
+        }
+
+        if (callback)
+            callback (res);
+    };
     
     if (panelFile.existsAsFile() && panelFile.hasWriteAccess())
     {
+        Result res = Result::ok();
         if (panelFile.hasFileExtension("panel"))
             res = savePanelXml(panelFile, this, false);
         if (panelFile.hasFileExtension("panelz"))
@@ -165,47 +186,44 @@ Result CtrlrPanel::savePanel()
                 notify ("Panel saved: ["+panelFile.getFullPathName()+"]", nullptr, NotifySuccess);
             }
         }
+        finish (res);
     }
     else
     {
-        // A blocking chooser on purpose: canClose() saves an unsaved panel through here and then
-        // closes it, so the answer must come first. John Goodland's line makes the close path
-        // asynchronous (CtrlrPanel::canClose with a callback) and uses FC::saveFileAsync here.
-        File ret = askForPanelFileToSave (this, File(owner.getProperty(Ids::panelLastSaveDir)).getChildFile(getVersionString()));
-        if (ret != File())
+        // The callback does nothing if the panel was closed while the chooser was open.
+        WeakReference<CtrlrPanel> safeThis (this);
+        askForPanelFileToSaveAsync (this, File(owner.getProperty(Ids::panelLastSaveDir)).getChildFile(getVersionString()), true, false,
+                                    [this, safeThis, panelFile, finish] (const File &ret)
         {
-            res = savePanelXml(ret, this);
-            setProperty (Ids::panelFilePath, ret.getFullPathName());
-            setProperty (Ids::panelLastSaveDir, ret.getParentDirectory().getFullPathName());
-        }
-        else
-        {
-            res = Result::fail ("Selected file is invalid");
-        }
-        
-        if (getEditor())
-        {
-            if (res.failed())
+            if (safeThis == nullptr)
+                return;
+
+            Result res = Result::ok();
+            if (ret != File())
             {
-                notify ("Panel save: ["+res.getErrorMessage()+"]", nullptr, NotifyFailure);
+                res = savePanelXml(ret, this);
+                setProperty (Ids::panelFilePath, ret.getFullPathName());
+                setProperty (Ids::panelLastSaveDir, ret.getParentDirectory().getFullPathName());
             }
             else
             {
-                notify ("Panel saved: ["+panelFile.getFullPathName()+"]", nullptr, NotifySuccess);
+                res = Result::fail ("Selected file is invalid");
             }
-        }
+            
+            if (getEditor())
+            {
+                if (res.failed())
+                {
+                    notify ("Panel save: ["+res.getErrorMessage()+"]", nullptr, NotifyFailure);
+                }
+                else
+                {
+                    notify ("Panel saved: ["+panelFile.getFullPathName()+"]", nullptr, NotifySuccess);
+                }
+            }
+            finish (res);
+        });
     }
-    if (res.wasOk())
-    {
-        getUndoManager()->clearUndoHistory();
-        updatePanelWindowTitle();
-    }
-    
-    else if (panelWasDirty)
-    {
-        setPanelDirty(panelWasDirty); // setProperty(Ids::panelIsDirty, dirty);
-    }
-    return res;
 }
 
 void CtrlrPanel::savePanelAs(const CommandID saveOption)
@@ -1125,9 +1143,50 @@ void CtrlrPanel::panelResourcesChanged()
 }
 
 
-bool CtrlrPanel::canClose(const bool closePanel)
+// Updated v8.0.100. Asynchronous: the callback gets the answer (true = close). The questions and
+// their order are as before: the Lua editor's unsaved code first, then the panel's changes (only
+// when the panel itself closes). Save waits for the save, also for its chooser; the panel then
+// closes whatever the save gave, as before. Nothing more is asked if the panel is gone meanwhile.
+void CtrlrPanel::canClose (const bool closePanel, std::function<void (bool)> callback)
 {
-	bool result = true;
+	WeakReference<CtrlrPanel> safeThis (this);
+
+	// Check for panel modifications
+	const auto askAboutPanel = [this, safeThis, closePanel, callback] (bool result)
+	{
+		if (safeThis == nullptr)
+		{
+			callback (false);
+			return;
+		}
+
+		if(closePanel && (hasChangedSinceSavePoint() || isPanelDirty()))
+		{
+			AW::showYesNoCancelBox(AlertWindow::QuestionIcon, "Save panel (" + getName() + ")", "There are unsaved changes in this panel.\nDo you want to save them before closing ?", "Save", "Discard", "Cancel", nullptr, // Updated v5.6.31 by GoodWeather
+			                       [this, safeThis, callback] (int ret)
+			{
+				if (safeThis == nullptr)
+				{
+					callback (false);
+				}
+				else if (ret == 0)
+				{	// Cancel
+					callback (false);
+				}
+				else if (ret == 1)
+				{	// Save
+					savePanel ([callback] (const Result &) { callback (true); });
+				}
+				else
+				{	// Discard
+					callback (true);
+				}
+			});
+			return;
+		}
+		callback (result);
+	};
+
 	// Check for modified Lua Code
 	CtrlrPanelWindowManager &manager = getWindowManager();
 	if (manager.isCreated(CtrlrPanelWindowManager::LuaMethodEditor))
@@ -1136,30 +1195,9 @@ bool CtrlrPanel::canClose(const bool closePanel)
 		if (content != nullptr)
 		{	// Move the editor to front
 			content->toFront(true);
-			if (!content->canCloseWindow())
-			{
-				result = false;
-			}
+			content->canCloseWindow (askAboutPanel);
+			return;
 		}
 	}
-	// Check for panel modifications
-    if(closePanel && (hasChangedSinceSavePoint() || isPanelDirty()))
-	{
-        int ret = AlertWindow::showYesNoCancelBox(AlertWindow::QuestionIcon, "Save panel (" + getName() + ")", "There are unsaved changes in this panel.\nDo you want to save them before closing ?", "Save", "Discard", "Cancel"); // Updated v5.6.31 by GoodWeather
-        
-		if (ret == 0)
-		{	// Cancel
-			result = false;
-		}
-		else if (ret == 1)
-		{	// Save
-			savePanel();
-			result = true;
-		}
-		else
-		{	// Discard
-			result = true;
-		}
-	}
-	return result;
+	askAboutPanel (true);
 }

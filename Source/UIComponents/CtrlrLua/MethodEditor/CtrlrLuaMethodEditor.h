@@ -91,7 +91,7 @@ class CtrlrLuaMethodEditor  : public CtrlrChildWindowContent,
         void closeCurrentTab();
         void closeAllTabs();
         bool closeTab(const int tabIndex);
-        bool canCloseWindow();
+        void canCloseWindow (std::function<void (bool)> callback) override;
         
         void tabChanged(CtrlrLuaMethodCodeEditor *codeEditor, const bool save=false, const bool recompile=false);
         void updateTabs();

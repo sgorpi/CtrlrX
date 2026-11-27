@@ -353,9 +353,15 @@ bool CtrlrEditor::perform (const InvocationInfo &info) // Updated v5.6.34. Will 
             break;
 
         case CtrlrEditor::doClose:
-            if (getActivePanel()->canClose(true))
             {
-                owner.removePanel(getActivePanelEditor());
+                // The editor is removed after the answer, if it still exists.
+                Component::SafePointer<CtrlrPanelEditor> editor (getActivePanelEditor());
+                CtrlrManager *manager = &owner;
+                getActivePanel()->canClose (true, [manager, editor] (bool canClose)
+                {
+                    if (canClose && editor != nullptr)
+                        manager->removePanel (editor.getComponent());
+                });
             }
             break;
 
@@ -463,10 +469,11 @@ bool CtrlrEditor::perform (const InvocationInfo &info) // Updated v5.6.34. Will 
             break;
 
         case CtrlrEditor::doQuit:
-            if (owner.canCloseWindow())
+            owner.canCloseWindow ([] (bool canClose)
             {
-                JUCEApplication::quit();
-            }
+                if (canClose)
+                    JUCEApplication::quit();
+            });
             break;
 
         case CtrlrEditor::doRegisterExtension:

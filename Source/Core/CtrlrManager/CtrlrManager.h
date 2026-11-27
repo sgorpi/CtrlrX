@@ -187,7 +187,7 @@ class CtrlrManager :    public ValueTree::Listener,
 		/**
 			Checks if there are any unsaved data and if so asks for the user if he wants to save before exiting
 		*/
-		bool canCloseWindow();
+		void canCloseWindow (std::function<void (bool)> callback);
 
 		/** Remove a modulator from the manager
 

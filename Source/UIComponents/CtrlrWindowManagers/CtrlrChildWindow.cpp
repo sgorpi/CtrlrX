@@ -100,8 +100,19 @@ void CtrlrChildWindow::setContent(CtrlrChildWindowContent *c)
 
 void CtrlrChildWindow::closeButtonPressed()
 {
-    if (!contentComponent || contentComponent->canCloseWindow())
+    if (!contentComponent)
+    {
         owner.windowClosedButtonPressed(this);
+        return;
+    }
+
+    // The window closes after the answer, if it still exists.
+    Component::SafePointer<CtrlrChildWindow> safeThis (this);
+    contentComponent->canCloseWindow ([safeThis] (bool canClose)
+    {
+        if (canClose && safeThis != nullptr)
+            safeThis->owner.windowClosedButtonPressed (safeThis.getComponent());
+    });
 }
 
 bool CtrlrChildWindow::keyPressed(const KeyPress &key, Component*)
