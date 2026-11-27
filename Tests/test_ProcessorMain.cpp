@@ -71,6 +71,54 @@ std::string computePerTestXmlOutputArg(int argc, char** argv)
     return "--gtest_output=" + output + sanitizeForFilename(filter) + ".xml";
 }
 
+
+#if JUCE_LINUX
+// Added v8.0.100. Create the X atoms that JUCE looks up for its windows, as the panel probe does
+// (prepareX11Display() in probe_Main.cpp, which explains it in full). JUCE asks for them with
+// XInternAtom(only_if_exists = True); on a bare X server with no window manager (xvfb-run, CI)
+// they don't exist, the first property change on a new desktop window fails with BadAtom, and
+// Xlib exits the process. A test that opens a window (an alert, a child window) then passed only
+// when another test process had created the atoms first. On a desktop they already exist. The
+// connection stays open until the process exits: the X server deletes the atoms again when its
+// last client disconnects. Keep the list the same as the probe's.
+void prepareX11Display()
+{
+    using XOpenDisplayFn = void* (*) (const char*);
+    using XInternAtomsFn = int (*) (void*, char**, int, int, unsigned long*);
+    static juce::DynamicLibrary xLib;
+    if (! xLib.open("libX11.so.6"))
+        return;
+    auto xOpenDisplay = (XOpenDisplayFn) xLib.getFunction("XOpenDisplay");
+    auto xInternAtoms = (XInternAtomsFn) xLib.getFunction("XInternAtoms");
+    if (xOpenDisplay == nullptr || xInternAtoms == nullptr)
+        return;
+
+    // The display JUCE opens: $DISPLAY, else ":0.0".
+    const char* name = std::getenv("DISPLAY");
+    static void* display = nullptr;
+    display = xOpenDisplay(name != nullptr && *name != 0 ? name : ":0.0");
+    if (display == nullptr)
+        return;
+
+    static const char* const names[] = {
+        // XWindowSystemUtilities::Atoms
+        "WM_PROTOCOLS", "WM_TAKE_FOCUS", "WM_DELETE_WINDOW", "_NET_WM_PING", "WM_CHANGE_STATE",
+        "WM_STATE", "_NET_WM_WINDOW_TYPE", "_NET_WM_STATE", "_NET_WM_STATE_HIDDEN",
+        // XWindowSystem
+        "_NET_WM_STATE_FULLSCREEN", "_NET_FRAME_EXTENTS", "_NET_WORKAREA", "_MOTIF_WM_HINTS",
+        "_WIN_HINTS", "KWM_WIN_DECORATION", "_KDE_NET_WM_WINDOW_TYPE_OVERRIDE",
+        "_NET_WM_ALLOWED_ACTIONS", "_NET_WM_WINDOW_TYPE_COMBO", "_NET_WM_WINDOW_TYPE_NORMAL",
+        "_NET_WM_ACTION_RESIZE", "_NET_WM_ACTION_FULLSCREEN", "_NET_WM_ACTION_MINIMIZE",
+        "_NET_WM_ACTION_CLOSE", "_NET_WM_STATE_SKIP_TASKBAR",
+        "_NET_WM_MOVERESIZE", // JUCE 8 only
+    };
+    constexpr int numNames = (int) (sizeof(names) / sizeof(names[0]));
+    unsigned long atoms[numNames] = {};
+    // only_if_exists = False: create the missing ones. A round trip, so they exist on return.
+    xInternAtoms(display, const_cast<char**>(names), numNames, 0, atoms);
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -101,6 +149,9 @@ int main(int argc, char** argv)
     // InitGoogleMock also initialises GoogleTest and parses the gtest/gmock command-line flags.
     ::testing::InitGoogleMock(&newArgc, args.data());
 
+   #if JUCE_LINUX
+    prepareX11Display(); // before JUCE connects to the X server
+   #endif
     juce::ScopedJuceInitialiser_GUI juceGui;
 
     return RUN_ALL_TESTS();
