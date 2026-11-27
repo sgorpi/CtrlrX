@@ -490,3 +490,25 @@ TEST_F(CloseQuestions, quit_without_lua_changes_closes_at_once)
     EXPECT_TRUE(got);
     EXPECT_TRUE(askedTitles.isEmpty()) << "quitting doesn't ask about the panel's changes, as before";
 }
+
+/**
+ * The C++ callers of the alert helpers: the alert opens through AW (after the dialog before it
+ * has closed), and the code that waited for an answer runs in the callback.
+ */
+class AlertCallers : public CloseQuestions
+{
+};
+
+// Export with resources, chooser cancelled: exportPanel's message in a warning, after the chooser.
+TEST_F(AlertCallers, export_with_resources_cancelled_warns_after_the_chooser)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    chooserAnswer = {}; // Cancel
+
+    panel->savePanelAs (CtrlrEditor::doExportFileZBinRes);
+    EXPECT_EQ(askedTitles, juce::StringArray ("Panel file binary compressed"));
+
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; }));
+    EXPECT_EQ(askedTitles[1], "Panel Export");
+}

@@ -304,7 +304,7 @@ void CtrlrPanel::savePanelAs(const CommandID saveOption)
 			                                          : exportPanel(this, f, exportedFile);
 			if (err != "")
 			{
-				AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Panel Export", err);
+				AW::showMessageBox(AlertWindow::WarningIcon, "Panel Export", err);
 			}
 		});
 	}
@@ -326,14 +326,14 @@ void CtrlrPanel::savePanelAs(const CommandID saveOption)
 				{
 					notify("Panel instance export: [" + res.getErrorMessage() + "]", nullptr, NotifyFailure);
 					// Handle a true export failure with a warning message.
-					AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Panel export", "Failed to export panel as standalone instance.\n" + res.getErrorMessage());
+					AW::showMessageBox(AlertWindow::WarningIcon, "Panel export", "Failed to export panel as standalone instance.\n" + res.getErrorMessage());
 				}
 			}
 			else
 			{
 				notify("Panel instance export: Wrote new panel instance.", nullptr, NotifySuccess);
 				// Handle a successful export.
-				AlertWindow::showMessageBox(AlertWindow::InfoIcon, "Panel export", "Wrote new panel instance");
+				AW::showMessageBox(AlertWindow::InfoIcon, "Panel export", "Wrote new panel instance");
 			}
 		});
 	}
@@ -356,14 +356,14 @@ void CtrlrPanel::savePanelAs(const CommandID saveOption)
 				{
 					notify("Panel instance export: [" + res.getErrorMessage() + "]", nullptr, NotifyFailure);
 					// Handle a true export failure with a warning message.
-					AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Panel export", "Failed to export panel as standalone instance.\n" + res.getErrorMessage());
+					AW::showMessageBox(AlertWindow::WarningIcon, "Panel export", "Failed to export panel as standalone instance.\n" + res.getErrorMessage());
 				}
 			}
 			else
 			{
 				notify("Panel instance export: Wrote new panel instance.", nullptr, NotifySuccess);
 				// Handle a successful export.
-				AlertWindow::showMessageBox(AlertWindow::InfoIcon, "Panel export", "Wrote new panel instance");
+				AW::showMessageBox(AlertWindow::InfoIcon, "Panel export", "Wrote new panel instance");
 			}
 		});
 	}
@@ -677,7 +677,7 @@ Result CtrlrPanel::savePanelBin(const File &fileToSave, CtrlrPanel *panel, const
 	}
 	else
 	{
-		AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Can't save panel", "I can't write to the specified file", "OK");
+		AW::showMessageBox(AlertWindow::WarningIcon, "Can't save panel", "I can't write to the specified file", "OK");
 		return (Result::fail ("savePanelBin now write access to file: "+fileToSave.getFullPathName()));
 	}
 }
@@ -741,7 +741,7 @@ Result CtrlrPanel::writeLuaMethod(const File &parentDir, ValueTree *method)
 	}
 	else
 	{
-		AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Could not save lua method", "Could not save lua method", "OK");
+		AW::showMessageBox(AlertWindow::WarningIcon, "Could not save lua method", "Could not save lua method", "OK");
 		return (Result::fail("saveLuaMethod: could not save lua method."));
 	}
 }
@@ -764,7 +764,7 @@ Result CtrlrPanel::writeLuaMethodGroup(const File &parentDir, ValueTree *methodG
 	}
 	else
 	{
-		AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Could not save lua method group", "Could not save lua method group", "OK");
+		AW::showMessageBox(AlertWindow::WarningIcon, "Could not save lua method group", "Could not save lua method group", "OK");
 	}
 	return res;
 }
@@ -891,7 +891,7 @@ Result CtrlrPanel::savePanelXml(const File &fileToSave, CtrlrPanel *panel, const
 	}
 	else
 	{
-		AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Can't save panel", "I can't write to the specified file", "OK");
+		AW::showMessageBox(AlertWindow::WarningIcon, "Can't save panel", "I can't write to the specified file", "OK");
 		return (Result::fail ("savePanelXml now write access to file: "+fileToSave.getFullPathName()));
 	}
 }
