@@ -12,6 +12,7 @@
 #include "CtrlrPanel/CtrlrPanelResourceManager.h"
 #include "CtrlrLua/MethodEditor/CtrlrLuaMethodEditorTabs.h"
 #include "Methods/CtrlrLuaMethodManager.h"
+#include "CtrlrPropertyEditors/CtrlrPropertyComponent.h"
 
 /**
  * The asynchronous alert helpers in CtrlrInlineUtilitiesGUI.h (namespace AW), through their test
@@ -758,4 +759,44 @@ TEST_F(AlertCallers, logged_errors_warn_one_after_the_other)
     EXPECT_TRUE(askedTitles.isEmpty()) << "the log shows them from the message loop";
     ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; }));
     EXPECT_EQ(askedTitles, juce::StringArray ("WARNING", "WARNING"));
+}
+
+// Property editors: an invalid expression warns (the field stays as typed), and the Lua method
+// property's "New method" adds the method after its name dialog.
+TEST_F(LuaEditorDialogs, expression_property_warns_about_an_invalid_expression)
+{
+    juce::Value value (juce::var ("1 +"));
+    CtrlrExpressionProperty property (value);
+    property.refresh();
+    juce::TextEditor unused;
+
+    property.textEditorReturnKeyPressed (unused);
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 1; }));
+    EXPECT_EQ(askedTitles[0], "Expression validation");
+}
+
+TEST_F(LuaEditorDialogs, lua_method_property_adds_the_method_after_the_dialog)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    juce::Value value (juce::var (""));
+    auto property = std::make_unique<CtrlrLuaMethodProperty> (value, Ids::luaModulatorValueChange, panel);
+    juce::Button *add = nullptr;
+    for (auto *child : property->getChildren())
+        if (auto *b = dynamic_cast<juce::Button *> (child))
+            if (b->getName() == "New Method")
+                add = b;
+    ASSERT_NE(add, nullptr);
+    typed = "fromProperty";
+
+    property->buttonClicked (add);
+    EXPECT_EQ(askedTitles, juce::StringArray ("Method name"));
+    EXPECT_TRUE(pumpUntil ([&] { return namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains (typed); }));
+
+    // Deleted before the answer: nothing is added, nothing is touched.
+    typed = "neverAdded";
+    property->buttonClicked (add);
+    property.reset();
+    pump();
+    EXPECT_FALSE(namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains ("neverAdded"));
 }

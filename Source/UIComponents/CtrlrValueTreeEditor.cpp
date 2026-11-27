@@ -165,19 +165,29 @@ void CtrlrValueTreeEditorItem::keyPressed (const KeyPress &key)
 		if (!provider.canBeRenamed(treeToEdit))
 			return;
 
-		AlertWindow wnd("Rename item","Rename current item type: " + treeToEdit.getType().toString(), AlertWindow::QuestionIcon, getOwnerView());
-		wnd.addTextEditor ("name", treeToEdit.getProperty(nameIdentifier), "Name:", false);
-		wnd.addButton ("OK", 1, KeyPress(KeyPress::returnKey));
-		wnd.addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
-		if (wnd.runModalLoop())
+		auto wnd = std::make_unique<AlertWindow>("Rename item","Rename current item type: " + treeToEdit.getType().toString(), AlertWindow::QuestionIcon, getOwnerView());
+		wnd->addTextEditor ("name", treeToEdit.getProperty(nameIdentifier), "Name:", false);
+		wnd->addButton ("OK", 1, KeyPress(KeyPress::returnKey));
+		wnd->addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
+
+		// The dialog is asynchronous. The item can be deleted meanwhile (a tree item is no
+		// component), so the callback holds the tree and checks the tree view; the provider
+		// (the Lua method editor) owns the view, so it exists while the view does.
+		ValueTree tree = treeToEdit;
+		Component::SafePointer<TreeView> view (getOwnerView());
+		CtrlrValueTreeEditorLookProvider *safeProvider = &provider;
+		AW::runModalAsync<AlertWindow> (std::move (wnd), [tree, view, safeProvider] (int result, AlertWindow &wnd) mutable
 		{
-			if (provider.renameItem (treeToEdit, wnd.getTextEditorContents("name")))
+			if (view == nullptr || !result)
+				return;
+
+			if (safeProvider->renameItem (tree, wnd.getTextEditorContents("name")))
 			{
-				treeToEdit.setProperty (Ids::name, wnd.getTextEditorContents("name"), nullptr);
+				tree.setProperty (Ids::name, wnd.getTextEditorContents("name"), nullptr);
 			}
 
-			provider.triggerAsyncUpdate();
-		}
+			safeProvider->triggerAsyncUpdate();
+		});
 	}
 }
 

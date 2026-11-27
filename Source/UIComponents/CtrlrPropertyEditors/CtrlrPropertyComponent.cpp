@@ -803,7 +803,7 @@ void CtrlrExpressionProperty::buttonClicked (Button* buttonThatWasClicked)
     {
 		if (compile(true))
 		{
-			AlertWindow::showMessageBox (AlertWindow::InfoIcon, "Expression validation", "Expression is valid");
+			AW::showMessageBox (AlertWindow::InfoIcon, "Expression validation", "Expression is valid");
 		}
     }
 }
@@ -835,7 +835,7 @@ const bool CtrlrExpressionProperty::compile(const bool setPropertyIfValid)
 	if (!parseError.isEmpty())
 	{
 		text->setColour (TextEditor::backgroundColourId, Colours::deeppink);
-		AlertWindow::showMessageBox (AlertWindow::WarningIcon, "Expression validation", "Validation failed: "+parseError, "OK", this);
+		AW::showMessageBox (AlertWindow::WarningIcon, "Expression validation", "Validation failed: "+parseError, "OK", this);
 		return (false);
 	}
 
@@ -1246,19 +1246,28 @@ void CtrlrLuaMethodProperty::buttonClicked (Button* buttonThatWasClicked)
     }
     else if (buttonThatWasClicked == newMethodButton)
     {
-		AlertWindow w("Method name", "New method name", AlertWindow::QuestionIcon, this);
-		w.addTextEditor ("methodName", "myMethod", "Method", false);
-		w.addButton ("OK", 1, KeyPress(KeyPress::returnKey));
-		w.addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
-		if (w.runModalLoop())
-		{
-			if (owner)
-			{
-				owner->getCtrlrLuaManager().getMethodManager().addMethod (ValueTree(), w.getTextEditorContents("methodName"), "", id.toString());
-			}
-		}
+		auto w = std::make_unique<AlertWindow>("Method name", "New method name", AlertWindow::QuestionIcon, this);
+		w->addTextEditor ("methodName", "myMethod", "Method", false);
+		w->addButton ("OK", 1, KeyPress(KeyPress::returnKey));
+		w->addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
 
-		refresh();
+		// The dialog is asynchronous; the code after it runs in the callback, if the property still exists.
+		Component::SafePointer<CtrlrLuaMethodProperty> safeThis (this);
+		AW::runModalAsync<AlertWindow> (std::move (w), [this, safeThis] (int result, AlertWindow &w)
+		{
+			if (safeThis == nullptr)
+				return;
+
+			if (result)
+			{
+				if (owner)
+				{
+					owner->getCtrlrLuaManager().getMethodManager().addMethod (ValueTree(), w.getTextEditorContents("methodName"), "", id.toString());
+				}
+			}
+
+			refresh();
+		});
     }
     else if (buttonThatWasClicked == deleteMethodButton)
     {
