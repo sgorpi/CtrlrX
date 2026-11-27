@@ -10,6 +10,8 @@
 #include "CtrlrWindowManagers/CtrlrPanelWindowManager.h"
 #include "CtrlrPanel/CtrlrPanelResourceEditor.h"
 #include "CtrlrPanel/CtrlrPanelResourceManager.h"
+#include "CtrlrLua/MethodEditor/CtrlrLuaMethodEditorTabs.h"
+#include "Methods/CtrlrLuaMethodManager.h"
 
 /**
  * The asynchronous alert helpers in CtrlrInlineUtilitiesGUI.h (namespace AW), through their test
@@ -567,4 +569,182 @@ TEST_F(AlertCallers, resource_move_waits_for_the_answer_and_skips_a_closed_edito
     EXPECT_EQ(askedTitles, juce::StringArray ("Move resources to panel folder"));
     editor.reset();
     pump(); // the answer reaches a deleted editor: nothing happens (memcheck)
+}
+
+// The Lua method editor's dialogs: the hook fills the dialog's text box and presses OK.
+static juce::StringArray namesIn (const juce::ValueTree &tree, const juce::Identifier &type, const juce::Identifier &nameId)
+{
+    juce::StringArray names;
+    for (const auto &child : tree)
+        if (child.hasType (type))
+            names.add (child.getProperty (nameId).toString());
+    return names;
+}
+
+class LuaEditorDialogs : public AlertCallers
+{
+protected:
+    juce::String typed;  // put into the dialog's first text box
+    int dialogResult = 1; // the dialog's button (1 = OK)
+
+    void SetUp() override
+    {
+        AlertCallers::SetUp();
+        AW::TestAnswer alerts = AW::testAnswer();
+        AW::testAnswer() = [this, alerts] (const AW::Request &request) {
+            if (request.window == nullptr)
+                return alerts (request);
+            askedTitles.add (request.title);
+            if (auto *w = dynamic_cast<juce::AlertWindow *> (request.window))
+                for (const juce::String name : { "methodName", "groupName", "name" })
+                    if (auto *box = w->getTextEditor (name))
+                        box->setText (typed);
+            return dialogResult;
+        };
+    }
+
+    juce::ValueTree root (CtrlrPanel &panel) { return panel.getCtrlrLuaManager().getMethodManager().getManagerTree(); }
+};
+
+TEST_F(LuaEditorDialogs, add_method_adds_it_in_the_callback)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrLuaMethodEditor editor (*panel);
+    typed = "addedByTest";
+
+    editor.addNewMethod (root (*panel));
+    EXPECT_EQ(askedTitles.size(), 1);
+    EXPECT_FALSE(namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains (typed)) << "nothing before the answer";
+    EXPECT_TRUE(pumpUntil ([&] { return namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains (typed); }));
+}
+
+TEST_F(LuaEditorDialogs, add_method_with_an_invalid_name_warns_after_the_dialog)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrLuaMethodEditor editor (*panel);
+    typed = "not a name";
+    const int before = namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).size();
+
+    editor.addNewMethod (root (*panel));
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; }));
+    EXPECT_EQ(askedTitles[1], "WARNING");
+    EXPECT_EQ(namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).size(), before);
+}
+
+TEST_F(LuaEditorDialogs, add_and_rename_group_in_the_callback)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrLuaMethodEditor editor (*panel);
+
+    typed = "Test group";
+    editor.addNewGroup (root (*panel));
+    EXPECT_FALSE(namesIn (root (*panel), Ids::luaMethodGroup, Ids::name).contains (typed));
+    ASSERT_TRUE(pumpUntil ([&] { return namesIn (root (*panel), Ids::luaMethodGroup, Ids::name).contains (typed); }));
+
+    juce::ValueTree group = root (*panel).getChildWithProperty (Ids::name, "Test group");
+    typed = "Renamed group";
+    editor.renameGroup (group);
+    EXPECT_EQ(group.getProperty (Ids::name).toString(), "Test group");
+    EXPECT_TRUE(pumpUntil ([&] { return group.getProperty (Ids::name).toString() == "Renamed group"; }));
+}
+
+TEST_F(LuaEditorDialogs, dialogs_do_nothing_when_the_editor_closed_before_the_answer)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    auto editor = std::make_unique<CtrlrLuaMethodEditor> (*panel);
+    typed = "neverAdded";
+
+    editor->addNewMethod (root (*panel));
+    editor->addNewGroup (root (*panel));
+    editor.reset();
+    pump(); // no use of the deleted editor (memcheck)
+    EXPECT_FALSE(namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains (typed));
+    EXPECT_FALSE(namesIn (root (*panel), Ids::luaMethodGroup, Ids::name).contains (typed));
+}
+
+TEST_F(LuaEditorDialogs, remove_group_with_methods_asks_first)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrLuaMethodEditor editor (*panel);
+    CtrlrLuaMethodManager &methods = panel->getCtrlrLuaManager().getMethodManager();
+    methods.addGroup ("Full group");
+    juce::ValueTree group = root (*panel).getChildWithProperty (Ids::name, "Full group");
+    ASSERT_TRUE(group.isValid());
+    methods.addMethod (group, "inFullGroup", "function inFullGroup()\nend", "");
+    ASSERT_GT(group.getNumChildren(), 0);
+
+    buttonsToPress = { "No" };
+    editor.removeGroup (group);
+    EXPECT_EQ(askedTitles, juce::StringArray ("Are you sure?"));
+    pump();
+    EXPECT_TRUE(namesIn (root (*panel), Ids::luaMethodGroup, Ids::name).contains ("Full group"));
+
+    buttonsToPress = { "Yes" };
+    editor.removeGroup (group);
+    EXPECT_TRUE(pumpUntil ([&] { return ! namesIn (root (*panel), Ids::luaMethodGroup, Ids::name).contains ("Full group"); }));
+}
+
+// Closing tabs with unsaved code: each asks; No keeps the tab and stops "close all", as before.
+TEST_F(LuaEditorDialogs, close_tabs_with_unsaved_code_ask_and_no_stops)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrLuaMethodEditor editor (*panel);
+    CtrlrLuaMethodManager &methods = panel->getCtrlrLuaManager().getMethodManager();
+    for (const char *name : { "onTargetChange", "onOtherChange" })
+    {
+        CtrlrLuaMethod *method = methods.getMethodByName (name);
+        ASSERT_NE(method, nullptr) << name;
+        editor.createNewTab (method);
+        editor.getCurrentEditor()->getCodeDocument().insertText (0, "-- changed\n");
+    }
+    CtrlrLuaMethodEditorTabs *tabs = editor.getMethodEditArea()->getTabs();
+    ASSERT_EQ(tabs->getNumTabs(), 2);
+
+    buttonsToPress = { "Yes", "No" };
+    editor.closeAllTabs();
+    EXPECT_EQ(tabs->getNumTabs(), 2) << "nothing closes before the answer";
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 2; }));
+    pump();
+    EXPECT_EQ(tabs->getNumTabs(), 1);
+}
+
+// R4a's method menu, then the question: the method goes only after Yes.
+TEST_F(LuaEditorDialogs, remove_method_asks_after_the_menu)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrLuaMethodEditor editor (*panel);
+    juce::ValueTree method = root (*panel).getChildWithProperty (Ids::luaMethodName, "onOtherChange");
+    ASSERT_TRUE(method.isValid());
+    PU::testAnswer() = [] (const juce::PopupMenu &menu, const juce::PopupMenu::Options &) {
+        for (juce::PopupMenu::MenuItemIterator it (menu, true); it.next();)
+            if (it.getItem().text == "Remove method")
+                return it.getItem().itemID;
+        return 0;
+    };
+    const juce::Point<float> pos (5.0f, 5.0f);
+    const juce::Time now = juce::Time::getCurrentTime();
+    const juce::MouseEvent rightClick (juce::Desktop::getInstance().getMainMouseSource(), pos,
+                                       juce::ModifierKeys (juce::ModifierKeys::rightButtonModifier),
+                                       juce::MouseInputSource::invalidPressure, juce::MouseInputSource::invalidOrientation,
+                                       juce::MouseInputSource::invalidRotation, juce::MouseInputSource::invalidTiltX,
+                                       juce::MouseInputSource::invalidTiltY, &editor, &editor, now, pos, now, 1, false);
+
+    for (const juce::String button : { "No", "Yes" })
+    {
+        askedTitles.clear();
+        buttonsToPress = { button };
+        editor.itemClicked (rightClick, method);
+        ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 1; })) << button;
+        EXPECT_EQ(askedTitles[0], "Are you sure?");
+        pump();
+        EXPECT_EQ(namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains ("onOtherChange"), button == "No") << button;
+    }
+    PU::testAnswer() = nullptr;
 }

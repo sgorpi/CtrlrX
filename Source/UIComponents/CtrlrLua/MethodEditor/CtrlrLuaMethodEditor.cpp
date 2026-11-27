@@ -274,31 +274,40 @@ CtrlrLuaMethod *CtrlrLuaMethodEditor::setEditedMethod (const Uuid &methodUuid)
 
 void CtrlrLuaMethodEditor::addNewMethod(ValueTree parentGroup)
 {
-    AlertWindow wnd(METHOD_NEW, "", AlertWindow::InfoIcon, this);
-    wnd.addTextEditor ("methodName", "myNewMethod", "Method name", false);
-    wnd.addComboBox ("templateList", getMethodManager().getTemplateList(), "Initialize from template");
+    auto wnd = std::make_unique<AlertWindow>(METHOD_NEW, "", AlertWindow::InfoIcon, this);
+    wnd->addTextEditor ("methodName", "myNewMethod", "Method name", false);
+    wnd->addComboBox ("templateList", getMethodManager().getTemplateList(), "Initialize from template");
 
-    wnd.addButton ("OK", 1, KeyPress(KeyPress::returnKey));
-    wnd.addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
-    if (wnd.runModalLoop())
+    wnd->addButton ("OK", 1, KeyPress(KeyPress::returnKey));
+    wnd->addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
+
+    // The dialog is asynchronous; the code after it runs in the callback, if the editor still exists.
+    Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+    AW::runModalAsync<AlertWindow> (std::move (wnd), [this, safeThis, parentGroup] (int result, AlertWindow &wnd)
     {
-        const String methodName = wnd.getTextEditorContents("methodName");
+        if (safeThis == nullptr)
+            return;
 
-        if (getMethodManager().isValidMethodName(methodName))
+        if (result)
         {
-            const String initialCode = getMethodManager().getDefaultMethodCode(methodName, wnd.getComboBoxComponent("templateList")->getText());
+            const String methodName = wnd.getTextEditorContents("methodName");
 
-            getMethodManager().addMethod (parentGroup, wnd.getTextEditorContents("methodName"), initialCode, "");
+            if (getMethodManager().isValidMethodName(methodName))
+            {
+                const String initialCode = getMethodManager().getDefaultMethodCode(methodName, wnd.getComboBoxComponent("templateList")->getText());
+
+                getMethodManager().addMethod (parentGroup, wnd.getTextEditorContents("methodName"), initialCode, "");
+            }
+            else
+            {
+                AW::showMessageBox (AlertWindow::WarningIcon, "WARNING", "Invalid method name, please correct", "OK");
+            }
         }
-        else
-        {
-            WARN("Invalid method name, please correct");
-        }
-    }
 
-    updateRootItem();
+        updateRootItem();
 
-    saveSettings(); // save settings
+        saveSettings(); // save settings
+    });
 }
 
 void CtrlrLuaMethodEditor::addNewTable(ValueTree parentGroup)
@@ -382,7 +391,7 @@ void CtrlrLuaMethodEditor::addNewTable(ValueTree parentGroup)
 				// Register as a Lua file/method in the manager
 				safeThis->getMethodManager().addMethod(parentGroup, tableName, initialCode, "");
 			} else {
-				WARN("Invalid table name, please correct");
+				AW::showMessageBox (AlertWindow::WarningIcon, "WARNING", "Invalid table name, please correct", "OK");
 			}
 
 			safeThis->updateRootItem();
@@ -479,7 +488,7 @@ void CtrlrLuaMethodEditor::addNewClass(ValueTree parentGroup)
 
 								 safeThis->getMethodManager().addMethod(parentGroup, className, code, "");
 							 } else {
-								 WARN("Invalid class name, please correct");
+								 AW::showMessageBox (AlertWindow::WarningIcon, "WARNING", "Invalid class name, please correct", "OK");
 							 }
 
 							 safeThis->updateRootItem();
@@ -531,7 +540,7 @@ void CtrlrLuaMethodEditor::addMethodFromFile(ValueTree parentGroup)
                 }
                 else
                 {
-                    AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Add Files", "A method named '"+ methodName +"' already exists in this group, file will be ignored.");
+                    AW::showMessageBox(AlertWindow::WarningIcon, "Add Files", "A method named '"+ methodName +"' already exists in this group, file will be ignored.");
                 }
             }
         }
@@ -544,60 +553,87 @@ void CtrlrLuaMethodEditor::addMethodFromFile(ValueTree parentGroup)
 
 void CtrlrLuaMethodEditor::addNewGroup(ValueTree parentGroup)
 {
-    AlertWindow wnd(GROUP_NEW, "", AlertWindow::InfoIcon, this);
-    wnd.addTextEditor ("groupName", "New Group", "Group name", false);
-    wnd.addButton ("OK", 1, KeyPress(KeyPress::returnKey));
-    wnd.addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
-    if (wnd.runModalLoop())
+    auto wnd = std::make_unique<AlertWindow>(GROUP_NEW, "", AlertWindow::InfoIcon, this);
+    wnd->addTextEditor ("groupName", "New Group", "Group name", false);
+    wnd->addButton ("OK", 1, KeyPress(KeyPress::returnKey));
+    wnd->addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
+
+    // The dialog is asynchronous; the code after it runs in the callback, if the editor still exists.
+    Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+    AW::runModalAsync<AlertWindow> (std::move (wnd), [this, safeThis, parentGroup] (int result, AlertWindow &wnd)
     {
-        if (parentGroup.hasType (Ids::luaMethodGroup))
-        {
-            getMethodManager().addGroup (wnd.getTextEditorContents("groupName"), parentGroup.getProperty(Ids::uuid).toString());
-        }
-        else
-        {
-            getMethodManager().addGroup (wnd.getTextEditorContents("groupName"));
-        }
-    }
+        if (safeThis == nullptr)
+            return;
 
-    updateRootItem();
+        if (result)
+        {
+            if (parentGroup.hasType (Ids::luaMethodGroup))
+            {
+                getMethodManager().addGroup (wnd.getTextEditorContents("groupName"), parentGroup.getProperty(Ids::uuid).toString());
+            }
+            else
+            {
+                getMethodManager().addGroup (wnd.getTextEditorContents("groupName"));
+            }
+        }
 
-    saveSettings(); // save settings
+        updateRootItem();
+
+        saveSettings(); // save settings
+    });
 }
 
 void CtrlrLuaMethodEditor::removeGroup(ValueTree parentGroup)
 {
-    if (parentGroup.getNumChildren() > 0)
+    // A group with children asks first; the code after the question runs in its callback.
+    Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+    const auto remove = [this, safeThis, parentGroup] (bool sure)
     {
-        if (SURE("Remove group: "+parentGroup.getProperty(Ids::name).toString()+" ?", this))
+        if (safeThis == nullptr)
+            return;
+
+        if (sure)
         {
             getMethodManager().removeGroup(parentGroup);
         }
+
+        updateRootItem();
+
+        saveSettings(); // save settings
+    };
+
+    if (parentGroup.getNumChildren() > 0)
+    {
+        AW::showOkCancelBox (AlertWindow::QuestionIcon, "Are you sure?", "Remove group: "+parentGroup.getProperty(Ids::name).toString()+" ?", "Yes", "No", this, remove);
     }
     else
     {
-        getMethodManager().removeGroup(parentGroup);
+        remove (true);
     }
-
-    updateRootItem();
-
-    saveSettings(); // save settings
 }
 
 void CtrlrLuaMethodEditor::renameGroup(ValueTree parentGroup)
 {
-    AlertWindow w ("Rename group", "", AlertWindow::QuestionIcon, this);
-    w.addTextEditor("name", parentGroup.getProperty (Ids::name).toString());
-    w.addButton ("OK", 1, KeyPress(KeyPress::returnKey));
-    w.addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
+    auto w = std::make_unique<AlertWindow> ("Rename group", "", AlertWindow::QuestionIcon, this);
+    w->addTextEditor("name", parentGroup.getProperty (Ids::name).toString());
+    w->addButton ("OK", 1, KeyPress(KeyPress::returnKey));
+    w->addButton ("Cancel", 0, KeyPress(KeyPress::escapeKey));
 
-    if (w.runModalLoop())
+    // The dialog is asynchronous; the code after it runs in the callback, if the editor still exists.
+    Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+    AW::runModalAsync<AlertWindow> (std::move (w), [this, safeThis, parentGroup] (int result, AlertWindow &w) mutable
     {
-        parentGroup.setProperty (Ids::name, w.getTextEditorContents("name"), nullptr);
-        updateRootItem();
-    }
+        if (safeThis == nullptr)
+            return;
 
-    saveSettings(); // save settings
+        if (result)
+        {
+            parentGroup.setProperty (Ids::name, w.getTextEditorContents("name"), nullptr);
+            updateRootItem();
+        }
+
+        saveSettings(); // save settings
+    });
 }
 
 CtrlrLuaMethodCodeEditor *CtrlrLuaMethodEditor::getCurrentEditor()
@@ -630,57 +666,94 @@ void CtrlrLuaMethodEditor::closeCurrentTab()
 
 void CtrlrLuaMethodEditor::closeAllTabs()
 {
-    CtrlrLuaMethodEditorTabs *tabs = methodEditArea->getTabs();
-    while (tabs->getNumTabs() > 0)
+    // One tab after the other; a tab whose question is answered No stops there, as before.
+    Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+    if (methodEditArea->getTabs()->getNumTabs() > 0)
     {
-        if (!closeTab(0))
+        closeTab (0, [safeThis] (bool closed)
         {
-            break;
-        }
+            if (closed && safeThis != nullptr)
+                safeThis->closeAllTabs();
+        });
     }
 }
 
-bool CtrlrLuaMethodEditor::closeTab(const int tabIndex)
+// A tab with unsaved changes asks first. The callback gets true if the tab was closed; it runs
+// inside the call when nothing had to be asked.
+void CtrlrLuaMethodEditor::closeTab(const int tabIndex, std::function<void (bool)> callback)
 {
-    int currentlySelectedTab = methodEditArea->getTabs()->getCurrentTabIndex();
-    bool closed = true;
     CtrlrLuaMethodCodeEditor *ed = dynamic_cast<CtrlrLuaMethodCodeEditor*>(methodEditArea->getTabs()->getTabContentComponent(tabIndex));
     if (ed)
     {
-        if (ed->getCodeDocument().hasChangedSinceSavePoint())
+        // The tab is looked up again after the answer: tabs before it may have closed meanwhile.
+        Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+        Component::SafePointer<CtrlrLuaMethodCodeEditor> safeEditor (ed);
+        const auto close = [this, safeThis, safeEditor, callback] (bool sure)
         {
-            if (SURE("There might be some unsaved changes, are you sure?", this))
+            if (safeThis == nullptr || safeEditor == nullptr)
             {
-                methodEditArea->getTabs()->removeTab (tabIndex);
+                if (callback)
+                    callback (false);
+                return;
+            }
+
+            CtrlrLuaMethodEditorTabs *tabs = methodEditArea->getTabs();
+            int tabIndex = -1;
+            for (int i = 0; i < tabs->getNumTabs(); i++)
+            {
+                if (tabs->getTabContentComponent(i) == safeEditor.getComponent())
+                    tabIndex = i;
+            }
+            if (tabIndex < 0)
+            {
+                if (callback)
+                    callback (false);
+                return;
+            }
+            int currentlySelectedTab = tabs->getCurrentTabIndex();
+            bool closed = true;
+
+            if (sure)
+            {
+                tabs->removeTab (tabIndex);
             }
             else
             {
                 closed = false;
             }
-        }
-        else
-        {
-            methodEditArea->getTabs()->removeTab (tabIndex);
-        }
 
-        if (closed)
-        {
-            if (tabIndex == currentlySelectedTab)
-            {    // We closed the selected tab => move to previous tab
-                if (currentlySelectedTab > 0)
+            if (closed)
+            {
+                if (tabIndex == currentlySelectedTab)
+                {    // We closed the selected tab => move to previous tab
+                    if (currentlySelectedTab > 0)
+                    {
+                        currentlySelectedTab = currentlySelectedTab - 1;
+                    }
+                }
+                else if (tabIndex < currentlySelectedTab)
                 {
                     currentlySelectedTab = currentlySelectedTab - 1;
                 }
+                tabs->setCurrentTabIndex(currentlySelectedTab, false);
+                saveSettings();
             }
-            else if (tabIndex < currentlySelectedTab)
-            {
-                currentlySelectedTab = currentlySelectedTab - 1;
-            }
-            methodEditArea->getTabs()->setCurrentTabIndex(currentlySelectedTab, false);
-            saveSettings();
+            if (callback)
+                callback (closed);
+        };
+
+        if (ed->getCodeDocument().hasChangedSinceSavePoint())
+        {
+            AW::showOkCancelBox (AlertWindow::QuestionIcon, "Are you sure?", "There might be some unsaved changes, are you sure?", "Yes", "No", this, close);
         }
+        else
+        {
+            close (true);
+        }
+        return;
     }
-    return closed;
+    if (callback)
+        callback (true);
 }
 
 // Asynchronous: the callback gets the answer (true = close); it runs inside the
@@ -1143,15 +1216,18 @@ void CtrlrLuaMethodEditor::itemClicked (const MouseEvent &e, ValueTree &item)
                 else if (ret == 2)
                 {
                     /* remove a method */
-                    if (SURE("Delete the selected method?", this))
+                    AW::showOkCancelBox (AlertWindow::QuestionIcon, "Are you sure?", "Delete the selected method?", "Yes", "No", this,
+                                         [this, safeThis, item] (bool sure)
                     {
+                        if (safeThis == nullptr || !sure)
+                            return;
                         {
                             methodEditArea->closeTabWithMethod (item);
                             getMethodManager().removeMethod (item.getProperty(Ids::uuid).toString());
                         }
 
                         triggerAsyncUpdate();
-                    }
+                    });
                 }
             });
         }
@@ -1403,9 +1479,14 @@ void CtrlrLuaMethodEditor::convertToFiles()
 {
     // Show confirmation dialog
     const String location = owner.getPanelLuaDirPath();
-    const int confirm = AlertWindow::showOkCancelBox(AlertWindow::QuestionIcon, "Convert to files", "Do you want to convert all Lua methods to files (location=" + location + ")?", "Yes", "No");
-    if (confirm == 1)
+    // The conversion runs in the callback, if the editor still exists.
+    Component::SafePointer<CtrlrLuaMethodEditor> safeThis (this);
+    AW::showOkCancelBox(AlertWindow::QuestionIcon, "Convert to files", "Do you want to convert all Lua methods to files (location=" + location + ")?", "Yes", "No", nullptr,
+                        [this, safeThis, location] (bool confirm)
     {
+        if (safeThis == nullptr || !confirm)
+            return;
+
         Result res = owner.convertLuaMethodsToFiles(location);
         if (res.wasOk())
         {
@@ -1414,9 +1495,9 @@ void CtrlrLuaMethodEditor::convertToFiles()
         }
         else
         {
-            AlertWindow::showMessageBox(AlertWindow::WarningIcon, "Convert to files", "Failed to convert Lua methods to files.\n" + res.getErrorMessage());
+            AW::showMessageBox(AlertWindow::WarningIcon, "Convert to files", "Failed to convert Lua methods to files.\n" + res.getErrorMessage());
         }
-    }
+    });
 }
 
 ValueTree &CtrlrLuaMethodEditor::getComponentTree()
@@ -1471,6 +1552,7 @@ const String CtrlrLuaMethodEditor::getCurrentDebuggerCommand(const bool clearThe
     return ("");
 }
 
+// Stays blocking: the Lua debugger calls it from inside a Lua hook, with the script paused.
 int CtrlrLuaMethodEditor::waitForCommand()
 {
     return (getParentComponent()->runModalLoop());

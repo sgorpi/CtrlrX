@@ -90,7 +90,7 @@ class CtrlrLuaMethodEditor  : public CtrlrChildWindowContent,
         bool keyPressed (const KeyPress& key, Component* originatingComponent);
         void closeCurrentTab();
         void closeAllTabs();
-        bool closeTab(const int tabIndex);
+        void closeTab(const int tabIndex, std::function<void (bool)> callback = nullptr);
         void canCloseWindow (std::function<void (bool)> callback) override;
         
         void tabChanged(CtrlrLuaMethodCodeEditor *codeEditor, const bool save=false, const bool recompile=false);
