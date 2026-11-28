@@ -31,6 +31,8 @@ ValueTree &CtrlrManagerWindowManager::getManagerTree()
 	return (managerTree);
 }
 
+// Not called anywhere, so it keeps its modal loop; CtrlrDialogWindow::showModalDialogAsync() is the
+// asynchronous form.
 void CtrlrManagerWindowManager::showModalDialog(const String &title, Component *content, const bool resizable, Component *parent)
 {
 	content->setSize (content->getWidth() ? content->getWidth() : 400, content->getHeight() ? content->getHeight() : 500);

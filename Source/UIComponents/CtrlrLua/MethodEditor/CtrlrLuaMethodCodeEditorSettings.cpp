@@ -3,6 +3,7 @@
 #include "CtrlrPanel/CtrlrPanel.h"
 #include "CtrlrManager/CtrlrManager.h"
 #include "CtrlrLuaMethodCodeEditorSettings.h"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 const CtrlrLuaMethodCodeEditorSettings::ColourItem CtrlrLuaMethodCodeEditorSettings::availableColours[] = {
     // Common colors first
@@ -504,12 +505,19 @@ void CtrlrLuaMethodCodeEditorSettings::buttonClicked(Button* buttonThatWasClicke
 	}
 	else if (buttonThatWasClicked == resetButton)
 	{
-		int result = AlertWindow::showOkCancelBox(AlertWindow::QuestionIcon,
-												  "Reset Editor",
-												  "Reset Editor to default?"
-												  );
+		// Updated v8.0.100. Asynchronous: the code after the blocking question, to the end of
+		// buttonClicked, runs in the callback.
+		Component::SafePointer<CtrlrLuaMethodCodeEditorSettings> safeThis (this);
+		AW::showOkCancelBox(AlertWindow::QuestionIcon,
+							"Reset Editor",
+							"Reset Editor to default?",
+							String(), String(), nullptr,
+							[this, safeThis, buttonThatWasClicked] (bool ok)
+		{
+		if (safeThis == nullptr)
+			return;
 		
-		if (result == 1)
+		if (ok)
 		{
 			// Reset to defaults
 			// fontTypeface->setText(getDefaultFont(), dontSendNotification);
@@ -554,6 +562,10 @@ void CtrlrLuaMethodCodeEditorSettings::buttonClicked(Button* buttonThatWasClicke
             bool currentState = autoCompleteButton->getToggleState();
             owner.getComponentTree().setProperty(Ids::luaMethodEditorAutoComplete, currentState, nullptr);
         }
+		
+		changeListenerCallback(nullptr);
+		});
+		return;
 		
 	}
 	
@@ -858,6 +870,8 @@ void CtrlrLuaMethodCodeEditorSettings::markAsSaved()
     originalAutoComplete = autoCompleteButton->getToggleState();
 }
 
+// Not called anywhere, so it keeps its blocking question; AW::showYesNoCancelBox() is the
+// asynchronous form.
 bool CtrlrLuaMethodCodeEditorSettings::promptToSaveChanges()
 {
     if (!hasUnsavedChanges())

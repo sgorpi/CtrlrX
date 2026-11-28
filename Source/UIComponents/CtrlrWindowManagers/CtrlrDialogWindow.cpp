@@ -2,6 +2,22 @@
 #include "CtrlrDialogWindow.h"
 #include "CtrlrInlineUtilitiesGUI.h"
 
+// Added v8.0.100. showModalDialogAsync(): the window of showModalDialog(), shown with
+// AW::runModalAsync() instead of a modal loop. The window owns the content, so the caller needs
+// no object that outlives the call; the callback gets the result and the content, while the window
+// still exists.
+void CtrlrDialogWindow::runAsync(std::unique_ptr<DialogWindow> window,
+    std::unique_ptr<Component> content,
+    std::function<void (int, Component&)> callback)
+{
+    window->setContentOwned(content.release(), true);
+    AW::runModalAsync<DialogWindow>(std::move(window), [callback](int result, DialogWindow& w)
+    {
+        if (callback != nullptr && w.getContentComponent() != nullptr)
+            callback(result, *w.getContentComponent());
+    });
+}
+
 #if JUCE_LINUX
 
 // Fade-in helper for any Component
@@ -30,7 +46,9 @@ public:
     }
 
 private:
-    Component* comp;
+    // Updated v8.0.100. A safe pointer: an asynchronous dialog window can be gone before the
+    // fade-in has finished.
+    Component::SafePointer<Component> comp;
     float alpha;
 };
 
@@ -61,8 +79,10 @@ public:
 
         setContentNonOwned(contentComponent_, true);
 
-        addToDesktop(ComponentPeer::windowHasTitleBar
-            | ComponentPeer::windowAppearsOnTaskbar);
+        // Updated v8.0.100. JUCE 8 asserts when a TopLevelWindow is put on the desktop with
+        // other flags than its own (a trap in Debug builds). setResizable() below gives the
+        // window these flags anyway; it used to be: windowHasTitleBar | windowAppearsOnTaskbar.
+        addToDesktop(getDesktopWindowStyleFlags());
 
         centreWithSize(getWidth(), getHeight());
         setResizable(shouldBeResizable, useBottomRightCornerResizer);
@@ -85,6 +105,17 @@ int CtrlrDialogWindow::showModalDialog(const String& title,
     CtrlrTempDialogWindow dw(title, content, nullptr,
         Colours::lightgrey, true, resizable, false);
     return dw.runModalLoop();
+}
+
+void CtrlrDialogWindow::showModalDialogAsync(const String& title,
+    std::unique_ptr<Component> content,
+    const bool resizable,
+    Component* /*parent*/,
+    std::function<void (int, Component&)> callback)
+{
+    auto dw = std::make_unique<CtrlrTempDialogWindow>(title, content.get(), nullptr,
+        Colours::lightgrey, true, resizable, false);
+    runAsync(std::move(dw), std::move(content), std::move(callback));
 }
 
 DialogWindow* CtrlrDialogWindow::showNonModalDialog(const String& title,
@@ -134,6 +165,17 @@ int CtrlrDialogWindow::showModalDialog(const String& title,
     CtrlrTempDialogWindow dw(title, content, parent,
         Colours::lightgrey, true, resizable, false);
     return dw.runModalLoop();
+}
+
+void CtrlrDialogWindow::showModalDialogAsync(const String& title,
+    std::unique_ptr<Component> content,
+    const bool resizable,
+    Component* parent,
+    std::function<void (int, Component&)> callback)
+{
+    auto dw = std::make_unique<CtrlrTempDialogWindow>(title, content.get(), parent,
+        Colours::lightgrey, true, resizable, false);
+    runAsync(std::move(dw), std::move(content), std::move(callback));
 }
 
 DialogWindow* CtrlrDialogWindow::showNonModalDialog(const String& title,

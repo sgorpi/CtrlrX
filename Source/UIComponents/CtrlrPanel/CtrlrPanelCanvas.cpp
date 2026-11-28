@@ -1694,6 +1694,8 @@ void CtrlrQuickXmlPreview::resized()
 	h.setSize (getWidth(), getHeight());
 }
 
+// Nothing makes a CtrlrQuickXmlPreview, so this keeps its modal loop; DialogWindow::LaunchOptions::
+// launchAsync() is the asynchronous form.
 void CtrlrQuickXmlPreview::buttonClicked(Button *)
 {
 	CodeDocument doc;

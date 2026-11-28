@@ -88,24 +88,35 @@ void CtrlrEditor::performLuaEditorCommand(const int commandID) // Added v5.6.34.
             }
             else if (commandID == LuaMethodEditorCommandIDs::editPreferences)
             {
-                CtrlrLuaMethodCodeEditorSettings s(*luaMethodEditor, SharedValues::getSearchTabsValue());
+                auto settings = std::make_unique<CtrlrLuaMethodCodeEditorSettings>(*luaMethodEditor, SharedValues::getSearchTabsValue());
                 
                 _DBG("Attempting to show modal dialog.");
 
-                CtrlrDialogWindow::showModalDialog ("Code editor preferences", &s, false, luaMethodEditor);
-                
+                // Updated v8.0.100. Asynchronous: the settings are stored when the window has
+                // closed, if the Lua editor and the panel still exist.
+                Component::SafePointer<CtrlrLuaMethodEditor> safeEditor (luaMethodEditor);
+                WeakReference<CtrlrPanel> safePanel (activePanel);
+                CtrlrDialogWindow::showModalDialogAsync ("Code editor preferences", std::move (settings), false, luaMethodEditor,
+                                                         [safeEditor, safePanel] (int, Component &content)
+                {
                 _DBG("Modal dialog returned.");
 
-                if (activePanel)
+                CtrlrLuaMethodEditor *luaMethodEditor = safeEditor.getComponent();
+                auto *s = dynamic_cast<CtrlrLuaMethodCodeEditorSettings *> (&content);
+                if (luaMethodEditor == nullptr || s == nullptr)
+                    return;
+
+                if (CtrlrPanel *activePanel = safePanel.get())
                 {
                     auto& manager = activePanel->getCtrlrManagerOwner();
 
-                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorFont, manager.getFontManager().getStringFromFont (s.getFont()), nullptr);
-                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorBgColour, COLOUR2STR (s.getBgColour()), nullptr);
-                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorLineNumbersBgColour, COLOUR2STR(s.getLineNumbersBgColour()), nullptr);
-                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorLineNumbersColour, COLOUR2STR(s.getLineNumbersColour()), nullptr);
+                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorFont, manager.getFontManager().getStringFromFont (s->getFont()), nullptr);
+                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorBgColour, COLOUR2STR (s->getBgColour()), nullptr);
+                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorLineNumbersBgColour, COLOUR2STR(s->getLineNumbersBgColour()), nullptr);
+                    luaMethodEditor->getComponentTree().setProperty (Ids::luaMethodEditorLineNumbersColour, COLOUR2STR(s->getLineNumbersColour()), nullptr);
                     luaMethodEditor->updateTabs();
                 }
+                });
             }
             else if (commandID == LuaMethodEditorCommandIDs::editSingleLineComment)
             {

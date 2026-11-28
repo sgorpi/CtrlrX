@@ -13,6 +13,8 @@
 #include "CtrlrLua/MethodEditor/CtrlrLuaMethodEditorTabs.h"
 #include "Methods/CtrlrLuaMethodManager.h"
 #include "CtrlrPropertyEditors/CtrlrPropertyComponent.h"
+#include "CtrlrWindowManagers/CtrlrDialogWindow.h"
+#include "CtrlrLua/MethodEditor/CtrlrLuaMethodCodeEditorSettings.h"
 
 /**
  * The asynchronous alert helpers in CtrlrInlineUtilitiesGUI.h (namespace AW), through their test
@@ -981,4 +983,87 @@ TEST_F(LicenseQuestions, blocking_form_returns_the_answer)
     askedTitles.clear();
     EXPECT_TRUE(CtrlrPanelResourceManager::confirmEmbeddedLicense (juce::ValueTree (Ids::resourceExportList)));
     EXPECT_TRUE(askedTitles.isEmpty()) << "no licence, no question";
+}
+
+// CtrlrDialogWindow::showModalDialogAsync(): the window of showModalDialog() owns the content; the
+// callback gets the result and the content later, and the content goes with the window.
+TEST_F(AlertHelpers, dialog_window_owns_the_content_and_calls_back_later)
+{
+    struct Content : juce::Component
+    {
+        bool &deleted;
+        explicit Content (bool &d) : deleted (d) { setSize (200, 100); }
+        ~Content() override { deleted = true; }
+    };
+    bool deleted = false;
+    auto content = std::make_unique<Content> (deleted);
+    juce::Component *contentPtr = content.get();
+    juce::Component *shownContent = nullptr;
+    AW::testAnswer() = [&] (const AW::Request &request) {
+        ++hookCalls;
+        asked = request;
+        if (auto *w = dynamic_cast<juce::DialogWindow *> (request.window))
+            shownContent = w->getContentComponent();
+        return 1;
+    };
+
+    int calls = 0;
+    int got = -1;
+    juce::Component *calledWith = nullptr;
+    CtrlrDialogWindow::showModalDialogAsync ("Prefs", std::move (content), false, nullptr, [&] (int result, juce::Component &c) {
+        ++calls;
+        got = result;
+        calledWith = &c;
+        EXPECT_FALSE(deleted) << "the content still exists in the callback";
+    });
+    EXPECT_EQ(hookCalls, 1);
+    EXPECT_EQ(asked.title, "Prefs");
+    EXPECT_EQ(shownContent, contentPtr);
+    EXPECT_EQ(calls, 0) << "the callback must not run inside the call";
+
+    pump();
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(got, 1);
+    EXPECT_EQ(calledWith, contentPtr);
+    EXPECT_TRUE(deleted);
+}
+
+// Code editor preferences, "Reset": the reset waits for the answer, and nothing happens when the
+// window went before it.
+TEST_F(LuaEditorDialogs, code_editor_reset_waits_for_the_answer)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    auto editor = std::make_unique<CtrlrLuaMethodEditor> (*panel);
+    juce::Value searchTabs;
+    const auto resetIn = [] (juce::Component &settings) -> juce::Button * {
+        for (auto *child : settings.getChildren())
+            if (auto *b = dynamic_cast<juce::TextButton *> (child))
+                if (b->getButtonText() == "Reset")
+                    return b;
+        return nullptr;
+    };
+
+    auto settings = std::make_unique<CtrlrLuaMethodCodeEditorSettings> (*editor, searchTabs);
+    juce::Button *reset = resetIn (*settings);
+    ASSERT_NE(reset, nullptr);
+    juce::Slider *size = nullptr;
+    for (auto *child : settings->getChildren())
+        if (auto *slider = dynamic_cast<juce::Slider *> (child))
+            size = slider;
+    ASSERT_NE(size, nullptr);
+    size->setValue (20.0, juce::dontSendNotification);
+    buttonsToPress = { "OK" };
+    settings->buttonClicked (reset);
+    EXPECT_EQ(askedTitles, juce::StringArray ("Reset Editor"));
+    EXPECT_EQ(settings->getFont().getHeight(), 20.0f) << "not reset before the answer";
+    pump();
+    EXPECT_EQ(settings->getFont().getHeight(), 14.0f);
+
+    settings = std::make_unique<CtrlrLuaMethodCodeEditorSettings> (*editor, searchTabs);
+    buttonsToPress = { "OK" };
+    settings->buttonClicked (resetIn (*settings));
+    settings.reset();
+    pump(); // must not touch the deleted settings
+    EXPECT_EQ(askedTitles.size(), 2);
 }
