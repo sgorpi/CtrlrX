@@ -43,6 +43,15 @@ protected:
     void TearDown() override { AW::testAnswer() = nullptr; }
 
     static void pump() { juce::MessageManager::getInstance()->runDispatchLoopUntil (50); }
+
+    // The tests that make a window: on a slow runner (macOS CI) the window's first-time work can
+    // keep the message loop busy for more than 50 ms before the callback's message comes.
+    static bool pumpUntil (std::function<bool()> done)
+    {
+        for (int i = 0; i < 100 && ! done(); ++i)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        return done();
+    }
 };
 
 TEST_F(AlertHelpers, result_for_button_is_the_blocking_calls_result)
@@ -174,7 +183,7 @@ TEST_F(AlertHelpers, run_modal_async_gives_the_window_to_the_callback_then_delet
     EXPECT_EQ(calls, 0) << "the callback must not run inside the call";
     EXPECT_FALSE(deleted);
 
-    pump();
+    EXPECT_TRUE(pumpUntil ([&] { return calls == 1 && deleted; }));
     EXPECT_EQ(calls, 1);
     EXPECT_EQ(got, 1);
     EXPECT_EQ(text, "typed");
@@ -222,6 +231,17 @@ protected:
     {
         AW::testAnswer() = nullptr;
         FC::testAnswer() = nullptr;
+        // Close the panels while the processor still exists: some tests end with a Lua editor
+        // window open, and deleting the processor deletes its log before the panels, so the
+        // editor would remove its log listener from the deleted log (a known shutdown bug, on
+        // 5.6.37 too; a crash on CI's Release build).
+        while (processor != nullptr && processor->getManager().getNumPanels() > 0)
+        {
+            CtrlrPanelEditor *editor = processor->getManager().getPanel (0)->getEditor (false);
+            if (editor == nullptr)
+                break;
+            processor->getManager().removePanel (editor);
+        }
         dir.deleteRecursively();
         ProcessorInstance::TearDown();
     }
@@ -1023,7 +1043,7 @@ TEST_F(AlertHelpers, dialog_window_owns_the_content_and_calls_back_later)
     EXPECT_EQ(shownContent, contentPtr);
     EXPECT_EQ(calls, 0) << "the callback must not run inside the call";
 
-    pump();
+    EXPECT_TRUE(pumpUntil ([&] { return calls == 1 && deleted; }));
     EXPECT_EQ(calls, 1);
     EXPECT_EQ(got, 1);
     EXPECT_EQ(calledWith, contentPtr);

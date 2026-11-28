@@ -228,6 +228,9 @@ namespace
         ModalDialogSuppressor() { startTimer(5); }
         ~ModalDialogSuppressor() override { stopTimer(); }
 
+        // One pass of the timer now: dismiss (or start answering) what is open.
+        void sweep() { timerCallback(); }
+
         lua_State* luaState = nullptr; // the loaded panel's, for a timer error's message
 
         std::vector<DialogAnswer> runAnswers;    // --answer
@@ -1107,6 +1110,10 @@ namespace
         juce::Array<juce::var> out;
         if (g_dialogSuppressor == nullptr)
             return out;
+        // Added v8.0.100. Dismiss what is open now, before the suppressor's timer would: an
+        // asynchronous CtrlrX alert (a Lua timer's error) can open just before a step ends, where a
+        // blocking one was dismissed inside its own modal loop, in the step that opened it.
+        g_dialogSuppressor->sweep();
         for (const DismissedDialog& d : g_dialogSuppressor->take())
         {
             juce::var v = probeReport::makeObject();
