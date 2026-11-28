@@ -542,9 +542,8 @@ static int numTabs (CtrlrComponent &tabs)
     return n;
 }
 
-// Choosing a tab asks "Are you sure ...?" with a blocking alert, which a test can't answer (and
-// which needs a window): the choice itself is checked by hand in the GUI. Here: the property
-// that opens the menu is reset at once, as before, and a dismissed menu removes nothing.
+// The property that opens the menu is reset at once, as before, and a dismissed menu removes
+// nothing (and asks nothing).
 TEST_F(PopupMenuCallers, tabs_remove_menu_dismissed_removes_nothing)
 {
     CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
@@ -563,6 +562,41 @@ TEST_F(PopupMenuCallers, tabs_remove_menu_dismissed_removes_nothing)
 
     pump();
     EXPECT_EQ(numTabs (*tabs), before);
+}
+
+// Choosing a tab asks "Removing tab" after the menu has closed: OK removes the tab, Cancel keeps it.
+TEST_F(PopupMenuCallers, tabs_remove_asks_after_the_menu_and_ok_removes)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrComponent *tabs = addComponent (*panel, Ids::uiTabs);
+    ASSERT_NE(tabs, nullptr);
+    tabs->setProperty (Ids::uiTabsAddTab, true); // as the property panel's "add tab"
+    tabs->setProperty (Ids::uiTabsAddTab, true);
+    answerFirstItem = true;
+    juce::StringArray alerts;
+    bool pressOk = false;
+    struct Hook
+    {
+        Hook (AW::TestAnswer answer) { AW::testAnswer() = std::move (answer); }
+        ~Hook() { AW::testAnswer() = nullptr; }
+    } hook ([&] (const AW::Request &request) {
+        alerts.add (request.title);
+        return AW::resultForButton (pressOk ? 0 : 1, request.buttons.size());
+    });
+
+    for (const bool ok : { false, true })
+    {
+        pressOk = ok;
+        alerts.clear();
+        const int before = numTabs (*tabs);
+        tabs->setProperty (Ids::uiTabsRemoveTab, true);
+        EXPECT_TRUE(alerts.isEmpty()) << "the question waits for the menu";
+        ASSERT_TRUE(pumpUntil ([&] { return alerts.size() == 1; })) << ok;
+        EXPECT_EQ(alerts[0], "Removing tab");
+        pump();
+        EXPECT_EQ(numTabs (*tabs), ok ? before - 1 : before) << ok;
+    }
 }
 
 static juce::PropertyComponent *firstPropertyRow (juce::Component *root)

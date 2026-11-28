@@ -15,6 +15,8 @@ class CtrlrApplication : public JUCEApplication
                 {
                 }
 
+				// The crash alerts (here and the crash report process in initialise()) stay blocking: the
+				// process is crashing, or the report process exists only to show its alert.
 				static void crashHandler()
 				{
 					if (JUCEApplication::isStandaloneApp())

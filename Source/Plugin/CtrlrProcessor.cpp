@@ -8,6 +8,7 @@
 #include "CtrlrLog.h"
 #include "CtrlrPanel/CtrlrPanelMIDIInputThread.h"
 #include "CtrlrPanel/CtrlrPanel.h"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 const uint32 magicXmlNumber = 0x00001040;
 
@@ -638,7 +639,7 @@ void CtrlrProcessor::setStateInformation (const XmlElement *xmlState)
 {
 	if (KeyPress::isKeyCurrentlyDown(KeyPress::createFromDescription("ctrl + R").getKeyCode()))
 	{
-		AlertWindow::showMessageBox (AlertWindow::WarningIcon, "Ctrlr v5", "Ctrl+R key is pressed, resetting to defaults");
+		AW::showMessageBox (AlertWindow::WarningIcon, "Ctrlr v5", "Ctrl+R key is pressed, resetting to defaults");
 		return;
 	}
     

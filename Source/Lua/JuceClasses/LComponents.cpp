@@ -12,6 +12,9 @@ LAlertWindow::~LAlertWindow()
 {
 }
 
+// AlertWindow's Lua methods stay blocking: a script gets the answer as the return value (and
+// runModalLoop() calls the modal handler before it returns). John Goodland's (dnaldoog) JUCE 8 line
+// shows these asynchronously, or in a loop that pumps messages until the answer (his v8.04).
 void LAlertWindow::showMessageBox (AlertIconType iconType, const String& title, const String& message, const String& buttonText)
 {
 	AlertWindow::showMessageBox (iconType, title, message, buttonText, nullptr);

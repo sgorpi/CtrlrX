@@ -1367,7 +1367,7 @@ void CtrlrPanelCanvas::importImage (const File &imageFile, int x, int y)
 {
 	if (owner.getOwner().getResourceManager().addResource (imageFile))
 	{
-		AlertWindow::showMessageBox(AlertWindow::InfoIcon, "Image import", "Can't import the file as a image resource");
+		AW::showMessageBox(AlertWindow::InfoIcon, "Image import", "Can't import the file as a image resource");
 		return;
 	}
 
@@ -1375,7 +1375,7 @@ void CtrlrPanelCanvas::importImage (const File &imageFile, int x, int y)
 
 	if (i == Image())
 	{
-		AlertWindow::showMessageBox(AlertWindow::InfoIcon, "Image import", "Image has been imported as a resource, but i can't fetch if from the resource manager");
+		AW::showMessageBox(AlertWindow::InfoIcon, "Image import", "Image has been imported as a resource, but i can't fetch if from the resource manager");
 		return;
 	}
 

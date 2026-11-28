@@ -3,6 +3,7 @@
 #include "CtrlrProcessor.h"
 #include "CtrlrStandaloneWindow.h"
 #include "CtrlrPanel/CtrlrPanelEditor.h"
+#include "CtrlrInlineUtilitiesGUI.h"
 
 extern AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 
@@ -25,7 +26,7 @@ CtrlrStandaloneWindow::CtrlrStandaloneWindow (const String& title, const Colour&
 
         if (ctrlrProcessor == nullptr)
         {
-            AlertWindow::showMessageBox (AlertWindow::WarningIcon, "CTRLR", "The filter object is not a valid Ctrlr Processor");
+            AW::showMessageBox (AlertWindow::WarningIcon, "CTRLR", "The filter object is not a valid Ctrlr Processor");
             return;
         }
 
@@ -79,7 +80,7 @@ CtrlrStandaloneWindow::CtrlrStandaloneWindow (const String& title, const Colour&
         else
         {
             _DBG("No appProperties");
-            AlertWindow::showMessageBox (AlertWindow::WarningIcon, "CTRLR", "Can't find any application properties");
+            AW::showMessageBox (AlertWindow::WarningIcon, "CTRLR", "Can't find any application properties");
         }
     }
 

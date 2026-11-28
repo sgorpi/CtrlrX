@@ -14,6 +14,8 @@
 #include "Methods/CtrlrLuaMethodManager.h"
 #include "CtrlrPropertyEditors/CtrlrPropertyComponent.h"
 #include "CtrlrWindowManagers/CtrlrDialogWindow.h"
+#include "CtrlrPanel/CtrlrPanelCanvas.h"
+#include "CtrlrValueTreeEditor.h"
 #include "CtrlrLua/MethodEditor/CtrlrLuaMethodCodeEditorSettings.h"
 
 /**
@@ -1066,4 +1068,81 @@ TEST_F(LuaEditorDialogs, code_editor_reset_waits_for_the_answer)
     settings.reset();
     pump(); // must not touch the deleted settings
     EXPECT_EQ(askedTitles.size(), 2);
+}
+
+// A modulator linked to itself: a warning, and the link is reset after it, as before.
+TEST_F(AlertCallers, modulator_linked_to_itself_warns_then_resets_the_link)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    CtrlrModulator *m = panel->getModulator ("target");
+    ASSERT_NE(m, nullptr);
+
+    m->setProperty (Ids::modulatorLinkedToModulator, m->getName());
+    EXPECT_EQ(askedTitles, juce::StringArray ("Modulator link"));
+    EXPECT_EQ(m->getProperty (Ids::modulatorLinkedToModulator).toString(), m->getName()) << "reset after the warning";
+    pump();
+    EXPECT_EQ(m->getProperty (Ids::modulatorLinkedToModulator).toString(), COMBO_NONE_ITEM);
+    EXPECT_EQ(askedTitles.size(), 1);
+}
+
+// Canvas image import of a file that is no image: a notice, through AW.
+TEST_F(AlertCallers, canvas_image_import_of_a_non_image_tells_so)
+{
+    // Under a UID of this test's own: an imported file is copied into the panel's folder.
+    juce::ValueTree tree = CtrlrPanel::openXmlPanel (juce::File::getCurrentWorkingDirectory().getChildFile ("fixtures/fixture_lua_values.panel"));
+    ASSERT_TRUE(tree.isValid());
+    tree.setProperty (Ids::panelUID, "test-" + juce::Uuid().toString(), nullptr);
+    CtrlrPanel *panel = processor->getManager().addPanel (tree, true);
+    ASSERT_NE(panel, nullptr);
+    struct RemoveFolder
+    {
+        juce::File folder;
+        ~RemoveFolder() { folder.deleteRecursively(); }
+    } removeFolder { panel->getPanelDirectory() };
+    juce::File notAnImage = dir.getChildFile ("not_an_image.txt");
+    ASSERT_TRUE(notAnImage.replaceWithText ("text"));
+
+    panel->getEditor (false)->getCanvas()->importImage (notAnImage);
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.size() == 1; }));
+    EXPECT_EQ(askedTitles[0], "Image import");
+}
+
+// The value-tree editor's F2 rename (the Lua method editor's method tree): the provider renames
+// the item in the callback, and nothing happens when the tree view went before the answer.
+TEST_F(LuaEditorDialogs, value_tree_rename_renames_in_the_callback)
+{
+    struct Provider : CtrlrValueTreeEditorLookProvider
+    {
+        juce::StringArray renamedTo;
+        const bool canBeRenamed (const juce::ValueTree &) const override { return true; }
+        const bool renameItem (const juce::ValueTree &, const juce::String &newName) const override
+        {
+            const_cast<Provider *> (this)->renamedTo.add (newName);
+            return true;
+        }
+        void handleAsyncUpdate() override {}
+    } provider;
+    juce::ValueTree tree ("luaMethod");
+    tree.setProperty (Ids::name, "before", nullptr);
+
+    auto view = std::make_unique<juce::TreeView>();
+    auto *item = new CtrlrValueTreeEditorItem (provider, tree);
+    view->setRootItem (item);
+    typed = "after";
+    const juce::KeyPress f2 (65649); // the key code the item checks
+    item->keyPressed (f2);
+    EXPECT_EQ(askedTitles, juce::StringArray ("Rename item"));
+    EXPECT_EQ(tree.getProperty (Ids::name).toString(), "before") << "renamed only in the callback";
+    pump();
+    EXPECT_EQ(provider.renamedTo, juce::StringArray ("after"));
+    EXPECT_EQ(tree.getProperty (Ids::name).toString(), "after");
+
+    typed = "never";
+    item->keyPressed (f2);
+    view->deleteRootItem();
+    view.reset();
+    pump();
+    EXPECT_EQ(provider.renamedTo.size(), 1);
+    EXPECT_EQ(tree.getProperty (Ids::name).toString(), "after");
 }

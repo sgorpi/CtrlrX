@@ -125,6 +125,10 @@ LMemoryBlock *CtrlrLuaUtils::packDsiData (MemoryBlock &dataToPack)
 	return (new LMemoryBlock ((uint8 *)packed.data, packed.size));
 }
 
+// The Lua alerts below (and utils.askForTextInputWindow) stay blocking: a script gets the answer
+// as the return value, and its code after the call runs once the alert has closed. John Goodland's
+// (dnaldoog) JUCE 8 line runs his AW helpers in a loop that pumps messages until the answer, and
+// adds utils.questionWindowAsync() with a Lua callback (his v8.26).
 void CtrlrLuaUtils::warnWindow (const String title, const String message)
 {
 	AlertWindow::showMessageBox (AlertWindow::WarningIcon, title, message);

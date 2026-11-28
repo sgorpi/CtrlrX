@@ -416,16 +416,29 @@ void CtrlrTabsComponent::valueTreePropertyChanged (ValueTree &treeWhosePropertyH
 			{
 				if (safeThis == nullptr)
 					return;
+				const auto afterAnswer = [this]
+				{
+					updatePropertiesPanel();  // Updates the property pane with new tab props
+					if (restoreStateInProgress == false)
+						resized();
+				};
 				if (ret > 0)
 				{
-					if (AlertWindow::showOkCancelBox(AlertWindow::QuestionIcon, "Removing tab", "Are you sure you want to remove this tab? All child components in it will also be removed"))
+					// The question is asynchronous too; the removal and the refresh run after it.
+					AW::showOkCancelBox(AlertWindow::QuestionIcon, "Removing tab", "Are you sure you want to remove this tab? All child components in it will also be removed",
+					                    String(), String(), nullptr, [this, safeThis, ret, afterAnswer] (bool remove)
 					{
-						getComponentTree().removeChild (ret-1, 0);
-					}
+						if (safeThis == nullptr)
+							return;
+						if (remove)
+						{
+							getComponentTree().removeChild (ret-1, 0);
+						}
+						afterAnswer();
+					});
+					return;
 				}
-				updatePropertiesPanel();  // Updates the property pane with new tab props
-				if (restoreStateInProgress == false)
-					resized();
+				afterAnswer();
 			});
 
 			// The reset comes back here with false; that call must not refresh the panel.

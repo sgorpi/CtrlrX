@@ -5,6 +5,7 @@
 #include "CtrlrPanel/CtrlrPanel.h"
 #include "CtrlrLog.h"
 #include <CtrlrPropertyEditors/CtrlrPropertyComponent.h>
+#include "CtrlrInlineUtilitiesGUI.h"
 
 
 CtrlrSysexProcessor::CtrlrSysexProcessor()
@@ -588,6 +589,7 @@ void CtrlrSysexProcessor::checksumXor(const CtrlrSysexToken token, MidiMessage& 
     *(ptr + token.getPosition()) = chTotal & 0x7f;
 }
 
+// Not called anywhere, so it keeps its modal loop; AW::runModalAsync() is the asynchronous form.
 String CtrlrSysexProcessor::openAdvancedMessageEditor() // Updated v5.6.35. For Multi MIDI Message. Thanks to @dnaldoog . Updated by dam for juce 6 & Juce 8
 {
     MultiMidiAlert alert;
@@ -659,8 +661,7 @@ void CtrlrSysexProcessor::showMidiHelp()
         delete alert;
     }), true);
 #else
-    // For Windows/macOS
-    alert->runModalLoop();
-    delete alert;
+    // For Windows/macOS. Updated v8.0.100: asynchronous too; nothing runs after it.
+    AW::runModalAsync<AlertWindow>(std::unique_ptr<AlertWindow>(alert), nullptr);
 #endif
 }
