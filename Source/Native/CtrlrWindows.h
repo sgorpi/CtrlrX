@@ -30,7 +30,10 @@ class CtrlrWindows : public CtrlrNative
         const Result codesignFileWindows(const File& fileToSign, const String& certificatePath, const String& certificatePassword); // Added v5.6.32
 
 private:
-    const Result writeInstance(CtrlrPanel*  panelToWrite, File newMe, const bool isRestricted);
+    void writeInstance(CtrlrPanel*  panelToWrite, File newMe, const bool isRestricted,
+                       std::function<void (juce::Result)> callback);
+    const Result writeInstanceData(CtrlrPanel*  panelToWrite, File newMe, HANDLE hResource, const String &error,
+                                   const MemoryBlock &panelExportData, const MemoryBlock &panelResourcesData);
     CtrlrManager& owner;
     std::unique_ptr<FileChooser> fc; // Added v5.6.31
 };

@@ -45,6 +45,8 @@ class CtrlrPanelResourceManager
 		CtrlrPanelResourceType guessType(const File &resourceFile);
 		static void wrapForLua(lua_State *L);
 		Result restoreState (const ValueTree &savedState);
+		static void confirmEmbeddedLicenseAsync (const ValueTree &resourcesTree, std::function<void (bool)> onDone);
+		static bool confirmEmbeddedLicense (const ValueTree &resourcesTree);
 		Array <CtrlrPanelResource*> getResourcesCopy();
 		ValueTree &getManagerTree() { return (managerTree); }
 		void restoreSavedState (const ValueTree &savedState);

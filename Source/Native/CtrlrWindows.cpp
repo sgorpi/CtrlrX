@@ -155,22 +155,27 @@ void CtrlrWindows::exportWithDefaultPanel(CtrlrPanel*  panelToWrite, const bool 
 						  manager.getProperty(Ids::ctrlrNativeFileDialogs),
 						  [this, panelRef, isRestricted, callback] (const File &chosenFile) {
 		// The panel may have been closed while the chooser was open.
-		const Result res = panelRef != nullptr ? writeInstance(panelRef.get(), chosenFile, isRestricted)
-		                                       : Result::fail("User cancelled the export operation.");
-		if (callback)
-			callback (res);
+		if (panelRef == nullptr)
+		{
+			if (callback)
+				callback (Result::fail("User cancelled the export operation."));
+			return;
+		}
+		writeInstance(panelRef.get(), chosenFile, isRestricted, callback);
 	});
 }
 
-// The part of the export after the chooser. newMe is empty for Cancel.
-const Result CtrlrWindows::writeInstance(CtrlrPanel*  panelToWrite, File newMe, const bool isRestricted)
+// The part of the export after the chooser. newMe is empty for Cancel. The callback gets the
+// result, after the licence questions of exportPanelAsync().
+void CtrlrWindows::writeInstance(CtrlrPanel*  panelToWrite, File newMe, const bool isRestricted,
+								 std::function<void (juce::Result)> callback)
 {
+	if (!callback)
+		callback = [] (juce::Result) {};
 	CtrlrManager& manager = panelToWrite->getOwner();
 	File	me = File::getSpecialLocation(File::currentExecutableFile);
 	HANDLE	hResource;
-	MemoryBlock panelExportData,panelResourcesData;
 	PluginLogger logger(me); // Create logger instance
-	String error;
 	String fileExtension = me.getFileExtension();
 	
 	if (newMe != File())
@@ -190,7 +195,8 @@ const Result CtrlrWindows::writeInstance(CtrlrPanel*  panelToWrite, File newMe, 
 		if (!me.copyFileTo(newMe))
 		{
 			logger.log("Error: Failed to copy executable");
-			return (Result::fail("Windows Native: exportMeWithNewResource can't copy \"" + me.getFullPathName() + "\" to \"" + newMe.getFullPathName() + "\""));
+			callback (Result::fail("Windows Native: exportMeWithNewResource can't copy \"" + me.getFullPathName() + "\" to \"" + newMe.getFullPathName() + "\""));
+			return;
 		}
 		logger.log("Executable copied successfully.");
 	}
@@ -198,14 +204,42 @@ const Result CtrlrWindows::writeInstance(CtrlrPanel*  panelToWrite, File newMe, 
 	{
 		logger.log("Error: File selection dialog failed");
 		// return (Result::fail("Windows Native: exportMeWithNewResource \"Save file\" dialog failed"));
-		return Result::fail("User cancelled the export operation.");
+		callback (Result::fail("User cancelled the export operation."));
+		return;
 	}
 
 	// 5. Update Win32 Resources (Panel Injection)
 	hResource = BeginUpdateResource(newMe.getFullPathName().toUTF8(), FALSE);
+	if (!hResource)
+	{
+		callback (Result::fail("Windows Native: exportMeWithNewResource BeginUpdateResource failed"));
+		return;
+	}
+
+	WeakReference<CtrlrPanel> panelRef (panelToWrite);
+	CtrlrPanel::exportPanelAsync(panelToWrite, File(), newMe, true, isRestricted,
+								 [this, panelRef, newMe, hResource, callback] (const String &error, const MemoryBlock &panelExportData,
+																			  const MemoryBlock &panelResourcesData)
+	{
+		if (error == "" && panelRef == nullptr)
+			callback (Result::fail("User cancelled the export operation."));
+		else
+			callback (writeInstanceData(panelRef.get(), newMe, hResource, error, panelExportData, panelResourcesData));
+	});
+}
+
+// The part of the export after exportPanelAsync(): writes the panel into the copied executable.
+const Result CtrlrWindows::writeInstanceData(CtrlrPanel*  panelToWrite, File newMe, HANDLE hResource, const String &error,
+											 const MemoryBlock &panelExportData, const MemoryBlock &panelResourcesData)
+{
+	File	me = File::getSpecialLocation(File::currentExecutableFile);
+	PluginLogger logger(me); // Create logger instance
+	String fileExtension = me.getFileExtension();
+
+	// 5. Update Win32 Resources (Panel Injection), continued
 	if (hResource)
 	{
-		if ((error = CtrlrPanel::exportPanel(panelToWrite, File(), newMe, &panelExportData, &panelResourcesData, isRestricted)) == "")
+		if (error == "")
 		{
 			if (writeResource(hResource, MAKEINTRESOURCE(CTRLR_INTERNAL_PANEL_RESID), RT_RCDATA, panelExportData)
 				&& writeResource(hResource, MAKEINTRESOURCE(CTRLR_INTERNAL_RESOURCES_RESID), RT_RCDATA, panelResourcesData))

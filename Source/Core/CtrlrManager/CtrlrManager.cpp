@@ -189,7 +189,43 @@ void CtrlrManager::allPanelsInitialized()
 	}
 }
 
+// Updated v8.0.100, after John Goodland's version (his v8.73). A panel with an embedded licence
+// asks for it first, asynchronously, and is made in the callback when the user agrees; until then
+// there is no panel and this returns nullptr. No quits the standalone app, never a plugin host.
 CtrlrPanel *CtrlrManager::addPanel(const ValueTree &savedState, const bool showUI)
+{
+	// The resources tree that CtrlrPanel::restoreState() imports
+	ValueTree resources = savedState.getChildWithName(Ids::resourceExportList);
+	if (!resources.isValid())
+		resources = getInstanceResourcesTree();
+
+	if (resources.getChildWithName(Ids::resourceLicense).isValid())
+	{
+		const ValueTree stateCopy = savedState.createCopy();
+		WeakReference<CtrlrManager> safeThis (this);
+
+		CtrlrPanelResourceManager::confirmEmbeddedLicenseAsync (resources, [safeThis, stateCopy, showUI] (bool accepted)
+		{
+			if (safeThis == nullptr)
+				return;
+
+			if (!accepted)
+			{
+				if (JUCEApplication::isStandaloneApp())
+					JUCEApplication::quit();
+				return;
+			}
+
+			safeThis->addPanelNoLicenseCheck (stateCopy, showUI);
+		});
+
+		return (nullptr);
+	}
+
+	return (addPanelNoLicenseCheck (savedState, showUI));
+}
+
+CtrlrPanel *CtrlrManager::addPanelNoLicenseCheck(const ValueTree &savedState, const bool showUI)
 {
 	CtrlrPanel *panel = new CtrlrPanel(*this, getUniquePanelName("Ctrlr Panel"), ctrlrPanels.size());
 
@@ -215,7 +251,87 @@ void CtrlrManager::addPanel (CtrlrPanelEditor *panelToAdd)
 	ctrlrDocumentPanel->addDocument ((Component *)panelToAdd, Colours::lightgrey, true);
 }
 
+// Updated v8.0.100, after John Goodland's version (his v8.73 to v8.75). An embedded licence is asked
+// before the panel is made. The standalone app asks asynchronously and makes the panel in the
+// callback (No quits it); a plugin asks with a blocking window, because the processor counts the
+// panel's parameters in its constructor. The resources marker is written only after the panel
+// loaded, so No asks again at the next start.
 Result CtrlrManager::addInstancePanel()
+{
+    // The licence question is open already: don't ask (or make a panel) a second time
+    if (instanceLicensePending)
+        return (Result::ok());
+
+    if (!ctrlrPlayerInstanceTree.isValid())
+        return (Result::fail("AddInstancePanel failed, the decoded instance tree is invalid"));
+
+    // The resources tree that CtrlrPanel::restoreState() imports
+    ValueTree resources = ctrlrPlayerInstanceTree.getChildWithName(Ids::resourceExportList);
+    if (!resources.isValid())
+        resources = getInstanceResourcesTree();
+
+    if (resources.getChildWithName(Ids::resourceLicense).isValid())
+    {
+        if (!JUCEApplication::isStandaloneApp())
+        {
+            if (!CtrlrPanelResourceManager::confirmEmbeddedLicense (resources))
+            {
+                // The messages the load gave when the licence was refused in it
+                WARN("Failed to load panel: User did not agree to embedded license");
+                WARN("AddInstancePanel failed to restore the state of the panel");
+                return (Result::fail("User did not agree to embedded license"));
+            }
+        }
+        else
+        {
+            instanceLicensePending = true;
+            WeakReference<CtrlrManager> safeThis (this);
+
+            CtrlrPanelResourceManager::confirmEmbeddedLicenseAsync (resources, [safeThis] (bool accepted)
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                safeThis->instanceLicensePending = false;
+
+                if (!accepted)
+                {
+                    JUCEApplication::quit();
+                    return;
+                }
+
+                const Result result = safeThis->createInstancePanel();
+                if (!result.wasOk())
+                    return;
+
+                safeThis->markInstanceResourcesImported();
+
+                // What CtrlrProcessor's constructor does once the panel exists
+                if (safeThis->isSingleInstance() && safeThis->getActivePanel())
+                    safeThis->getActivePanel()->initEmbeddedInstance();
+
+                // Host state that came while the question was open
+                if (safeThis->pendingInstanceState.isValid())
+                {
+                    const ValueTree state = safeThis->pendingInstanceState;
+                    safeThis->pendingInstanceState = ValueTree();
+                    safeThis->restoreInstanceState (state);
+                }
+            });
+
+            return (Result::ok()); // the panel doesn't exist yet
+        }
+    }
+
+    const Result result = createInstancePanel();
+    if (result.wasOk())
+        markInstanceResourcesImported();
+
+    return (result);
+}
+
+// The panel of an exported instance (addInstancePanel() before v8.0.100).
+Result CtrlrManager::createInstancePanel()
 {
     if (ctrlrPlayerInstanceTree.isValid())
     {

@@ -570,22 +570,8 @@ Result CtrlrPanelResourceManager::restoreState (const ValueTree &savedState)
 {
 	for (int i=0; i<savedState.getNumChildren(); i++)
 	{
-		if (savedState.getChild(i).hasType(Ids::resourceLicense))
-		{
-			AlertWindow licenseWindow("License agreement", "You must agree to the below license", AlertWindow::QuestionIcon);
-			TextEditor licenseText;
-			licenseText.setMultiLine(true);
-			licenseText.setReadOnly(true);
-			licenseText.setText (savedState.getChild(i).getProperty(Ids::resourceData));
-			licenseText.setSize (500,400);
-			licenseWindow.addCustomComponent (&licenseText);
-			licenseWindow.addButton ("Yes", 1);
-			licenseWindow.addButton ("No", 0);
-			if (!licenseWindow.runModalLoop())
-			{
-				return (Result::fail("User did not agree to embedded license"));
-			}
-		}
+		// Updated v8.0.100. The embedded licence is no longer asked here, in the middle of the load:
+		// CtrlrManager asks it with confirmEmbeddedLicense() before it makes the panel.
 
 		if (savedState.getChild(i).hasType(Ids::resourceBlob) || savedState.getChild(i).hasType(Ids::resourceImage) || savedState.getChild(i).hasType(Ids::resource))
 		{
@@ -601,6 +587,72 @@ Result CtrlrPanelResourceManager::restoreState (const ValueTree &savedState)
 	}
 
 	return (Result::ok());
+}
+
+namespace
+{
+	// The licence of an exported panel, as the load showed it before. The text box lives as long
+	// as the window.
+	struct LicenseAgreementWindow : public AlertWindow
+	{
+		explicit LicenseAgreementWindow (const ValueTree &licence)
+			: AlertWindow ("License agreement", "You must agree to the below license", AlertWindow::QuestionIcon)
+		{
+			licenseText.setMultiLine(true);
+			licenseText.setReadOnly(true);
+			licenseText.setText (licence.getProperty(Ids::resourceData));
+			licenseText.setSize (500,400);
+			addCustomComponent (&licenseText);
+			addButton ("Yes", 1);
+			addButton ("No", 0);
+		}
+
+		TextEditor licenseText;
+	};
+}
+
+// Added v8.0.100, after John Goodland's confirmEmbeddedLicenseAsync() (his v8.73). Asks for the
+// licence before the panel is made, and calls onDone (true) when there is no licence or the user
+// agreed to it.
+void CtrlrPanelResourceManager::confirmEmbeddedLicenseAsync (const ValueTree &resourcesTree, std::function<void (bool)> onDone)
+{
+	const ValueTree licence = resourcesTree.getChildWithName (Ids::resourceLicense);
+
+	if (!licence.isValid())
+	{
+		if (onDone)
+			onDone (true);
+		return;
+	}
+
+	AW::runModalAsync<LicenseAgreementWindow> (std::make_unique<LicenseAgreementWindow> (licence),
+		[onDone] (int result, LicenseAgreementWindow &)
+		{
+			if (onDone)
+				onDone (result == 1);
+		});
+}
+
+// The blocking form, for a plugin's own exported panel: the processor counts the panel's
+// parameters in its constructor, so the panel must exist when that returns.
+bool CtrlrPanelResourceManager::confirmEmbeddedLicense (const ValueTree &resourcesTree)
+{
+	const ValueTree licence = resourcesTree.getChildWithName (Ids::resourceLicense);
+
+	if (!licence.isValid())
+		return (true);
+
+	LicenseAgreementWindow licenseWindow (licence);
+
+	if (const AW::TestAnswer &hook = AW::testAnswer())
+	{
+		AW::Request request;
+		request.title = licenseWindow.getName();
+		request.window = &licenseWindow;
+		return (hook (request) != 0);
+	}
+
+	return (licenseWindow.runModalLoop() != 0);
 }
 
 Array <CtrlrPanelResource*> CtrlrPanelResourceManager::getResourcesCopy()

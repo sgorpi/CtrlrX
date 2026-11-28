@@ -29,7 +29,12 @@ class CtrlrMac : public CtrlrNative
         const Result codesignFileMac(const juce::String& newMePathName, const juce::String& panelCertificateMacIdentity, juce::String& logOutput); // Added v5.6.33
     
     private:
-        const Result writeInstance(CtrlrPanel* panelToWrite, const File &chosenDirectory, const bool isRestricted);
+        void writeInstance(CtrlrPanel* panelToWrite, const File &chosenDirectory, const bool isRestricted,
+                           std::function<void (juce::Result)> callback);
+        void writeInstanceBundle(CtrlrPanel* panelToWrite, const File &newMe, const bool isRestricted,
+                                 std::function<void (juce::Result)> callback);
+        const Result writeInstanceData(CtrlrPanel* panelToWrite, const File &newMe, const String &error,
+                                       const MemoryBlock &panelExportData, const MemoryBlock &panelResourcesData);
         CtrlrManager &owner;
         std::unique_ptr<FileChooser> fc; // Added v5.6.31
         std::unique_ptr<FileChooser> fileChooser; // Added v5.6.31

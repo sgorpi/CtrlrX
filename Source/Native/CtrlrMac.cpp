@@ -98,20 +98,24 @@ void CtrlrMac::exportWithDefaultPanel(CtrlrPanel* panelToWrite, const bool isRes
                               nativeFileChooser, // panelToWrite->getOwner().getProperty(Ids::ctrlrNativeFileDialogs)); // if vst3, this won't work since there's no ctrlr.settings
                               [this, panelRef, isRestricted, callback] (const File &chosenDirectory) {
         // The panel may have been closed while the chooser was open.
-        const Result res = panelRef != nullptr ? writeInstance(panelRef.get(), chosenDirectory, isRestricted)
-                                               : Result::fail("User cancelled the export operation.");
-        if (callback)
-            callback (res);
+        if (panelRef == nullptr)
+        {
+            if (callback)
+                callback (Result::fail("User cancelled the export operation."));
+            return;
+        }
+        writeInstance(panelRef.get(), chosenDirectory, isRestricted, callback);
     });
 }
 
-// The part of the export after the chooser. chosenDirectory is empty for Cancel.
-const Result CtrlrMac::writeInstance(CtrlrPanel* panelToWrite, const File &chosenDirectory, const bool isRestricted) {
+// The part of the export after the chooser. chosenDirectory is empty for Cancel. The callback gets
+// the result, after the overwrite question and the licence questions of exportPanelAsync().
+void CtrlrMac::writeInstance(CtrlrPanel* panelToWrite, const File &chosenDirectory, const bool isRestricted,
+                             std::function<void (juce::Result)> callback) {
+    if (!callback)
+        callback = [] (juce::Result) {};
     File me = File::getSpecialLocation(File::currentApplicationFile);
-    String fileExtension = me.getFileExtension();
     File newMe;
-    MemoryBlock panelExportData, panelResourcesData;
-    String error;
     PluginLogger logger(me); // Create logger instance
     
     if (chosenDirectory != File()) {
@@ -121,56 +125,96 @@ const Result CtrlrMac::writeInstance(CtrlrPanel* panelToWrite, const File &chose
         if (newMe.exists()) {
             // Pass "Cancel" as the first button and "Overwrite" as the second.
             // This displays them correctly for macOS UI standards.
-            bool overwriteCancelled = AlertWindow::showOkCancelBox(
-                                                                   AlertWindow::QuestionIcon,
-                                                                   "File Already Exists",
-                                                                   "\"" + newMe.getFileName() + "\" already exists. Do you want to overwrite it?",
-                                                                   "Cancel",    // <-- This is the first button, returning true
-                                                                   "Overwrite", // <-- This is the second button, returning false
-                                                                   nullptr
-                                                                   );
-            
-            // The showOkCancelBox returns true for the first button ("Cancel")
-            // and false for the second button ("Overwrite").
-            // So, if the user clicked "Cancel", overwriteCancelled will be true.
-            if (overwriteCancelled) {
-                logger.log("MAC native, user cancelled the overwrite operation.");
-                return Result::fail("User cancelled the export operation.");
-            }
-            
-            // If the user clicked "Overwrite", the condition above is false,
-            // and the code continues here.
-            
-            // First, delete the existing bundle.
-            logger.log("MAC native, attempting to delete existing bundle at: " + newMe.getFullPathName());
-            if (!newMe.deleteRecursively()) {
-                return (Result::fail("MAC native, failed to delete existing bundle at: " + newMe.getFullPathName()));
-            }
+            WeakReference<CtrlrPanel> panelRef (panelToWrite);
+            AW::showOkCancelBox(
+                                AlertWindow::QuestionIcon,
+                                "File Already Exists",
+                                "\"" + newMe.getFileName() + "\" already exists. Do you want to overwrite it?",
+                                "Cancel",    // <-- This is the first button, returning true
+                                "Overwrite", // <-- This is the second button, returning false
+                                nullptr,
+                                [this, panelRef, me, newMe, isRestricted, callback] (bool overwriteCancelled) {
+                PluginLogger logger(me);
+                
+                // The showOkCancelBox returns true for the first button ("Cancel")
+                // and false for the second button ("Overwrite").
+                // So, if the user clicked "Cancel", overwriteCancelled will be true.
+                // The panel may also have been closed while the question was open.
+                if (overwriteCancelled || panelRef == nullptr) {
+                    logger.log("MAC native, user cancelled the overwrite operation.");
+                    callback (Result::fail("User cancelled the export operation."));
+                    return;
+                }
+                
+                // If the user clicked "Overwrite", the condition above is false,
+                // and the code continues here.
+                
+                // First, delete the existing bundle.
+                logger.log("MAC native, attempting to delete existing bundle at: " + newMe.getFullPathName());
+                if (!newMe.deleteRecursively()) {
+                    callback (Result::fail("MAC native, failed to delete existing bundle at: " + newMe.getFullPathName()));
+                    return;
+                }
+                
+                writeInstanceBundle(panelRef.get(), newMe, isRestricted, callback);
+            });
+            return;
         }
         
-        if (!me.copyDirectoryTo(newMe)) {
-            return (Result::fail("MAC native, copyDirectoryTo from \"" + me.getFullPathName() + "\" to \"" + newMe.getFullPathName() + "\" failed"));
-            logger.log("MAC native, copyDirectoryTo from \"" + me.getFullPathName() + "\" to \"" + newMe.getFullPathName() + "\" failed");
-        }
+        writeInstanceBundle(panelToWrite, newMe, isRestricted, callback);
         
     } else {
-        return (Result::fail("User cancelled the export operation."));
+        callback (Result::fail("User cancelled the export operation."));
         logger.log("MAC native, browse for directory dialog was cancelled by user.");
+    }
+}
+
+// The part of the export after the overwrite question: the bundle is copied, then the panel is
+// exported (asynchronous licence questions) and written into it by writeInstanceData().
+void CtrlrMac::writeInstanceBundle(CtrlrPanel* panelToWrite, const File &newMe, const bool isRestricted,
+                                   std::function<void (juce::Result)> callback) {
+    File me = File::getSpecialLocation(File::currentApplicationFile);
+    PluginLogger logger(me); // Create logger instance
+    
+    if (!me.copyDirectoryTo(newMe)) {
+        callback (Result::fail("MAC native, copyDirectoryTo from \"" + me.getFullPathName() + "\" to \"" + newMe.getFullPathName() + "\" failed"));
+        return;
+        logger.log("MAC native, copyDirectoryTo from \"" + me.getFullPathName() + "\" to \"" + newMe.getFullPathName() + "\" failed");
     }
     
     Result res = setBundleInfo(panelToWrite, newMe); // Bundle Info
     if (!res.wasOk())
     {
-        return (res);
+        callback (res);
+        return;
     }
 
     res = setBundleInfoCarbon(panelToWrite, newMe); // Bundle Info carbon
     if (!res.wasOk())
     {
-        return (res);
+        callback (res);
+        return;
     }
     
-    if ((error = CtrlrPanel::exportPanel(panelToWrite, File(), newMe, &panelExportData, &panelResourcesData, isRestricted)) == "") {
+    WeakReference<CtrlrPanel> panelRef (panelToWrite);
+    CtrlrPanel::exportPanelAsync(panelToWrite, File(), newMe, true, isRestricted,
+                                 [this, panelRef, newMe, callback] (const String &error, const MemoryBlock &panelExportData,
+                                                                    const MemoryBlock &panelResourcesData) {
+        if (error == "" && panelRef == nullptr)
+            callback (Result::fail("User cancelled the export operation."));
+        else
+            callback (writeInstanceData(panelRef.get(), newMe, error, panelExportData, panelResourcesData));
+    });
+}
+
+// The part of the export after exportPanelAsync(): writes the panel into the bundle.
+const Result CtrlrMac::writeInstanceData(CtrlrPanel* panelToWrite, const File &newMe, const String &error,
+                                         const MemoryBlock &panelExportData, const MemoryBlock &panelResourcesData) {
+    File me = File::getSpecialLocation(File::currentApplicationFile);
+    String fileExtension = me.getFileExtension();
+    PluginLogger logger(me); // Create logger instance
+    
+    if (error == "") {
         File panelFile = newMe.getChildFile("Contents/Resources/" + String(CTRLR_MAC_PANEL_FILE));
         File resourcesFile = newMe.getChildFile("Contents/Resources/" + String(CTRLR_MAC_RESOURCES_FILE));
         File fileEncrypted = newMe.getChildFile("Contents/Resources/"+String(CTRLR_MAC_PANEL_FILE)+String("BF")); // Added v5.6.31

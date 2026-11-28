@@ -294,18 +294,24 @@ void CtrlrPanel::savePanelAs(const CommandID saveOption)
 	}
 	if (saveOption == CtrlrEditor::doExportFileZBinRes)
 	{
-		// Asks here and exports in the callback. A cancelled chooser gets exportPanel()'s message.
+		// Asks here and exports in the callback. A cancelled chooser gets exportPanelAsync()'s message.
 		askForPanelFileToSaveAsync (this, f, false, true, [this, safeThis, f] (const File &exportedFile)
 		{
 			if (safeThis == nullptr)
 				return;
 
-			const String err = exportedFile == File() ? String ("Destination file does not exist or is invalid")
-			                                          : exportPanel(this, f, exportedFile);
-			if (err != "")
+			// Nothing to show when the panel was closed while a licence question was open.
+			const auto showError = [safeThis] (const String &err, const MemoryBlock &, const MemoryBlock &)
 			{
-				AW::showMessageBox(AlertWindow::WarningIcon, "Panel Export", err);
-			}
+				if (safeThis != nullptr && err != "")
+				{
+					AW::showMessageBox(AlertWindow::WarningIcon, "Panel Export", err);
+				}
+			};
+			if (exportedFile == File())
+				showError ("Destination file does not exist or is invalid", MemoryBlock(), MemoryBlock());
+			else
+				exportPanelAsync(this, f, exportedFile, false, false, showError);
 		});
 	}
 	if (saveOption == CtrlrEditor::doExportFileInstance) // Updated v5.6.34.
@@ -392,14 +398,132 @@ void CtrlrPanel::savePanelVersioned()
 	}
 }
 
-const String CtrlrPanel::exportPanel(CtrlrPanel *panel, const File &lastBrowsedDir, const File &destinationFile, MemoryBlock *outputPanelData, MemoryBlock *outputResourcesData, const bool isRestricted)
+namespace
 {
+	// The licence window of an export. The text box lives as long as the window.
+	struct LicenseContentWindow : public AlertWindow
+	{
+		LicenseContentWindow() : AlertWindow ("License content", "Paste your license below", AlertWindow::InfoIcon, 0)
+		{
+			lic.setMultiLine (true, false);
+			lic.setSize (400,300);
+			addCustomComponent (&lic);
+			addButton ("OK", 1);
+		}
+
+		TextEditor lic;
+	};
+
+	// The part of CtrlrPanel::exportPanelAsync() after the licence questions.
+	void finishPanelExport (WeakReference<CtrlrPanel> panelRef, ValueTree resources, const File &exportedFile,
+	                        const Image &panelSnapshot, const bool toMemory, const bool isRestricted,
+	                        const CtrlrPanel::ExportCallback &callback)
+	{
+		const auto done = [&callback] (const String &error, const MemoryBlock &outputPanelData, const MemoryBlock &outputResourcesData)
+		{
+			if (callback)
+				callback (error, outputPanelData, outputResourcesData);
+		};
+
+		// The panel may have been closed while a licence question was open.
+		CtrlrPanel *panel = panelRef.get();
+		if (panel == nullptr)
+		{
+			done ("The panel was closed during the export", MemoryBlock(), MemoryBlock());
+			return;
+		}
+
+		ValueTree exportTree	= panel->getCleanPanelTree();
+
+		if (isRestricted)
+		{
+			exportTree.setProperty (Ids::restricted, (int)InstanceSingleRestricted, nullptr);
+			if (exportTree.getChildWithName (Ids::uiPanelEditor).isValid())
+			{
+				exportTree.getChildWithName (Ids::uiPanelEditor).setProperty (Ids::uiPanelEditMode, false, nullptr);
+			}
+		}
+
+		if (panelSnapshot != Image())
+		{
+			MemoryBlock imageData;
+			MemoryOutputStream imageDataStream(imageData, true);
+			PNGImageFormat png;
+			png.writeImageToStream (panelSnapshot, imageDataStream);
+
+			if (imageData.getSize() != 0)
+			{
+				ValueTree snap(Ids::resourcePanelSnapshot);
+				snap.setProperty (Ids::resourceSize, (int)imageData.getSize(), 0);
+				snap.setProperty (Ids::resourceData, imageData.toBase64Encoding(), 0);
+				resources.addChild (snap, -1, 0);
+			}
+		}
+
+		if (exportedFile.hasWriteAccess() && !toMemory)
+		{
+			exportTree.addChild (resources, -1, 0);
+			MemoryOutputStream compressedData;
+
+			{
+				GZIPCompressorOutputStream gzipOutputStream (&compressedData);
+				exportTree.writeToStream(gzipOutputStream);
+				gzipOutputStream.flush();
+			}
+
+			exportedFile.replaceWithData(compressedData.getData(), compressedData.getDataSize());
+
+			done ("", MemoryBlock(), MemoryBlock());
+		}
+
+		else if (toMemory)
+		{
+			MemoryBlock outputPanelData, outputResourcesData;
+
+			{
+				MemoryOutputStream compressedPanelData(outputPanelData, false);
+				MemoryOutputStream compressedResourcesData(outputResourcesData, false);
+
+				{
+					GZIPCompressorOutputStream gzipOutputStream (&compressedPanelData);
+					exportTree.writeToStream(gzipOutputStream); // exportTree
+					gzipOutputStream.flush();
+				}
+
+				{
+					GZIPCompressorOutputStream gzipOutputStream (&compressedResourcesData);
+					resources.writeToStream(gzipOutputStream);
+					gzipOutputStream.flush();
+				}
+			} // the streams set the blocks' final sizes when they are deleted
+
+			done ("", outputPanelData, outputResourcesData);
+		}
+		else
+		{
+			done ("Can't export panel, I can't write to the specified file", MemoryBlock(), MemoryBlock());
+		}
+	}
+}
+
+// Updated v8.0.100. Asynchronous: the licence question and the licence window are asynchronous
+// alerts, and the export goes on in their callbacks. The callback gets the error ("" when it
+// worked) and, with toMemory, the panel and resources data for an exported instance (the
+// MemoryBlock pointers of the blocking version).
+void CtrlrPanel::exportPanelAsync(CtrlrPanel *panel, const File &lastBrowsedDir, const File &destinationFile, const bool toMemory, const bool isRestricted, ExportCallback callback)
+{
+	const auto fail = [&callback] (const String &error)
+	{
+		if (callback)
+			callback (error, MemoryBlock(), MemoryBlock());
+	};
+
 	Image panelSnapshot (Image::ARGB, 400, 400, true);
 	CtrlrPanelCanvas *canvas = panel->getEditor()->getCanvas();
 	// CtrlrPanelEditor *editor = panel->getEditor();
 
 	if (panel == 0 || panel == nullptr)
-		return ("Undefined panel passeed to exporter");
+		return (fail ("Undefined panel passeed to exporter"));
 
 	File exportedFile = File();
 
@@ -409,7 +533,7 @@ const String CtrlrPanel::exportPanel(CtrlrPanel *panel, const File &lastBrowsedD
 		exportedFile = destinationFile;
 
 	if (exportedFile == File())
-		return ("Destination file does not exist or is invalid");
+		return (fail ("Destination file does not exist or is invalid"));
 
 	panel->luaSavePanel (PanelFileExport, exportedFile);
 
@@ -431,95 +555,32 @@ const String CtrlrPanel::exportPanel(CtrlrPanel *panel, const File &lastBrowsedD
 		}
 	}
 
+	WeakReference<CtrlrPanel> panelRef (panel);
+
 	if (panel->getResourceManager().getNumResources() > 0)
 	{
-		const int ret = AlertWindow::showOkCancelBox (AlertWindow::QuestionIcon, "License question", "Would you like to attach a license to this panel?", "Yes", "No");
-		if (ret == 1)
+		AW::showOkCancelBox (AlertWindow::QuestionIcon, "License question", "Would you like to attach a license to this panel?", "Yes", "No", nullptr,
+		                     [=] (bool attachLicense)
 		{
-			AlertWindow licenseWindow("License content", "Paste your license below", AlertWindow::InfoIcon, 0);
-			TextEditor lic;
-			lic.setMultiLine (true, false);
-			lic.setSize (400,300);
-			licenseWindow.addCustomComponent (&lic);
-			licenseWindow.addButton ("OK", 1);
+			if (!attachLicense)
+				return (finishPanelExport (panelRef, resources, exportedFile, panelSnapshot, toMemory, isRestricted, callback));
 
-			if (licenseWindow.runModalLoop())
+			AW::runModalAsync<LicenseContentWindow> (std::make_unique<LicenseContentWindow>(),
+			                                         [=] (int result, LicenseContentWindow &licenseWindow)
 			{
-				ValueTree licTree(Ids::resourceLicense);
-				licTree.setProperty(Ids::resourceData, lic.getText(), 0);
-				resources.addChild (licTree, -1, 0);
-			}
-		}
+				if (result)
+				{
+					ValueTree licTree(Ids::resourceLicense);
+					licTree.setProperty(Ids::resourceData, licenseWindow.lic.getText(), 0);
+					ValueTree (resources).addChild (licTree, -1, 0);
+				}
+				finishPanelExport (panelRef, resources, exportedFile, panelSnapshot, toMemory, isRestricted, callback);
+			});
+		});
+		return;
 	}
 
-	ValueTree exportTree	= panel->getCleanPanelTree();
-
-	if (isRestricted)
-	{
-		exportTree.setProperty (Ids::restricted, (int)InstanceSingleRestricted, nullptr);
-		if (exportTree.getChildWithName (Ids::uiPanelEditor).isValid())
-		{
-			exportTree.getChildWithName (Ids::uiPanelEditor).setProperty (Ids::uiPanelEditMode, false, nullptr);
-		}
-	}
-
-	if (panelSnapshot != Image())
-	{
-		MemoryBlock imageData;
-		MemoryOutputStream imageDataStream(imageData, true);
-		PNGImageFormat png;
-		png.writeImageToStream (panelSnapshot, imageDataStream);
-
-		if (imageData.getSize() != 0)
-		{
-			ValueTree snap(Ids::resourcePanelSnapshot);
-			snap.setProperty (Ids::resourceSize, (int)imageData.getSize(), 0);
-			snap.setProperty (Ids::resourceData, imageData.toBase64Encoding(), 0);
-			resources.addChild (snap, -1, 0);
-		}
-	}
-
-	if (exportedFile.hasWriteAccess() && outputPanelData == nullptr)
-	{
-		exportTree.addChild (resources, -1, 0);
-		MemoryOutputStream compressedData;
-
-		{
-			GZIPCompressorOutputStream gzipOutputStream (&compressedData);
-			exportTree.writeToStream(gzipOutputStream);
-			gzipOutputStream.flush();
-		}
-
-		exportedFile.replaceWithData(compressedData.getData(), compressedData.getDataSize());
-
-		return ("");
-	}
-
-	else if (outputPanelData != nullptr && outputResourcesData != nullptr)
-	{
-        MemoryOutputStream compressedPanelData(*outputPanelData, false);
-		MemoryOutputStream compressedResourcesData(*outputResourcesData, false);
-        
-		{
-			GZIPCompressorOutputStream gzipOutputStream (&compressedPanelData);
-			exportTree.writeToStream(gzipOutputStream); // exportTree
-			gzipOutputStream.flush();
-		}
-
-		{
-			GZIPCompressorOutputStream gzipOutputStream (&compressedResourcesData);
-			resources.writeToStream(gzipOutputStream);
-			gzipOutputStream.flush();
-		}
-                
-        return ("");
-
-	}
-	else
-	{
-		return ("Can't export panel, I can't write to the specified file");
-	}
-
+	finishPanelExport (panelRef, resources, exportedFile, panelSnapshot, toMemory, isRestricted, callback);
 }
 
 const ValueTree CtrlrPanel::openBinPanel(const File &panelFile)

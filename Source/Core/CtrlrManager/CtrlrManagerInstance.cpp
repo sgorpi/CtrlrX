@@ -213,16 +213,12 @@ const bool CtrlrManager::isSingleInstance() const
 
 Result CtrlrManager::importInstanceResources(CtrlrNative *native)
 {
-	if (getCtrlrProperties().getProperties().getUserSettings())
+	// Updated v8.0.100. The marker is written by markInstanceResourcesImported(), once the panel
+	// has loaded (after John Goodland's v8.73).
+	const File marker = getInstanceResourcesMarkerFile();
+	if (marker != File() && marker.existsAsFile())
 	{
-		if (getCtrlrProperties().getProperties().getUserSettings()->getFile().getParentDirectory().getChildFile(".delete_me_to_reload_resources").existsAsFile())
-		{
-			return (Result::ok());
-		}
-		else
-		{
-			getCtrlrProperties().getProperties().getUserSettings()->getFile().getParentDirectory().getChildFile(".delete_me_to_reload_resources").create();
-		}
+		return (Result::ok());
 	}
 
 	MemoryBlock resourcesData;
@@ -245,8 +241,36 @@ Result CtrlrManager::importInstanceResources(CtrlrNative *native)
 	}
 }
 
+File CtrlrManager::getInstanceResourcesMarkerFile()
+{
+	if (getCtrlrProperties().getProperties().getUserSettings())
+	{
+		return (getCtrlrProperties().getProperties().getUserSettings()->getFile().getParentDirectory().getChildFile(".delete_me_to_reload_resources"));
+	}
+
+	return (File());
+}
+
+// The resources of this instance were imported: later starts don't import them again (and don't
+// ask for the licence). Delete the marker to import them again.
+void CtrlrManager::markInstanceResourcesImported()
+{
+	const File marker = getInstanceResourcesMarkerFile();
+
+	if (marker != File() && !marker.existsAsFile())
+		marker.create();
+}
+
 void CtrlrManager::restoreInstanceState(const ValueTree &instanceState)
 {
+	// Added v8.0.100. The panel is made after its licence question: keep the state until then.
+	if (getActivePanel() == nullptr && instanceLicensePending)
+	{
+		pendingInstanceState = instanceState.createCopy();
+		ctrlrManagerRestoring = false;
+		return;
+	}
+
 	if (ctrlrEditor)
 	{
 		restoreEditorState();

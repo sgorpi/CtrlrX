@@ -16,8 +16,11 @@ class CtrlrLinux : public CtrlrNative
 		const Result getDefaultResources(MemoryBlock& dataToWrite);
         const Result sendKeyPressEvent(const KeyPress &event);
     private:
-        const Result writeInstance(CtrlrPanel *panelToWrite, const File &me, File chosenFile,
-                                   const bool isVST3, const bool isVST2, const bool isRestricted);
+        void writeInstance(CtrlrPanel *panelToWrite, const File &me, File chosenFile,
+                           const bool isVST3, const bool isVST2, const bool isRestricted,
+                           std::function<void (juce::Result)> callback);
+        const Result writeInstanceData(CtrlrPanel *panelToWrite, const File &newMe, const bool isVST3, const bool isVST2,
+                                       const MemoryBlock &panelExportData, const MemoryBlock &panelResourcesData);
         CtrlrManager &owner;
 };
 

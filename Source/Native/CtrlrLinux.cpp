@@ -360,19 +360,27 @@ void CtrlrLinux::exportWithDefaultPanel(CtrlrPanel *panelToWrite, const bool isR
                       panelToWrite->getOwner().getProperty(Ids::ctrlrNativeFileDialogs),
                       [this, panelRef, me, isVST3, isVST2, isRestricted, callback] (const File &chosenFile) {
         // The panel may have been closed while the chooser was open.
-        const Result res = panelRef != nullptr ? writeInstance(panelRef.get(), me, chosenFile, isVST3, isVST2, isRestricted)
-                                               : Result::fail("User cancelled the export operation.");
-        if (callback)
-            callback (res);
+        if (panelRef == nullptr)
+        {
+            if (callback)
+                callback (Result::fail("User cancelled the export operation."));
+            return;
+        }
+        writeInstance(panelRef.get(), me, chosenFile, isVST3, isVST2, isRestricted, callback);
     });
 }
 
-// The part of the export after the chooser. chosenFile is empty for Cancel.
-const Result CtrlrLinux::writeInstance(CtrlrPanel *panelToWrite, const File &me, File chosenFile,
-                                       const bool isVST3, const bool isVST2, const bool isRestricted)
+// The part of the export after the chooser. chosenFile is empty for Cancel. The callback gets the
+// result, after the licence questions of exportPanelAsync().
+void CtrlrLinux::writeInstance(CtrlrPanel *panelToWrite, const File &me, File chosenFile,
+                               const bool isVST3, const bool isVST2, const bool isRestricted,
+                               std::function<void (juce::Result)> callback)
 {
+    const auto fail = [&callback] (const Result &res) {
+        if (callback)
+            callback (res);
+    };
     File newMe;
-    MemoryBlock panelExportData, panelResourcesData;
     
     if (chosenFile != File())
     {
@@ -389,11 +397,11 @@ const Result CtrlrLinux::writeInstance(CtrlrPanel *panelToWrite, const File &me,
             File binaryFile = binaryDir.getChildFile(binaryName);
             
             if (!binaryDir.createDirectory()) {
-                return Result::fail("Failed to create VST3 bundle directory structure");
+                return fail (Result::fail("Failed to create VST3 bundle directory structure"));
             }
             
             if (!me.copyFileTo(binaryFile)) {
-                return Result::fail("Linux native, VST3 copyFileTo failed");
+                return fail (Result::fail("Linux native, VST3 copyFileTo failed"));
             }
             
             newMe = binaryFile;
@@ -417,7 +425,7 @@ const Result CtrlrLinux::writeInstance(CtrlrPanel *panelToWrite, const File &me,
             }
             
             if (!me.copyFileTo(newMe)) {
-                return Result::fail("Linux native, Standalone/VST2 copyFileTo failed");
+                return fail (Result::fail("Linux native, Standalone/VST2 copyFileTo failed"));
             }
             
             _DBG("VST2/Standalone export: Final file created = " + newMe.getFullPathName());
@@ -425,16 +433,31 @@ const Result CtrlrLinux::writeInstance(CtrlrPanel *panelToWrite, const File &me,
     }
     else
     {
-        return Result::fail("User cancelled the export operation.");
+        return fail (Result::fail("User cancelled the export operation."));
     }
     
     // Export panel data
     CtrlrPanel p(owner, "", 0);
-    String error = p.exportPanel(panelToWrite, File(), newMe, &panelExportData, &panelResourcesData, isRestricted);
-    if (error != "") {
-        return Result::fail("CtrlrPanel::exportPanel failed: " + error);
-    }
-    
+    WeakReference<CtrlrPanel> panelRef (panelToWrite);
+    p.exportPanelAsync(panelToWrite, File(), newMe, true, isRestricted,
+                       [this, panelRef, newMe, isVST3, isVST2, callback] (const String &error, const MemoryBlock &panelExportData,
+                                                                          const MemoryBlock &panelResourcesData) {
+        Result res = Result::ok();
+        if (error != "")
+            res = Result::fail("CtrlrPanel::exportPanel failed: " + error);
+        else if (panelRef == nullptr)
+            res = Result::fail("User cancelled the export operation.");
+        else
+            res = writeInstanceData(panelRef.get(), newMe, isVST3, isVST2, panelExportData, panelResourcesData);
+        if (callback)
+            callback (res);
+    });
+}
+
+// The part of the export after exportPanelAsync().
+const Result CtrlrLinux::writeInstanceData(CtrlrPanel *panelToWrite, const File &newMe, const bool isVST3, const bool isVST2,
+                                           const MemoryBlock &panelExportData, const MemoryBlock &panelResourcesData)
+{
     // Perform binary patching for VST3 AND VST2
     if (isVST3 || isVST2) {
         

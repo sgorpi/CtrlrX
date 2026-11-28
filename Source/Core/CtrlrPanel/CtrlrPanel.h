@@ -176,7 +176,8 @@ class CtrlrPanel:	public ValueTree::Listener,
 		void luaManagerChanged();
 		void panelResourcesChanged();
 
-		static const String exportPanel(CtrlrPanel *panel, const File &lastBrowsedDir, const File &destinationFile=File(), MemoryBlock *outputPanelData=nullptr, MemoryBlock *outputResourcesData=nullptr, const bool isRestricted=false);
+		using ExportCallback = std::function<void (const String &error, const MemoryBlock &panelData, const MemoryBlock &resourcesData)>;
+		static void exportPanelAsync(CtrlrPanel *panel, const File &lastBrowsedDir, const File &destinationFile, const bool toMemory, const bool isRestricted, ExportCallback callback);
 		static bool isPanelFile(const File &fileToCheck, const bool beThorough=false);
 		static const ValueTree openPanel(const File &panelFile);
 		static const ValueTree openXmlPanel(const File &panelFile);

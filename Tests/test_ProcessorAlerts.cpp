@@ -800,3 +800,185 @@ TEST_F(LuaEditorDialogs, lua_method_property_adds_the_method_after_the_dialog)
     pump();
     EXPECT_FALSE(namesIn (root (*panel), Ids::luaMethod, Ids::luaMethodName).contains ("neverAdded"));
 }
+
+/**
+ * The licence of an exported panel. Export: after the chooser, "License question" and, for Yes,
+ * the "License content" window; its text goes into the file. Load: "License agreement" is asked
+ * before the panel is made, and the panel is made only for Yes.
+ */
+class LicenseQuestions : public CloseQuestions
+{
+protected:
+    int windowResult = 0;       // what a dialog window (no buttons) answers
+    juce::String licenseToType; // typed into the window's text box
+    juce::String licenseShown;  // what its text box showed
+    juce::File panelFolder;
+
+    void SetUp() override
+    {
+        CloseQuestions::SetUp();
+        AW::testAnswer() = [this, alerts = AW::testAnswer()] (const AW::Request &request) {
+            if (request.window == nullptr)
+                return alerts (request);
+            askedTitles.add (request.title);
+            if (auto *w = dynamic_cast<juce::AlertWindow *> (request.window))
+                if (auto *text = dynamic_cast<juce::TextEditor *> (w->getCustomComponent (0)))
+                {
+                    licenseShown = text->getText();
+                    if (licenseToType.isNotEmpty())
+                        text->setText (licenseToType);
+                }
+            return windowResult;
+        };
+    }
+
+    void TearDown() override
+    {
+        if (panelFolder != juce::File())
+            panelFolder.deleteRecursively();
+        CloseQuestions::TearDown();
+    }
+
+    // The fixture with one resource. Under a UID of this test's own: resources are copied into
+    // the panel's folder in the CtrlrX data directory, named by its UID.
+    CtrlrPanel *panelWithResource()
+    {
+        juce::ValueTree tree = CtrlrPanel::openXmlPanel (juce::File::getCurrentWorkingDirectory().getChildFile ("fixtures/fixture_lua_values.panel"));
+        if (! tree.isValid())
+            return nullptr;
+        tree.setProperty (Ids::panelUID, "test-" + juce::Uuid().toString(), nullptr);
+        CtrlrPanel *panel = processor->getManager().addPanel (tree, true);
+        if (panel == nullptr)
+            return nullptr;
+        panelFolder = panel->getPanelDirectory();
+        const juce::File resource = dir.getChildFile ("resource.txt");
+        if (! resource.replaceWithText ("data") || ! panel->getResourceManager().addResource (resource).wasOk())
+            return nullptr;
+        return panel;
+    }
+
+    // The licence in an exported .bpanelz, or a void var if there is none.
+    static juce::var licenseIn (const juce::File &exported)
+    {
+        juce::MemoryBlock data;
+        if (! exported.loadFileAsData (data))
+            return {};
+        const juce::ValueTree tree = juce::ValueTree::readFromGZIPData (data.getData(), data.getSize());
+        return tree.getChildWithName (Ids::resourceExportList).getChildWithName (Ids::resourceLicense).getProperty (Ids::resourceData);
+    }
+
+    // The fixture as an exported panel with a licence.
+    static juce::ValueTree licensedTree()
+    {
+        juce::ValueTree tree = CtrlrPanel::openXmlPanel (juce::File::getCurrentWorkingDirectory().getChildFile ("fixtures/fixture_lua_values.panel"));
+        juce::ValueTree resources (Ids::resourceExportList);
+        juce::ValueTree licence (Ids::resourceLicense);
+        licence.setProperty (Ids::resourceData, "the terms", nullptr);
+        resources.addChild (licence, -1, nullptr);
+        tree.addChild (resources, -1, nullptr);
+        return tree;
+    }
+};
+
+TEST_F(LicenseQuestions, export_asks_after_the_chooser_and_attaches_the_typed_license)
+{
+    CtrlrPanel *panel = panelWithResource();
+    ASSERT_NE(panel, nullptr);
+    const juce::File exported = dir.getChildFile ("out.bpanelz");
+    chooserAnswer = { exported };
+    buttonsToPress = { "Yes" };
+    windowResult = 1; // its OK button
+    licenseToType = "my licence";
+
+    panel->savePanelAs (CtrlrEditor::doExportFileZBinRes);
+    EXPECT_EQ(askedTitles, juce::StringArray ("Panel file binary compressed")) << "the question waits for the chooser";
+
+    ASSERT_TRUE(pumpUntil ([&] { return exported.existsAsFile(); }));
+    EXPECT_EQ(askedTitles, juce::StringArray ({ "Panel file binary compressed", "License question", "License content" }));
+    EXPECT_EQ(licenseIn (exported).toString(), "my licence");
+}
+
+TEST_F(LicenseQuestions, export_with_no_writes_the_file_without_a_license)
+{
+    CtrlrPanel *panel = panelWithResource();
+    ASSERT_NE(panel, nullptr);
+    const juce::File exported = dir.getChildFile ("out.bpanelz");
+    chooserAnswer = { exported };
+    buttonsToPress = { "No" };
+
+    panel->savePanelAs (CtrlrEditor::doExportFileZBinRes);
+    ASSERT_TRUE(pumpUntil ([&] { return exported.existsAsFile(); }));
+    EXPECT_EQ(askedTitles, juce::StringArray ({ "Panel file binary compressed", "License question" }));
+    EXPECT_TRUE(licenseIn (exported).isVoid());
+}
+
+TEST_F(LicenseQuestions, export_without_resources_asks_nothing)
+{
+    CtrlrPanel *panel = loadPanel ("fixture_lua_values.panel");
+    ASSERT_NE(panel, nullptr);
+    const juce::File exported = dir.getChildFile ("out.bpanelz");
+    chooserAnswer = { exported };
+
+    panel->savePanelAs (CtrlrEditor::doExportFileZBinRes);
+    ASSERT_TRUE(pumpUntil ([&] { return exported.existsAsFile(); }));
+    EXPECT_EQ(askedTitles, juce::StringArray ("Panel file binary compressed"));
+}
+
+// The panel closed while the licence question is open: nothing is written, nothing is shown.
+TEST_F(LicenseQuestions, export_does_nothing_when_the_panel_closed_during_the_question)
+{
+    CtrlrPanel *panel = panelWithResource();
+    ASSERT_NE(panel, nullptr);
+    const juce::File exported = dir.getChildFile ("out.bpanelz");
+    chooserAnswer = { exported };
+    AW::testAnswer() = [this, answer = AW::testAnswer()] (const AW::Request &request) {
+        const int result = answer (request);
+        if (request.title == "License question")
+            processor->getManager().removePanel (processor->getManager().getPanel (0)->getEditor (false));
+        return result;
+    };
+
+    panel->savePanelAs (CtrlrEditor::doExportFileZBinRes);
+    ASSERT_TRUE(pumpUntil ([&] { return askedTitles.contains ("License question"); }));
+    pump();
+    EXPECT_EQ(processor->getManager().getNumPanels(), 0);
+    EXPECT_FALSE(exported.existsAsFile());
+    EXPECT_EQ(askedTitles, juce::StringArray ({ "Panel file binary compressed", "License question" }));
+}
+
+TEST_F(LicenseQuestions, load_asks_first_and_makes_the_panel_after_yes)
+{
+    windowResult = 1; // Yes
+    EXPECT_EQ(processor->getManager().addPanel (licensedTree(), true), nullptr) << "no panel before the answer";
+    EXPECT_EQ(processor->getManager().getNumPanels(), 0);
+    EXPECT_EQ(askedTitles, juce::StringArray ("License agreement"));
+    EXPECT_EQ(licenseShown, "the terms");
+
+    ASSERT_TRUE(pumpUntil ([&] { return processor->getManager().getNumPanels() == 1; }));
+    EXPECT_EQ(askedTitles.size(), 1) << "asked once, not again inside the load";
+}
+
+TEST_F(LicenseQuestions, load_with_no_makes_no_panel)
+{
+    windowResult = 0; // No
+    EXPECT_EQ(processor->getManager().addPanel (licensedTree(), true), nullptr);
+    pump();
+    EXPECT_EQ(processor->getManager().getNumPanels(), 0);
+    EXPECT_EQ(askedTitles, juce::StringArray ("License agreement"));
+}
+
+// The blocking form, for a plugin's own exported panel: the answer is there when it returns.
+TEST_F(LicenseQuestions, blocking_form_returns_the_answer)
+{
+    const juce::ValueTree resources = licensedTree().getChildWithName (Ids::resourceExportList);
+    windowResult = 1;
+    EXPECT_TRUE(CtrlrPanelResourceManager::confirmEmbeddedLicense (resources));
+    windowResult = 0;
+    EXPECT_FALSE(CtrlrPanelResourceManager::confirmEmbeddedLicense (resources));
+    EXPECT_EQ(askedTitles, juce::StringArray ({ "License agreement", "License agreement" }));
+    EXPECT_EQ(licenseShown, "the terms");
+
+    askedTitles.clear();
+    EXPECT_TRUE(CtrlrPanelResourceManager::confirmEmbeddedLicense (juce::ValueTree (Ids::resourceExportList)));
+    EXPECT_TRUE(askedTitles.isEmpty()) << "no licence, no question";
+}

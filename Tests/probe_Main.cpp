@@ -2180,6 +2180,10 @@ namespace
 
             const int panelsBefore = manager.getNumPanels();
             manager.addPanel(tree, true);
+            // A panel with an embedded licence is made after its question was answered (an
+            // --answer rule gives Yes; without one the question is dismissed, which is No).
+            for (int i = 0; i < 40 && manager.getNumPanels() <= panelsBefore; ++i)
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
             if (manager.getNumPanels() <= panelsBefore)
             {
                 errorOut = "CtrlrX did not add the panel";

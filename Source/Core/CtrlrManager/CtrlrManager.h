@@ -346,7 +346,11 @@ class CtrlrManager :    public ValueTree::Listener,
 		bool shuttingDown = false; // Added v5.6.36. Thanks to @dnaldoog
 		void setEmbeddedDefaults();
 		Result addInstancePanel();
+		Result createInstancePanel();
+		CtrlrPanel *addPanelNoLicenseCheck(const ValueTree &savedState, const bool showUI);
 		void restoreInstanceState(const ValueTree &instanceState);
+		File getInstanceResourcesMarkerFile();
+		void markInstanceResourcesImported();
 
 		void openPanelInternal(const ValueTree &panelTree);
 		ApplicationCommandManager commandManager;
@@ -371,6 +375,8 @@ class CtrlrManager :    public ValueTree::Listener,
 		std::unique_ptr <CtrlrFontManager> ctrlrFontManager;
 		ValueTree ctrlrPlayerInstanceTree;
 		ValueTree ctrlrPlayerInstanceResources;
+		bool instanceLicensePending = false; // the licence question of addInstancePanel() is open
+		ValueTree pendingInstanceState;     // host state that came while it was open
 		CtrlrModulator *invalidModulator;
 		WeakReference <CtrlrLuaMethod> luaCtrlrSaveState, luaCtrlrRestoreState;
 
